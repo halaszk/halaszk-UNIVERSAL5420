@@ -341,8 +341,7 @@ static int write_inode(struct inode *inode, struct writeback_control *wbc)
 /*
  * Wait for writeback on an inode to complete.
  */
-static void inode_wait_for_writeback(struct inode *inode,
-				     struct bdi_writeback *wb)
+static void inode_wait_for_writeback(struct inode *inode)
 {
 	DEFINE_WAIT_BIT(wq, &inode->i_state, __I_SYNC);
 	wait_queue_head_t *wqh;
@@ -350,9 +349,7 @@ static void inode_wait_for_writeback(struct inode *inode,
 	wqh = bit_waitqueue(&inode->i_state, __I_SYNC);
 	while (inode->i_state & I_SYNC) {
 		spin_unlock(&inode->i_lock);
-		spin_unlock(&wb->list_lock);
 		__wait_on_bit(wqh, &wq, inode_wait, TASK_UNINTERRUPTIBLE);
-		spin_lock(&wb->list_lock);
 		spin_lock(&inode->i_lock);
 	}
 }
@@ -431,7 +428,6 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 	unsigned dirty;
 	int ret;
 
-	assert_spin_locked(&wb->list_lock);
 	assert_spin_locked(&inode->i_lock);
 
 	if (!atomic_read(&inode->i_count))
@@ -445,7 +441,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 		/*
 		 * It's a data-integrity sync.  We must wait.
 		 */
-		inode_wait_for_writeback(inode, wb);
+		inode_wait_for_writeback(inode);
 	}
 
 	BUG_ON(inode->i_state & I_SYNC);
@@ -453,7 +449,6 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 	/* Set I_SYNC, reset I_DIRTY_PAGES */
 	inode->i_state |= I_SYNC;
 	spin_unlock(&inode->i_lock);
-	spin_unlock(&wb->list_lock);
 
 	ret = do_writepages(mapping, wbc);
 
@@ -603,6 +598,8 @@ static long writeback_sb_inodes(struct super_block *sb,
 			trace_writeback_sb_inodes_requeue(inode);
 			continue;
 		}
+		spin_unlock(&wb->list_lock);
+
 		__iget(inode);
 		write_chunk = writeback_chunk_size(wb->bdi, work);
 		wbc.nr_to_write = write_chunk;
@@ -815,8 +812,10 @@ static long wb_writeback(struct bdi_writeback *wb,
 			trace_writeback_wait(wb->bdi, work);
 			inode = wb_inode(wb->b_more_io.prev);
 			spin_lock(&inode->i_lock);
-			inode_wait_for_writeback(inode, wb);
+			spin_unlock(&wb->list_lock);
+			inode_wait_for_writeback(inode);
 			spin_unlock(&inode->i_lock);
+			spin_lock(&wb->list_lock);
 		}
 	}
 	spin_unlock(&wb->list_lock);
@@ -1366,7 +1365,6 @@ int write_inode_now(struct inode *inode, int sync)
 		wbc.nr_to_write = 0;
 
 	might_sleep();
-	spin_lock(&wb->list_lock);
 	spin_lock(&inode->i_lock);
 	ret = writeback_single_inode(inode, wb, &wbc);
 	spin_unlock(&inode->i_lock);
@@ -1391,7 +1389,6 @@ int sync_inode(struct inode *inode, struct writeback_control *wbc)
 	struct bdi_writeback *wb = &inode_to_bdi(inode)->wb;
 	int ret;
 
-	spin_lock(&wb->list_lock);
 	spin_lock(&inode->i_lock);
 	ret = writeback_single_inode(inode, wb, wbc);
 	spin_unlock(&inode->i_lock);
