@@ -239,8 +239,11 @@ static void inode_sync_complete(struct inode *inode)
 	 */
 
 	inode->i_state &= ~I_SYNC;
+    
 	/* If inode is clean an unused, put it into LRU now... */
 	inode_add_lru(inode);
+    
+	/* Waiters must see I_SYNC cleared before being woken up */
 	smp_mb();
 	wake_up_bit(&inode->i_state, __I_SYNC);
 }
@@ -445,7 +448,6 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 
 	spin_lock(&wb->list_lock);
 	spin_lock(&inode->i_lock);
-	inode->i_state &= ~I_SYNC;
 	if (!(inode->i_state & I_FREEING)) {
 		/*
 		 * Sync livelock prevention. Each inode is tagged and synced in
