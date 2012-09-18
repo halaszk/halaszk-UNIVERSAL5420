@@ -181,14 +181,15 @@ static enum hrtimer_restart alarmtimer_fired(struct hrtimer *timer)
 	int restart = ALARMTIMER_NORESTART;
 
 	spin_lock_irqsave(&base->lock, flags);
-	alarmtimer_dequeue(base, alarm);
-		spin_unlock_irqrestore(&base->lock, flags);
 
-		if (alarm->function)
+	alarmtimer_remove(base, alarm);
+	spin_unlock_irqrestore(&base->lock, flags);
+
+	if (alarm->function)
 		restart = alarm->function(alarm, base->gettime());
 
 	spin_lock_irqsave(&base->lock, flags);
-		if (restart != ALARMTIMER_NORESTART) {
+	if (restart != ALARMTIMER_NORESTART) {
 		hrtimer_set_expires(&alarm->timer, alarm->node.expires);
 		alarmtimer_enqueue(base, alarm);
 		ret = HRTIMER_RESTART;
@@ -340,7 +341,7 @@ int alarm_try_to_cancel(struct alarm *alarm)
 	spin_lock_irqsave(&base->lock, flags);
 	ret = hrtimer_try_to_cancel(&alarm->timer);
 	if (ret >= 0)
-		alarmtimer_dequeue(base, alarm);
+		alarmtimer_remove(base, alarm);
 	spin_unlock_irqrestore(&base->lock, flags);
 	return ret;
 }
