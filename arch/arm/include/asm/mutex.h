@@ -18,4 +18,4 @@
 #else
 #include <asm-generic/mutex-dec.h>
 #endif
-#endif
+#endif	/* _ASM_MUTEX_H */
