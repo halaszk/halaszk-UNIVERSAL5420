@@ -369,6 +369,11 @@ static int android_oom_handler(struct notifier_block *nb,
 			task_unlock(p);
 			continue;
 		}
+		if (fatal_signal_pending(p)) {
+			lowmem_print(2, "skip slow dying process %d\n", p->pid);
+			task_unlock(p);
+			continue;
+		}
 		tasksize = get_mm_rss(p->mm);
 		task_unlock(p);
 		if (tasksize <= 0)
