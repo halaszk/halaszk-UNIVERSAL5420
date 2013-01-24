@@ -105,9 +105,8 @@ out:
 }
 
 static const struct vm_operations_struct f2fs_file_vm_ops = {
-	.fault		= filemap_fault,
-	.page_mkwrite	= f2fs_vm_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
+	.fault        = filemap_fault,
+	.page_mkwrite = f2fs_vm_page_mkwrite,
 };
 
 static int get_parent_ino(struct inode *inode, nid_t *pino)
@@ -203,6 +202,7 @@ static int f2fs_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	file_accessed(file);
 	vma->vm_ops = &f2fs_file_vm_ops;
+	vma->vm_flags |= VM_CAN_NONLINEAR;
 	return 0;
 }
 
