@@ -448,8 +448,8 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 		return;
 	}
 
-	if (brightness > LED_MAX_CURRENT)
-		brightness = LED_MAX_CURRENT;
+	brightness = (led_lowpower_mode) ? 
+		     leds_control.current_low : leds_control.current_high;
 
 	if (led == LED_R)
 		LED_DYNAMIC_CURRENT = LED_R_CURRENT;
@@ -474,9 +474,11 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 
 	if (leds_control.blink_fading)
 			leds_set_slope_mode(client, led,
-				leds_control.blink_delay, 15, 7, 0, 
-				leds_control.fade_in_time,
-				leds_control.fade_out_time,
+				0, 15, 7, 0, 
+				(delay_on_time + AN30259A_TIME_UNIT - 1) /
+				AN30259A_TIME_UNIT,
+				(delay_off_time + AN30259A_TIME_UNIT - 1) /
+				AN30259A_TIME_UNIT,
 				leds_control.fade_dt1,
 				leds_control.fade_dt2,
 				leds_control.fade_dt3,
