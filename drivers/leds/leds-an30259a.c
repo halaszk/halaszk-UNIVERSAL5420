@@ -83,7 +83,6 @@
 
 #define	MAX_NUM_LEDS	3
 
-u8 LED_DYNAMIC_CURRENT = 0x8;
 u8 led_lowpower_mode = 0x0;
 
 static struct an30259_led_conf led_conf[] = {
@@ -438,25 +437,34 @@ static void an30259a_start_led_pattern(int mode)
 static void an30259a_set_led_blink(enum an30259a_led_enum led,
 					unsigned int delay_on_time,
 					unsigned int delay_off_time,
-					u8 brightness)
+					u8 brightness,
+					bool force)
 {
-	struct i2c_client *client;
-	client = b_client;
+	struct i2c_client *client = b_client;
+	static int prev_delay_on_time[3] = { 0 };
+	static int prev_delay_off_time[3] = { 0 };
+	static int prev_brightness[3] = { 0 };
+	int max_brightness;
+
+	if (force) {
+		delay_on_time = prev_delay_on_time[led];
+		delay_off_time = prev_delay_off_time[led];
+		brightness = prev_brightness[led];
+	} else {
+		prev_delay_on_time[led] = delay_on_time;
+		prev_delay_off_time[led] = delay_off_time;
+		prev_brightness[led] = brightness;
+	}
 
 	if (brightness == LED_OFF) {
 		leds_on(led, false, false, brightness);
 		return;
 	}
 
-	brightness = (led_lowpower_mode) ? 
-		     leds_control.current_low : leds_control.current_high;
+	max_brightness = (led_lowpower_mode) ?
+			leds_control.current_low : leds_control.current_high;
 
-	if (led == LED_R)
-		LED_DYNAMIC_CURRENT = LED_R_CURRENT;
-	else if (led == LED_G)
-		LED_DYNAMIC_CURRENT = LED_G_CURRENT;
-	else if (led == LED_B)
-		LED_DYNAMIC_CURRENT = LED_B_CURRENT;
+	brightness = (brightness * max_brightness) / LED_MAX_CURRENT;
 
 	if (delay_on_time > SLPTT_MAX_VALUE)
 		delay_on_time = SLPTT_MAX_VALUE;
@@ -464,17 +472,10 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 	if (delay_off_time > SLPTT_MAX_VALUE)
 		delay_off_time = SLPTT_MAX_VALUE;
 
-	if (delay_off_time == LED_OFF) {
-		leds_on(led, true, false, brightness);
-		if (brightness == LED_OFF)
-			leds_on(led, false, false, brightness);
-		return;
-	} else
-		leds_on(led, true, true, brightness);
+	leds_on(led, true, (delay_off_time > 0), brightness);
 
 	if (leds_control.blink_fading)
-			leds_set_slope_mode(client, led,
-				0, 15, 7, 0, 
+		leds_set_slope_mode(client, led, 1, 15, 7, 0, 
 				(delay_on_time + AN30259A_TIME_UNIT - 1) /
 				AN30259A_TIME_UNIT,
 				(delay_off_time + AN30259A_TIME_UNIT - 1) /
@@ -484,14 +485,12 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 				leds_control.fade_dt3,
 				leds_control.fade_dt4);
 	else
-		leds_set_slope_mode(client, led, 0, 15, 15, 0,
+		leds_set_slope_mode(client, led, 1, 15, 15, 0,
 				(delay_on_time + AN30259A_TIME_UNIT - 1) /
 				AN30259A_TIME_UNIT,
 				(delay_off_time + AN30259A_TIME_UNIT - 1) /
 				AN30259A_TIME_UNIT,
 				0, 0, 0, 0);
-
-
 }
 
 static ssize_t store_an30259a_led_lowpower(struct device *dev,
@@ -509,6 +508,10 @@ static ssize_t store_an30259a_led_lowpower(struct device *dev,
 	}
 
 	led_lowpower_mode = led_lowpower;
+
+	an30259a_set_led_blink(LED_R, 0, 0, 0, true);
+	an30259a_set_led_blink(LED_G, 0, 0, 0, true);
+	an30259a_set_led_blink(LED_B, 0, 0, 0, true);
 
 	printk(KERN_DEBUG "led_lowpower mode set to %i\n", led_lowpower);
 
@@ -589,16 +592,15 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	led_b_brightness = ((u32)led_brightness & LED_B_MASK);
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
-				delay_off_time, led_r_brightness);
+				delay_off_time, led_r_brightness, false);
 	an30259a_set_led_blink(LED_G, delay_on_time,
-				delay_off_time, led_g_brightness);
+				delay_off_time, led_g_brightness, false);
 	an30259a_set_led_blink(LED_B, delay_on_time,
-				delay_off_time, led_b_brightness);
+				delay_off_time, led_b_brightness, false);
 
 	leds_i2c_write_all(data->client);
 
-	printk(KERN_DEBUG "led_blink is called, Color:0x%X Brightness:%i\n",
-			led_brightness, LED_DYNAMIC_CURRENT);
+	printk(KERN_DEBUG "led_blink is called, Brightness:0x%X", led_brightness);
 
 	return count;
 }
