@@ -83,6 +83,13 @@
 
 #define	MAX_NUM_LEDS	3
 
+// instead of the typical max of 255, rom may be submitting RGB colors based on a skewed scale.
+// test for this by displaying a white notification (255/255/255) and then checking dmesg for
+// the number after "led-control: <color> was" to see what was actually requested.
+#define LED_R_SCALE		200
+#define LED_G_SCALE		139
+#define LED_B_SCALE		139
+
 u8 led_lowpower_mode = 0x0;
 
 static struct an30259_led_conf led_conf[] = {
@@ -445,6 +452,7 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 	static int prev_delay_off_time[3] = { 0 };
 	static int prev_brightness[3] = { 0 };
 	int max_brightness;
+	int orig_brightness;
 
 	if (force) {
 		delay_on_time = prev_delay_on_time[led];
@@ -461,10 +469,20 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 		return;
 	}
 
+	orig_brightness = brightness;
+
 	max_brightness = (led_lowpower_mode) ?
 			leds_control.current_low : leds_control.current_high;
 
 	brightness = (brightness * max_brightness) / LED_MAX_CURRENT;
+	
+	if (led == LED_R) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d RED\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	} else if (led == LED_G) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d GREEN\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	} else if (led == LED_B) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d BLUE\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	}
 
 	if (delay_on_time > SLPTT_MAX_VALUE)
 		delay_on_time = SLPTT_MAX_VALUE;
@@ -573,6 +591,9 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	u8 led_r_brightness = 0;
 	u8 led_g_brightness = 0;
 	u8 led_b_brightness = 0;
+	int led_r_brightness_orig = 0;
+	int led_g_brightness_orig = 0;
+	int led_b_brightness_orig = 0;
 
 	retval = sscanf(buf, "0x%x %d %d", &led_brightness,
 				&delay_on_time, &delay_off_time);
@@ -590,6 +611,20 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	led_g_brightness = ((u32)led_brightness & LED_G_MASK)
 					>> LED_G_SHIFT;
 	led_b_brightness = ((u32)led_brightness & LED_B_MASK);
+	
+	led_r_brightness_orig = led_r_brightness;
+	led_g_brightness_orig = led_g_brightness;
+	led_b_brightness_orig = led_b_brightness;
+	
+	// despite being set to 255/255/255, sometimes userspace actually sends something else, like 200/139/139.
+	// compensate for this and bring all colors to a scale of 0-255.
+	
+	led_r_brightness = (led_r_brightness * LED_MAX_CURRENT) / LED_R_SCALE;
+	printk(KERN_DEBUG "led-control: RED was %d out of %d adjusted to %d out of 255\n", led_r_brightness_orig, LED_R_SCALE, led_r_brightness);
+	led_g_brightness = (led_g_brightness * LED_MAX_CURRENT) / LED_G_SCALE;
+	printk(KERN_DEBUG "led-control: GREEN was %d out of %d adjusted to %d out of 255\n", led_g_brightness_orig, LED_G_SCALE, led_g_brightness);
+	led_b_brightness = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
+	printk(KERN_DEBUG "led-control: BLUE was %d out of %d adjusted to %d out of 255\n", led_b_brightness_orig, LED_B_SCALE, led_b_brightness);
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
 				delay_off_time, led_r_brightness, false);
@@ -600,7 +635,8 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 
 	leds_i2c_write_all(data->client);
 
-	printk(KERN_DEBUG "led_blink is called, Brightness:0x%X, Powermode:%i", led_brightness, led_lowpower_mode);
+	printk(KERN_DEBUG "led_blink is called, RED: %d, GREEN: %d, BLUE: %d. brightness:0x%X, powermode:%i",
+		   led_r_brightness, led_g_brightness, led_b_brightness, led_brightness, led_lowpower_mode);
 
 	return count;
 }
