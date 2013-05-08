@@ -625,6 +625,25 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	printk(KERN_DEBUG "led-control: GREEN was %d out of %d adjusted to %d out of 255\n", led_g_brightness_orig, LED_G_SCALE, led_g_brightness);
 	led_b_brightness = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
 	printk(KERN_DEBUG "led-control: BLUE was %d out of %d adjusted to %d out of 255\n", led_b_brightness_orig, LED_B_SCALE, led_b_brightness);
+	
+	if (led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness) {
+		// white is being called for. adjust it for the most realistic result.
+		// actual white = 100% red, 30% green, 15% blue
+		
+		printk(KERN_DEBUG "led-control: neutral color detected. adjusting white balance for optimal result. rgb was: %d %d %d\n",
+			   led_r_brightness, led_g_brightness, led_b_brightness);
+		
+		led_g_brightness = led_g_brightness - ((70 * led_g_brightness) / 100);  // subtract 70% from green
+		led_b_brightness = led_b_brightness - ((85 * led_b_brightness) / 100);  // subtract 85% from blue
+		
+		if (led_g_brightness < 3) {
+			led_g_brightness = 3;
+			led_b_brightness = 1;
+		}
+		
+		if (led_b_brightness < 1)
+			led_b_brightness = 1;
+	}
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
 				delay_off_time, led_r_brightness, false);
