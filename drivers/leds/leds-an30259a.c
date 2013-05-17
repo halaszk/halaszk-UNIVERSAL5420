@@ -90,6 +90,8 @@
 #define LED_G_SCALE		139
 #define LED_B_SCALE		139
 
+int flg_system_noti = 0;
+
 u8 led_lowpower_mode = 0x0;
 
 static struct an30259_led_conf led_conf[] = {
@@ -471,8 +473,11 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 
 	orig_brightness = brightness;
 
-	max_brightness = (led_lowpower_mode) ?
-			leds_control.current_low : leds_control.current_high;
+	if (led_lowpower_mode || flg_system_noti) {
+		max_brightness = leds_control.current_low;
+	} else {
+		max_brightness = leds_control.current_high;
+	}
 
 	brightness = (brightness * max_brightness) / LED_MAX_CURRENT;
 	
@@ -483,6 +488,9 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 	} else if (led == LED_B) {
 		printk(KERN_DEBUG "led-control: %d * %d / %d = %d BLUE\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
 	}
+	
+	if (brightness < 1)
+		brightness = 1;
 
 	if (delay_on_time > SLPTT_MAX_VALUE)
 		delay_on_time = SLPTT_MAX_VALUE;
@@ -626,7 +634,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	led_b_brightness = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
 	printk(KERN_DEBUG "led-control: BLUE was %d out of %d adjusted to %d out of 255\n", led_b_brightness_orig, LED_B_SCALE, led_b_brightness);
 	
-	if (led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness) {
+	if (led_r_brightness > 0 && led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness) {
 		// white is being called for. adjust it for the most realistic result.
 		// actual white = 100% red, 30% green, 15% blue
 		
@@ -644,6 +652,24 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		if (led_b_brightness < 1)
 			led_b_brightness = 1;
 	}
+	
+	if (led_r_brightness == 0 && led_g_brightness == 23 && led_b_brightness == 0) {
+		// charged.
+		led_g_brightness = 100;
+		flg_system_noti = 1;
+	} else if (led_r_brightness == 22 && led_g_brightness == 23 && led_b_brightness == 0) {
+		// charging 70%-89%
+		led_r_brightness = 255;
+		led_g_brightness = 50;
+		flg_system_noti = 1;
+	} else if (led_r_brightness == 25 && led_g_brightness == 11 && led_b_brightness == 0) {
+		// charging <70%
+		led_r_brightness = 255;
+		led_g_brightness = 10;
+		flg_system_noti = 1;
+	} else {
+		flg_system_noti = 0;
+	}
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
 				delay_off_time, led_r_brightness, false);
@@ -654,8 +680,8 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 
 	leds_i2c_write_all(data->client);
 
-	printk(KERN_DEBUG "led_blink is called, RED: %d, GREEN: %d, BLUE: %d. brightness:0x%X, powermode:%i",
-		   led_r_brightness, led_g_brightness, led_b_brightness, led_brightness, led_lowpower_mode);
+	printk(KERN_DEBUG "led_blink is called, RED:%d, GREEN:%d, BLUE:%d. brightness:0x%X, powermode:%i, system_noti:%d",
+		   led_r_brightness, led_g_brightness, led_b_brightness, led_brightness, led_lowpower_mode, flg_system_noti);
 
 	return count;
 }
