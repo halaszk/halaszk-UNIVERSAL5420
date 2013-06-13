@@ -667,6 +667,11 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		led_r_brightness = 255;
 		led_g_brightness = 10;
 		flg_system_noti = 1;
+	} else if (led_r_brightness == 20 && led_g_brightness == 6 && led_b_brightness == 0) {
+		// charging even less than above.
+		led_r_brightness = 255;
+		led_g_brightness = 10;
+		flg_system_noti = 1;
 	} else {
 		flg_system_noti = 0;
 	}
