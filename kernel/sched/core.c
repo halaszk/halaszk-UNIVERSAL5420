@@ -3127,6 +3127,7 @@ asmlinkage void __sched notrace preempt_schedule(void)
 	} while (need_resched());
 }
 EXPORT_SYMBOL(preempt_schedule);
+#endif /* CONFIG_PREEMPT */
 
 /*
  * this is the entry point to schedule() from kernel preemption
@@ -3155,8 +3156,6 @@ asmlinkage void __sched preempt_schedule_irq(void)
 		barrier();
 	} while (need_resched());
 }
-
-#endif /* CONFIG_PREEMPT */
 
 int default_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
 			  void *key)
