@@ -614,6 +614,9 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	int led_r_brightness_orig = 0;
 	int led_g_brightness_orig = 0;
 	int led_b_brightness_orig = 0;
+	int led_r_brightness_wbcheck = 0;
+	int led_g_brightness_wbcheck = 0;
+	int led_b_brightness_wbcheck = 0;
 
 	retval = sscanf(buf, "0x%x %d %d", &led_brightness,
 				&delay_on_time, &delay_off_time);
@@ -638,7 +641,15 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	led_g_brightness_orig = led_g_brightness;
 	led_b_brightness_orig = led_b_brightness;
 	
-	if (led_r_brightness > 0 && led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness) {
+	led_r_brightness_wbcheck = (led_r_brightness * LED_MAX_CURRENT) / LED_R_SCALE;
+	printk(KERN_DEBUG "led-control: RED was %d out of %d adjusted to %d out of 255\n", led_r_brightness_orig, LED_R_SCALE, led_r_brightness_wbcheck);
+	led_g_brightness_wbcheck = (led_g_brightness * LED_MAX_CURRENT) / LED_G_SCALE;
+	printk(KERN_DEBUG "led-control: GREEN was %d out of %d adjusted to %d out of 255\n", led_g_brightness_orig, LED_G_SCALE, led_g_brightness_wbcheck);
+	led_b_brightness_wbcheck = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
+	printk(KERN_DEBUG "led-control: BLUE was %d out of %d adjusted to %d out of 255\n", led_b_brightness_orig, LED_B_SCALE, led_b_brightness_wbcheck);
+	
+	if ((led_r_brightness > 0 && led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness)
+		|| (led_r_brightness_wbcheck > 0 && led_r_brightness_wbcheck == led_g_brightness_wbcheck && led_r_brightness_wbcheck == led_b_brightness_wbcheck)) {
 		// white is being called for. adjust it for the most realistic result.
 		// actual white = 100% red, 30% green, 15% blue
 		
