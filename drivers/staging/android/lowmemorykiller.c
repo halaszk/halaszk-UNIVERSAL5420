@@ -407,7 +407,7 @@ static int android_oom_handler(struct notifier_block *nb,
 		}
 		if (fatal_signal_pending(p) ||
 				((p->flags & PF_EXITING) &&
-					test_task_flag(p, TIF_MEMDIE))) {
+					test_tsk_thread_flag(p, TIF_MEMDIE))) {
 			lowmem_print(2, "skip slow dying process %d\n", p->pid);
 			task_unlock(p);
 			continue;
