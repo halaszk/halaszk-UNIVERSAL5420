@@ -1,0 +1,20 @@
+ui_print(""); show_progress(0.100000, 0);
+ui_print("");ui_print("");ui_print("");ui_print("");ui_print("");ui_print("");
+ui_print("------------------------------------------------");
+ui_print("             Kernel for Note3 SM-N900           ");
+ui_print("                                                ");
+ui_print("           Developed by halaszk                 ");
+ui_print("------------------------------------------------");
+ui_print("");
+show_progress(0.100000, 40); 
+ui_print("Flashing the kernel"); 
+assert(package_extract_file("boot/boot.img", "/tmp/boot.img"),
+show_progress(0.100000, 70); 
+write_raw_image("/tmp/boot.img", "/dev/block/mmcblk0p9"),
+show_progress(0.100000, 80); 
+show_progress(0.100000, 90); 
+delete("/tmp/boot.img"));
+show_progress(0.100000, 100); 
+ui_print("");
+ui_print(" * Installation Completed! *");
+ui_print(" * Enjoy *");
