@@ -13,8 +13,8 @@ export KERNEL_CONFIG="halaszk_defconfig"
 # build script
 export USER=`whoami`
 # gcc 4.7.3 (Linaro 13.02)
-#export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.6/bin/arm-eabi-
-export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.8.x/bin/arm-eabi-;
+export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.6/bin/arm-eabi-
+#export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.8.x/bin/arm-eabi-;
 if [ "${1}" != "" ];then
 export KERNELDIR=`readlink -f ${1}`
 fi
@@ -40,7 +40,7 @@ fi;
 
 cd ${KERNELDIR}/
 
-GETVER=`grep 'Perseus-.*-V' .config | sed 's/.*".//g' | sed 's/-S.*//g'`
+GETVER=`grep 'halaszk-.*-V' .config | sed 's/.*".//g' | sed 's/-S.*//g'`
 nice -n 10 make -j$NAMBEROFCPUS || exit 1
 
 # remove previous zImage files
