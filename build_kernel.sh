@@ -104,7 +104,7 @@ cd $INITRAMFS_TMP
 find | fakeroot cpio -H newc -o > $INITRAMFS_TMP.cpio 2>/dev/null
 ls -lh $INITRAMFS_TMP.cpio
 lzma -kvzc $INITRAMFS_TMP.cpio > $INITRAMFS_TMP.cpio.lzma
-#gzip -9 $INITRAMFS_TMP.cpio
+# gzip -9 $INITRAMFS_TMP.cpio
 cd -
 
 # make kernel
