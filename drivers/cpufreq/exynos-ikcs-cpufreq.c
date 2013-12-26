@@ -64,7 +64,7 @@ static unsigned int freq_max[CA_END] __read_mostly;	/* Maximum (Big/Little) cloc
  * It is used to revise cpu frequency when changing cluster
  */
 #ifdef CONFIG_ARM_EXYNOS5420_CPUFREQ
-#define STEP_LEVEL_CA7_MAX	650000
+#define STEP_LEVEL_CA7_MAX	750000
 #define COLD_VOLT_OFFSET	37500
 #define ENABLE_MIN_COLD		1
 #else
@@ -76,6 +76,9 @@ static unsigned int freq_max[CA_END] __read_mostly;	/* Maximum (Big/Little) cloc
 
 #define LIMIT_COLD_VOLTAGE	1250000
 #define MIN_COLD_VOLTAGE	950000
+
+static unsigned int step_level_CA7_max = 650000;
+static unsigned int step_level_CA15_min = 800000;
 
 /*
  * Taken from asv-exynos5420.h
@@ -573,6 +576,10 @@ static int exynos_target(struct cpufreq_policy *policy,
 
 	mutex_lock(&cpufreq_lock);
 
+	/* Squash unwanted frequencies in the CA7 range */
+	if (target_freq > step_level_CA7_max && target_freq <= STEP_LEVEL_CA7_MAX)
+		target_freq = step_level_CA7_max;
+
 	/* read current cluster */
 	cur = get_cur_cluster(policy->cpu);
 	old_cur = cur;
@@ -597,9 +604,9 @@ static int exynos_target(struct cpufreq_policy *policy,
 
 	target_freq = merge_freq_table[index].frequency;
 
-	if (cur == CA15 && target_freq < STEP_LEVEL_CA15_MIN)
+	if (cur == CA15 && target_freq < step_level_CA15_min)
 		do_switch = true;
-	else if (cur == CA7 && target_freq > STEP_LEVEL_CA7_MAX)
+	else if (cur == CA7 && target_freq > step_level_CA7_max)
 		do_switch = true;
 
 #ifdef CONFIG_BL_SWITCHER
@@ -938,9 +945,53 @@ static ssize_t store_max_freq(struct kobject *kobj, struct attribute *attr,
 	return count;
 }
 
+static ssize_t show_CA15_min_freq(struct kobject *kobj,
+			     struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", step_level_CA15_min);
+}
+
+static ssize_t show_CA7_max_freq(struct kobject *kobj,
+			     struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", step_level_CA7_max);
+}
+
+static ssize_t store_CA15_min_freq(struct kobject *kobj, struct attribute *attr,
+			      const char *buf, size_t count)
+{
+	unsigned int input;
+
+	if (!sscanf(buf, "%u", &input))
+		return -EINVAL;
+
+	sanitize_min_max(input, freq_min[CA15], freq_max[CA15]);
+
+	step_level_CA15_min = input;
+
+	return count;
+}
+
+static ssize_t store_CA7_max_freq(struct kobject *kobj, struct attribute *attr,
+			      const char *buf, size_t count)
+{
+	unsigned int input;
+
+	if (!sscanf(buf, "%u", &input))
+		return -EINVAL;
+
+	sanitize_min_max(input, freq_min[CA7], freq_max[CA7]);
+
+	step_level_CA7_max = input;
+
+	return count;
+}
+
 define_one_global_ro(freq_table);
 define_one_global_rw(min_freq);
 define_one_global_rw(max_freq);
+define_one_global_rw(CA7_max_freq);
+define_one_global_rw(CA15_min_freq);
 
 static struct global_attr cpufreq_table =
 		__ATTR(cpufreq_table, S_IRUGO, show_freq_table, NULL);
@@ -953,6 +1004,8 @@ static struct attribute *iks_attributes[] = {
 	&freq_table.attr,
 	&min_freq.attr,
 	&max_freq.attr,
+	&CA7_max_freq.attr,
+	&CA15_min_freq.attr,
 	NULL
 };
 
