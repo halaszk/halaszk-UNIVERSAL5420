@@ -282,7 +282,7 @@ unsigned short mdnie_reg_hook(unsigned short reg, unsigned short value)
 
 	original = value;
 
-	if (unlikely((!sequence_hook && !reg_hook) || g_mdnie->negative == NEGATIVE_ON))
+	if (unlikely((!sequence_hook && !reg_hook)))
 		return value;
 
 	for (i = 0; i < ARRAY_SIZE(mdnie_controls); i++) {
@@ -323,7 +323,7 @@ unsigned short mdnie_reg_hook(unsigned short reg, unsigned short value)
 
 unsigned short *mdnie_sequence_hook(unsigned short *seq)
 {
-	if(!sequence_hook || g_mdnie->negative == NEGATIVE_ON)
+	if(!sequence_hook)
 		return seq;
 
 	return (unsigned short *)&master_sequence;
