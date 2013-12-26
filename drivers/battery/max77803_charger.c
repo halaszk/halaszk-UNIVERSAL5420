@@ -390,7 +390,7 @@ static void max77803_set_charge_current(struct max77803_charger_data *charger,
 		__func__, reg_data, cur);
 }
 
-/*
+
 static int max77803_get_charge_current(struct max77803_charger_data *charger)
 {
 	u8 reg_data;
