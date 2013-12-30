@@ -865,11 +865,19 @@ void dhd_enable_packet_filter(int value, dhd_pub_t *dhd)
 #endif /* PKT_FILTER_SUPPORT */
 }
 
+#ifdef CONFIG_BCMDHD_WIFI_PM
+static int wifi_pm = 0;
+/* /sys/module/dhd/parameters/wifi_pm */
+module_param(wifi_pm, int, 0755);
+EXPORT_SYMBOL(wifi_pm);
+#endif
+
 static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 {
-#ifndef SUPPORT_PM2_ONLY
-	int power_mode = PM_MAX;
-#endif /* SUPPORT_PM2_ONLY */
+#ifdef CONFIG_BCMDHD_WIFI_PM
+int power_mode;
+#endif
+
 	/* wl_pkt_filter_enable_t	enable_parm; */
 	char iovbuf[32];
 	int bcn_li_dtim = 0; /* Default bcn_li_dtim in resume mode is 0 */
@@ -891,6 +899,20 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 	DHD_TRACE(("%s: enter, value = %d in_suspend=%d\n",
 		__FUNCTION__, value, dhd->in_suspend));
 
+#ifdef CONFIG_BCMDHD_WIFI_PM
+	if (wifi_pm == 1) {
+	power_mode = PM_FAST;
+	pr_info("[halaszk] %p Wi-Fi Power Management policy changed to PM_FAST.", __func__);
+	} else {
+	power_mode = PM_MAX;
+	pr_info("[halaszk] %p Wi-Fi Power Management policy changed to PM_MAX.", __func__);
+	}
+#else
+#ifndef SUPPORT_PM2_ONLY
+	int power_mode = PM_MAX;
+#endif
+#endif
+
 	dhd_suspend_lock(dhd);
 	if (dhd->up) {
 		if (value && dhd->in_suspend) {
@@ -899,12 +921,14 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 #endif
 				/* Kernel suspended */
 				DHD_ERROR(("%s: force extra Suspend setting \n", __FUNCTION__));
-
+#ifdef CONFIG_BCMDHD_WIFI_PM
+				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode, sizeof(power_mode), TRUE, 0);
+#else
 #ifndef SUPPORT_PM2_ONLY
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
 #endif /* SUPPORT_PM2_ONLY */
-
+#endif 
 				/* Enable packet filter, only allow unicast packet to send up */
 				dhd_enable_packet_filter(1, dhd);
 
@@ -949,10 +973,14 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				/* Kernel resumed  */
 				DHD_ERROR(("%s: Remove extra suspend setting \n", __FUNCTION__));
 
+CONFIG_BCMDHD_WIFI_PM
+				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode, sizeof(power_mode), TRUE, 0);
+#else
 #ifndef SUPPORT_PM2_ONLY
 				power_mode = PM_FAST;
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
+#endif 
 #endif /* SUPPORT_PM2_ONLY */
 #ifdef PKT_FILTER_SUPPORT
 				/* disable pkt filter */
