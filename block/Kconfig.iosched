@@ -32,6 +32,28 @@ config IOSCHED_ROW
 	  according to queue priority.
 	  Most suitable for mobile devices.
 
+config IOSCHED_BFQ
+	tristate "BFQ I/O scheduler"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	  The BFQ I/O scheduler tries to distribute bandwidth among
+	  all processes according to their weights.
+	  It aims at distributing the bandwidth as desired, independently of
+	  the disk parameters and with any workload. It also tries to
+	  guarantee low latency to interactive and soft real-time
+	  applications.  If compiled built-in (saying Y here), BFQ can
+	  be configured to support hierarchical scheduling.
+
+config CGROUP_BFQIO
+	bool "BFQ hierarchical scheduling support"
+	depends on CGROUPS && IOSCHED_BFQ=y
+	default n
+	---help---
+	  Enable hierarchical scheduling in BFQ, using the cgroups
+	  filesystem interface.  The name of the subsystem will be
+	  bfqio.
+
 config IOSCHED_CFQ
 	tristate "CFQ I/O scheduler"
 	# If BLK_CGROUP is a module, CFQ has to be built as module.
@@ -53,6 +75,28 @@ config CFQ_GROUP_IOSCHED
 	default n
 	---help---
 	  Enable group IO scheduling in CFQ.
+
+config IOSCHED_BFQ
+	tristate "BFQ I/O scheduler"
+	depends on EXPERIMENTAL
+	default n
+	---help---
+	  The BFQ I/O scheduler tries to distribute bandwidth among
+	  all processes according to their weights.
+	  It aims at distributing the bandwidth as desired, independently of
+	  the disk parameters and with any workload. It also tries to
+	  guarantee low latency to interactive and soft real-time
+	  applications.  If compiled built-in (saying Y here), BFQ can
+	  be configured to support hierarchical scheduling.
+
+config CGROUP_BFQIO
+	bool "BFQ hierarchical scheduling support"
+	depends on CGROUPS && IOSCHED_BFQ=y
+	default n
+	---help---
+	  Enable hierarchical scheduling in BFQ, using the cgroups
+	  filesystem interface.  The name of the subsystem will be
+	  bfqio.
 
 choice
 	prompt "Default I/O scheduler"
@@ -77,6 +121,10 @@ choice
 	config DEFAULT_CFQ
 		bool "CFQ" if IOSCHED_CFQ=y
 
+
+	config DEFAULT_BFQ
+		bool "BFQ" if IOSCHED_BFQ=y
+
 	config DEFAULT_NOOP
 		bool "No-op"
 
@@ -87,6 +135,7 @@ config DEFAULT_IOSCHED
 	default "deadline" if DEFAULT_DEADLINE
 	default "cfq" if DEFAULT_CFQ
 	default "row" if DEFAULT_ROW
+	default "bfq" if DEFAULT_BFQ
 	default "noop" if DEFAULT_NOOP
 
 endmenu
