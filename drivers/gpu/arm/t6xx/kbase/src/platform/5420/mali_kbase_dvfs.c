@@ -72,8 +72,8 @@
 
 #if defined(CONFIG_EXYNOS_THERMAL)
 #include <mach/tmu.h>
-#define GPU_MAX_CLK 480
-#define GPU_THROTTLING_90_95 480
+#define GPU_MAX_CLK 600
+#define GPU_THROTTLING_90_95 533
 #define GPU_THROTTLING_95_100 420
 #define GPU_THROTTLING_100_105 350
 #define GPU_THROTTLING_105_110 177
@@ -124,8 +124,10 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{862500, 266, 60, 90, 0, 400000, 222000, 250000},
 	{912500, 350, 70, 90, 0, 667000, 333000, 250000},
 	{962500, 420, 78, 99, 0, 800000, 400000, 250000},
-	{1000000, 480, 98, 100, 0, 800000, 400000, 650000},
-	{1037500, 533, 99, 100, 0, 800000, 400000, 1200000},
+	{1000000, 480, 88, 90, 0, 800000, 400000, 650000},
+	{1037500, 533, 91, 95, 0, 800000, 400000, 1200000},
+	{1050000, 600, 96, 98, 0, 800000, 400000, 1400000},
+        {1075000, 677, 99, 100, 0, 800000, 400000, 1600000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
@@ -157,7 +159,7 @@ static void update_time_in_state(int level);
 /*dvfs status*/
 static mali_dvfs_status mali_dvfs_status_current;
 #ifdef MALI_DVFS_ASV_ENABLE
-static const unsigned int mali_dvfs_vol_default[] = { 812500, 812500, 862500, 912500, 962500, 1000000, 1037500};
+static const unsigned int mali_dvfs_vol_default[] = { 812500, 812500, 862500, 912500, 962500, 1000000, 1037500, 1050000, 1075000};
 
 
 static int mali_dvfs_update_asv(int cmd)
@@ -217,7 +219,7 @@ static void mali_dvfs_decide_next_level(mali_dvfs_status *dvfs_status)
 
 	if (dvfs_status->utilisation > mali_dvfs_infotbl[dvfs_status->step].max_threshold) {
 #ifdef PLATFORM_UTILIZATION
-		if (dvfs_status->step == kbase_platform_dvfs_get_level(500)) {
+		if (dvfs_status->step == kbase_platform_dvfs_get_level(677)) {
 			if (platform->utilisation > mali_dvfs_infotbl[dvfs_status->step].max_threshold) {
 				dvfs_status->step++;
 				DVFS_ASSERT(dvfs_status->step < MALI_DVFS_STEP);
