@@ -973,7 +973,7 @@ int power_mode;
 				/* Kernel resumed  */
 				DHD_ERROR(("%s: Remove extra suspend setting \n", __FUNCTION__));
 
-CONFIG_BCMDHD_WIFI_PM
+#ifdef CONFIG_BCMDHD_WIFI_PM
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode, sizeof(power_mode), TRUE, 0);
 #else
 #ifndef SUPPORT_PM2_ONLY
