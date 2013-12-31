@@ -72,7 +72,7 @@
 
 #if defined(CONFIG_EXYNOS_THERMAL)
 #include <mach/tmu.h>
-#define GPU_MAX_CLK 600
+#define GPU_MAX_CLK 677
 #define GPU_THROTTLING_90_95 533
 #define GPU_THROTTLING_95_100 420
 #define GPU_THROTTLING_100_105 350
