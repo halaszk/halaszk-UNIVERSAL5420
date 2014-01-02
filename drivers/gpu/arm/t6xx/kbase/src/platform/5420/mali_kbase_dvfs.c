@@ -73,9 +73,9 @@
 #if defined(CONFIG_EXYNOS_THERMAL)
 #include <mach/tmu.h>
 #define GPU_MAX_CLK 733
-#define GPU_THROTTLING_90_95 667
-#define GPU_THROTTLING_95_100 600
-#define GPU_THROTTLING_100_105 533
+#define GPU_THROTTLING_90_95 733
+#define GPU_THROTTLING_95_100 667
+#define GPU_THROTTLING_100_105 600
 #define GPU_THROTTLING_105_110 177
 #define GPU_TRIPPING_110 100
 #endif
@@ -128,13 +128,13 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{1037500, 533, 86, 90, 0, 800000, 400000, 1200000},
 	{1050000, 600, 91, 93, 0, 800000, 400000, 1400000},
         {1075000, 667, 94, 96, 0, 800000, 400000, 1600000},
-        {1100000, 733, 97, 99, 0, 800000, 400000, 1600000},
+        {1100000, 733, 97, 99, 0, 800000, 400000, 1800000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
 
 unsigned int dvfs_step_min = 0;
-unsigned int dvfs_step_max = 9;
+unsigned int dvfs_step_max = 10;
 unsigned int dvfs_step_max_minus1 = 480;
 unsigned int cur_gpu_freq = 0;
 
@@ -173,7 +173,7 @@ ssize_t hlpr_get_gpu_gov_table(char *buf)
 	int k = dvfs_step_max-1;
 	for (i = dvfs_step_min; i < dvfs_step_max; i++)
 	{
-		len += sprintf(buf + len, "%dmhz: %d\n", mali_dvfs_infotbl[k].clock, mali_dvfs_infotbl[k].max_threshold);
+		len += sprintf(buf + len, "%d %d\n", mali_dvfs_infotbl[k].clock, mali_dvfs_infotbl[k].max_threshold);
 		pr_alert("GET GPU GOV TABLE %d - %d - %d - %d", i, k, mali_dvfs_infotbl[k].clock, mali_dvfs_infotbl[k].max_threshold);
 		k--;
 	}
