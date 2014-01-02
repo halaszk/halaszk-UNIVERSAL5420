@@ -296,7 +296,7 @@ static void mali_dvfs_decide_next_level(mali_dvfs_status *dvfs_status)
 	spin_lock_irqsave(&mali_dvfs_spinlock, flags);
 
 #ifdef CONFIG_EXYNOS_THERMAL
-	if (dvfs_status->step == kbase_platform_dvfs_get_level(dvfs_step_max_minus1)) {
+	if (dvfs_status->step == kbase_platform_dvfs_get_level(GPU_MAX_CLK)) {
 		dvfs_status->step--;
 		goto skip;
 	}
@@ -304,22 +304,22 @@ static void mali_dvfs_decide_next_level(mali_dvfs_status *dvfs_status)
 
 	if (dvfs_status->utilisation > mali_dvfs_infotbl[dvfs_status->step].max_threshold) {
 #ifdef PLATFORM_UTILIZATION
-		if (dvfs_status->step == kbase_platform_dvfs_get_level(677)) {
+		if (dvfs_status->step == kbase_platform_dvfs_get_level(dvfs_step_max_minus1)) {
 			if (platform->utilisation > mali_dvfs_infotbl[dvfs_status->step].max_threshold) {
 				dvfs_status->step++;
-				DVFS_ASSERT(dvfs_status->step < dvfs_step_max);
+				DVFS_ASSERT(dvfs_status->step < MALI_DVFS_STEP);
 			}
 		} else {
 #endif
 			dvfs_status->step++;
-			DVFS_ASSERT(dvfs_status->step < dvfs_step_max);
+			DVFS_ASSERT(dvfs_status->step < MALI_DVFS_STEP);
 #ifdef PLATFORM_UTILIZATION
 		}
 #endif
 	} else if ((dvfs_status->step > 0) &&
 			(platform->time_tick == MALI_DVFS_TIME_INTERVAL) &&
 			(platform->utilisation < mali_dvfs_infotbl[dvfs_status->step].min_threshold)) {
-		DVFS_ASSERT(dvfs_status->step > dvfs_step_min);
+		DVFS_ASSERT(dvfs_status->step > 0);
 		dvfs_status->step--;
 	}
 #ifdef CONFIG_EXYNOS_THERMAL
