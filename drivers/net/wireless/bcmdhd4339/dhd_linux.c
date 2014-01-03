@@ -884,6 +884,8 @@ int power_mode;
 #ifndef ENABLE_FW_ROAM_SUSPEND
 	uint roamvar = 1;
 #endif /* ENABLE_FW_ROAM_SUSPEND */
+	uint nd_ra_filter = 0;
+	int ret = 0;
 #if defined(CUSTOMER_HW4) && defined(ENABLE_BCN_LI_BCN_WAKEUP)
 	int bcn_li_bcn;
 #endif /* CUSTOMER_HW4 && ENABLE_BCN_LI_BCN_WAKEUP */
@@ -960,6 +962,14 @@ int power_mode;
 					iovbuf, sizeof(iovbuf));
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 #endif /* ENABLE_FW_ROAM_SUSPEND */
+				if (FW_SUPPORTED(dhd, ndoe)) {
+					/* enable IPv6 RA filter in  firmware during suspend */
+					nd_ra_filter = 1;
+					bcm_mkiovar("nd_ra_filter_enable", (char *)&nd_ra_filter, 4,
+							iovbuf, sizeof(iovbuf));
+					if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0)) < 0)
+						DHD_ERROR(("failed to set nd_ra_filter (%d)\n", ret));
+				}
 #if defined(CUSTOMER_HW4) && defined(ENABLE_BCN_LI_BCN_WAKEUP)
 				bcn_li_bcn = 0;
 				bcm_mkiovar("bcn_li_bcn", (char *)&bcn_li_bcn,
@@ -1014,6 +1024,14 @@ int power_mode;
 					4, iovbuf, sizeof(iovbuf));
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 #endif /* CUSTOMER_HW4 && ENABLE_BCN_LI_BCN_WAKEUP */
+				if (FW_SUPPORTED(dhd, ndoe)) {
+					/* disable IPv6 RA filter in  firmware during suspend */
+					nd_ra_filter = 0;
+					bcm_mkiovar("nd_ra_filter_enable", (char *)&nd_ra_filter, 4,
+							iovbuf, sizeof(iovbuf));
+					if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0)) < 0)
+						DHD_ERROR(("failed to set nd_ra_filter (%d)\n", ret));
+				}
 			}
 	}
 	dhd_suspend_unlock(dhd);
