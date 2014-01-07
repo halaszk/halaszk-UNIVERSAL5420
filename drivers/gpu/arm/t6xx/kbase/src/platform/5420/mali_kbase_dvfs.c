@@ -36,6 +36,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/pm_qos.h>
+#include <linux/sysfs_helpers.h>
 
 #include <mach/bts.h>
 #include <mach/map.h>
@@ -167,6 +168,29 @@ static mali_dvfs_status mali_dvfs_status_current;
 #ifdef MALI_DVFS_ASV_ENABLE
 static const unsigned int mali_dvfs_vol_default[] = { 812500, 812500, 862500, 912500, 962500, 1000000, 1037500, 1050000, 1075000, 1100000};
 
+ssize_t hlpr_get_gpu_volt_table(char *buf)
+{
+       int i, len = 0;
+
+       for (i = 0; i < MALI_DVFS_STEP; i++) {
+               len += sprintf(buf + len, "%d %d\n", mali_dvfs_infotbl[i].clock, mali_dvfs_infotbl[i].voltage);
+       }
+
+       return len;
+}
+
+void hlpr_set_gpu_volt_table(int gpu_table[])
+{
+        int i;
+        int u = 0;
+        for (i = 0; i < dvfs_step_max; i++)
+        {
+                mali_dvfs_infotbl[i].voltage = gpu_table[u];
+                pr_alert("SET GPU VOLTAGE TABLE %d - %d - %d", i, mali_dvfs_infotbl[i].clock, mali_dvfs_infotbl[i].voltage);
+                u++;
+	}
+}
+
 ssize_t hlpr_get_gpu_gov_table(char *buf)
 {
 	int i, len = 0;
@@ -198,7 +222,6 @@ void hlpr_set_gpu_gov_table(int gpu_table[])
 		u++;
 	}
 }
-
 
 void hlpr_set_min_max_G3D(unsigned int min, unsigned int max)
 {
