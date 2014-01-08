@@ -183,7 +183,7 @@ void hlpr_set_gpu_volt_table(int gpu_table[])
 {
         int i;
         int u = 0;
-        for (i = 0; i < dvfs_step_max; i++)
+        for (i = 0; i < MALI_DVFS_STEP; i++)
         {
                 mali_dvfs_infotbl[i].voltage = gpu_table[u];
                 pr_alert("SET GPU VOLTAGE TABLE %d - %d - %d", i, mali_dvfs_infotbl[i].clock, mali_dvfs_infotbl[i].voltage);
