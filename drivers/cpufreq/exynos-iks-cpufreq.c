@@ -27,6 +27,7 @@
 #include <linux/delay.h>
 #include <linux/cpu.h>
 #include <linux/pm_qos.h>
+#include <linux/sysfs_helpers.h>
 
 #include <asm/cputype.h>
 #include <asm/bL_switcher.h>
@@ -61,14 +62,16 @@ static unsigned long lpj[CA_END];
  */
 #define UP_IKS_THRESH		6
 #define DOWN_IKS_THRESH		18
-#define DOWN_STEP_OLD		1100000
-#define DOWN_STEP_NEW		600000
-#define UP_STEP_OLD		550000
-#define UP_STEP_NEW		600000
-#define STEP_LEVEL_CA7_MAX	600000
+#define DOWN_STEP_OLD		1300000
+#define DOWN_STEP_NEW		700000
+#define UP_STEP_OLD		650000
+#define UP_STEP_NEW		700000
+#define STEP_LEVEL_CA7_MAX	700000
 #define STEP_LEVEL_CA15_MIN	800000
 
 #define LIMIT_COLD_VOLTAGE	1250000
+#define ARM_MAX_VOLT		1362500
+#define KFC_MAX_VOLT		1312500
 #define CPU_MAX_COUNT		4
 
 static struct exynos_dvfs_info *exynos_info[CA_END];
@@ -76,6 +79,7 @@ static struct exynos_dvfs_info exynos_info_CA7;
 static struct exynos_dvfs_info exynos_info_CA15;
 
 static struct cpufreq_frequency_table *merge_freq_table;
+static unsigned int *merge_index_table;
 
 static struct regulator *arm_regulator;
 static struct regulator *kfc_regulator;
@@ -90,7 +94,7 @@ static unsigned int user_set_max_freq;
 static unsigned int user_set_eagle_count;
 static unsigned int all_cpu_freqs[CPU_MAX_COUNT];
 
-static DEFINE_MUTEX(cpufreq_lock);
+DEFINE_MUTEX(cpufreq_lock);
 static DEFINE_MUTEX(cpufreq_scale_lock);
 
 static bool exynos_cpufreq_init_done;
@@ -133,6 +137,11 @@ static void init_cpumask_cluster_set(unsigned int cluster)
 static cluster_type get_cur_cluster(unsigned int cpu)
 {
 	return per_cpu(cpu_cur_cluster, cpu);
+}
+
+cluster_type get_boot_cluster(void)
+{
+	return boot_cluster;
 }
 
 static void set_cur_cluster(unsigned int cpu, cluster_type target_cluster)
@@ -178,6 +187,11 @@ static unsigned int get_boot_freq(unsigned int cluster)
 	return exynos_info[cluster]->boot_freq;
 }
 
+static unsigned int get_real_index(unsigned int index)
+{
+	return merge_index_table[index];
+}
+
 /* Get table size */
 static unsigned int cpufreq_get_table_size(
 				struct cpufreq_frequency_table *table,
@@ -201,7 +215,7 @@ static unsigned int cpufreq_get_table_size(
  */
 static int cpufreq_merge_tables(void)
 {
-	int cluster_id, i;
+	int cluster_id, i, index = 0;
 	unsigned int total_sz = 0, size[CA_END];
 	struct cpufreq_frequency_table *freq_table;
 
@@ -211,8 +225,14 @@ static int cpufreq_merge_tables(void)
 		total_sz += size[cluster_id];
 	}
 
+	merge_index_table = kzalloc(sizeof(unsigned int) *
+						(total_sz + 1), GFP_KERNEL);
+	if (!merge_index_table)
+		return -ENOMEM;
 	freq_table = kzalloc(sizeof(struct cpufreq_frequency_table) *
 						(total_sz + 1), GFP_KERNEL);
+	if (!freq_table)
+		return -ENOMEM;
 	merge_freq_table = freq_table;
 
 	memcpy(freq_table, exynos_info[CA15]->freq_table,
@@ -229,6 +249,11 @@ static int cpufreq_merge_tables(void)
 	merge_freq_table[total_sz].frequency = CPUFREQ_TABLE_END;
 
 	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		merge_index_table[i] = index++;
+
+		if (index == size[CA15])
+			index = 0;
+
 		pr_debug("merged_table index: %d freq: %d\n", i,
 						merge_freq_table[i].frequency);
 	}
@@ -239,8 +264,8 @@ static int cpufreq_merge_tables(void)
 static bool is_alive(unsigned int cluster)
 {
 	unsigned int tmp;
-	tmp = __raw_readl(cluster == CA15 ? EXYNOS5410_ARM_COMMON_STATUS :
-					EXYNOS5410_KFC_COMMON_STATUS) & 0x3;
+	tmp = __raw_readl(cluster == CA15 ? EXYNOS54XX_ARM_COMMON_STATUS :
+					EXYNOS54XX_KFC_COMMON_STATUS) & 0x3;
 
 	return tmp ? true : false;
 }
@@ -419,14 +444,21 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 
 	/* When the new frequency is higher than current frequency */
 	if ((ACTUAL_FREQ(freqs[cur]->new, cur) >
-			ACTUAL_FREQ(freqs[cur]->old, cur)) && !safe_volt)
+			ACTUAL_FREQ(freqs[cur]->old, cur)) && !safe_volt){
 		/* Firstly, voltage up to increase frequency */
 		regulator_set_voltage(regulator, volt, volt);
 
-	if (safe_volt)
+		if (exynos_info[cur]->set_ema)
+			exynos_info[cur]->set_ema(volt);
+	}
+	if (safe_volt) {
 		regulator_set_voltage(regulator, safe_volt, safe_volt);
 
+		if (exynos_info[cur]->set_ema)
+			exynos_info[cur]->set_ema(safe_volt);
+	}
 	if (old_index != new_index)
+	
 		exynos_info[cur]->set_freq(old_index, new_index);
 
 	if (!global_lpj_ref.freq) {
@@ -451,9 +483,13 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 	if ((ACTUAL_FREQ(freqs[cur]->new, cur) <
 					ACTUAL_FREQ(freqs[cur]->old, cur)) ||
 	   ((ACTUAL_FREQ(freqs[cur]->new, cur) >
-			ACTUAL_FREQ(freqs[cur]->old, cur)) && safe_volt))
+			ACTUAL_FREQ(freqs[cur]->old, cur)) && safe_volt)) {
 		/* down the voltage after frequency change */
+		if (exynos_info[cur]->set_ema)
+			 exynos_info[cur]->set_ema(volt);
+
 		regulator_set_voltage(regulator, volt, volt);
+	}
 
 out:
 	cpufreq_cpu_put(policy);
@@ -639,6 +675,8 @@ void exynos_lowpower_for_cluster(cluster_type cluster, bool on)
 			volt = get_match_volt(ID_ARM, ACTUAL_FREQ(freq_min[CA15], CA15));
 			volt = get_limit_voltage(volt);
 			regulator_set_voltage(arm_regulator, volt, volt);
+			if (exynos_info[CA15]->set_ema)
+				exynos_info[CA15]->set_ema(volt);
 		} else {
 			volt = volt_powerdown[CA15];
 			volt = get_limit_voltage(volt);
@@ -650,6 +688,8 @@ void exynos_lowpower_for_cluster(cluster_type cluster, bool on)
 			volt = get_match_volt(ID_KFC, ACTUAL_FREQ(freq_min[CA7], CA7));
 			volt = get_limit_voltage(volt);
 			regulator_set_voltage(kfc_regulator, volt, volt);
+			if (exynos_info[CA7]->set_ema)
+				exynos_info[CA7]->set_ema(volt);
 		} else {
 			volt = volt_powerdown[CA7];
 			volt = get_limit_voltage(volt);
@@ -748,9 +788,13 @@ static int exynos_cpufreq_tmu_notifier(struct notifier_block *notifier,
 
 	volt = get_limit_voltage(regulator_get_voltage(arm_regulator));
 	regulator_set_voltage(arm_regulator, volt, volt);
+		if (exynos_info[CA15]->set_ema)
+			exynos_info[CA15]->set_ema(volt);
 
 	volt = get_limit_voltage(regulator_get_voltage(kfc_regulator));
 	regulator_set_voltage(kfc_regulator, volt, volt);
+		if (exynos_info[CA7]->set_ema)
+			exynos_info[CA7]->set_ema(volt);
 	mutex_unlock(&cpufreq_lock);
 
 	return NOTIFY_OK;
@@ -825,6 +869,44 @@ static struct cpufreq_driver exynos_driver = {
 };
 
 /************************** sysfs interface ************************/
+
+static ssize_t show_freq_table(struct kobject *kobj,
+			     struct attribute *attr, char *buf)
+{
+	int cluster_id, i;
+	unsigned int total_sz = 0, size[CA_END];
+	struct cpufreq_frequency_table *freq_table;
+
+	for (cluster_id = 0; cluster_id < CA_END; cluster_id++) {
+		size[cluster_id] =  cpufreq_get_table_size(
+		   exynos_info[cluster_id]->freq_table, cluster_id);
+		total_sz += size[cluster_id];
+	}
+
+	freq_table = kzalloc(sizeof(struct cpufreq_frequency_table) *
+						(total_sz + 1), GFP_KERNEL);
+	merge_freq_table = freq_table;
+
+	memcpy(freq_table, exynos_info[CA15]->freq_table,
+			size[CA15] * sizeof(struct cpufreq_frequency_table));
+	freq_table += size[CA15];
+	memcpy(freq_table, exynos_info[CA7]->freq_table,
+			size[CA7] * sizeof(struct cpufreq_frequency_table));
+
+	for (i = size[CA15]; i <= total_sz ; i++) {
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+			merge_freq_table[i].frequency >>= 1;
+	}
+
+	merge_freq_table[total_sz].frequency = CPUFREQ_TABLE_END;
+
+	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		pr_debug("merged_table index: %d freq: %d\n", i,
+						merge_freq_table[i].frequency);
+	}
+
+	return 0;
+}
 
 static ssize_t show_min_freq(struct kobject *kobj,
 			     struct attribute *attr, char *buf)
@@ -920,11 +1002,15 @@ static ssize_t store_max_eagle_count(struct kobject *kobj, struct attribute *att
 	return count;
 }
 
+define_one_global_ro(freq_table);
 define_one_global_rw(min_freq);
 define_one_global_rw(max_freq);
 define_one_global_rw(max_eagle_count);
 
+static struct global_attr cpufreq_table =
+		__ATTR(cpufreq_table, S_IRUGO, show_freq_table, NULL);
 static struct attribute *iks_attributes[] = {
+	&freq_table.attr,
 	&min_freq.attr,
 	&max_freq.attr,
 	&max_eagle_count.attr,
@@ -935,6 +1021,95 @@ static struct attribute_group iks_attr_group = {
 	.attrs = iks_attributes,
 	.name = "iks-cpufreq",
 };
+/********************* CPUFreq core attributes ********************/
+ssize_t show_UV_table_prototype(struct cpufreq_policy *policy, char *buf, bool mv)
+{
+	cluster_type cur = CA15;
+	int i, len = 0;
+
+	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID) {
+			cur = (merge_freq_table[i].frequency > STEP_LEVEL_CA7_MAX) ?
+				CA15 : CA7;
+
+			if (mv) {
+				len += sprintf(buf + len, "%dmhz: %d mV\n",
+					merge_freq_table[i].frequency / 1000,
+					exynos_info[cur]->volt_table[merge_index_table[i]] / 1000);
+			} else {
+				len += sprintf(buf + len, "%d %d \n", 
+					merge_freq_table[i].frequency / 1000,
+					exynos_info[cur]->volt_table[merge_index_table[i]]);
+			}
+		}
+        }
+
+	return len;
+}
+
+ssize_t store_UV_table_prototype(struct cpufreq_policy *policy, 
+				 const char *buf, size_t count, bool mv) {
+
+	int i, tokens, rest, invalid_offset;
+	ssize_t tsize = cpufreq_get_table_size(merge_freq_table, CA15);
+	cluster_type cur = CA15;
+	int t[tsize];
+
+	invalid_offset = 0;
+
+	if ((tokens = read_into((int*)&t, tsize, buf, count)) < 0)
+		return -EINVAL;
+
+	mutex_lock(&cpufreq_lock);
+
+	for (i = 0; i < tokens; i++) {
+		while (merge_freq_table[i + invalid_offset].frequency == CPUFREQ_ENTRY_INVALID)
+			++invalid_offset;
+
+		cur = (merge_freq_table[i + invalid_offset].frequency > STEP_LEVEL_CA7_MAX)
+			? CA15 : CA7;
+
+		if (mv)
+			t[i] *= 1000;
+
+		if ((rest = t[i] % 6250) != 0)
+			t[i] += 6250 - rest;
+
+		if (cur == CA15) {
+			sanitize_min_max(t[i], 600000, ARM_MAX_VOLT);
+		} else {
+			sanitize_min_max(t[i], 600000, KFC_MAX_VOLT);
+		}
+
+		exynos_info[cur]->volt_table[merge_index_table[i + invalid_offset]] = t[i];
+	}
+
+	mutex_unlock(&cpufreq_lock);
+
+	return count;
+}
+
+ssize_t show_UV_uV_table(struct cpufreq_policy *policy, char *buf)
+{
+	return show_UV_table_prototype(policy, buf, false);
+}
+
+ssize_t store_UV_uV_table(struct cpufreq_policy *policy, 
+				 const char *buf, size_t count)
+{
+	return store_UV_table_prototype(policy, buf, count, false);
+}
+
+ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf)
+{
+	return show_UV_table_prototype(policy, buf, true);
+}
+
+ssize_t store_UV_mV_table(struct cpufreq_policy *policy, 
+				 const char *buf, size_t count)
+{
+	return store_UV_table_prototype(policy, buf, count, true);
+}
 
 /************************** sysfs end ************************/
 
@@ -963,12 +1138,16 @@ static int exynos_cpufreq_reboot_notifier_call(struct notifier_block *this,
 	if (regulator_set_voltage(kfc_regulator, volt, volt))
 		goto err;
 
+	if (exynos_info[CA7]->set_ema)
+		exynos_info[CA7]->set_ema(volt);
 	volt = max(get_match_volt(ID_ARM, ACTUAL_FREQ(bootfreqCA15, CA15)),
 			get_match_volt(ID_ARM, ACTUAL_FREQ(freqCA15, CA15)));
 	volt = get_limit_voltage(volt);
 
 	if (regulator_set_voltage(arm_regulator, volt, volt))
 		goto err;
+	if (exynos_info[CA15]->set_ema)
+		exynos_info[CA15]->set_ema(volt);
 
 	return NOTIFY_DONE;
 err:
@@ -1153,11 +1332,11 @@ static int __init exynos_cpufreq_init(void)
 
 	init_cpumask_cluster_set(boot_cluster);
 
-	ret = exynos5410_cpufreq_CA7_init(&exynos_info_CA7);
+	ret = exynos5_cpufreq_CA7_init(&exynos_info_CA7);
 	if (ret)
 		goto err_init_cpufreq;
 
-	ret = exynos5410_cpufreq_CA15_init(&exynos_info_CA15);
+	ret = exynos5_cpufreq_CA15_init(&exynos_info_CA15);
 	if (ret)
 		goto err_init_cpufreq;
 
