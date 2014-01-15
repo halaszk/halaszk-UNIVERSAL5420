@@ -46,7 +46,7 @@ static struct exynos_dvfs_info *exynos_info;
 static struct regulator *arm_regulator;
 static struct cpufreq_freqs freqs;
 
-static DEFINE_MUTEX(cpufreq_lock);
+DEFINE_MUTEX(cpufreq_lock);
 
 static bool exynos_cpufreq_disable;
 static bool exynos_cpufreq_init_done;

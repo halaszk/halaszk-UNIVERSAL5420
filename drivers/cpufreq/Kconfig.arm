@@ -92,6 +92,12 @@ config ARM_EXYNOS_IKS_CLUSTER
 
 	  If in doubt, say N.
 endchoice
+config EXYNOS5_DYNAMIC_CPU_HOTPLUG
+	bool "Dynamic CPU Hotplug support"
+	depends on SOC_EXYNOS5420
+	default y
+	help
+	  Enable Dynamic CPU Hotplug
 
 config ARM_EXYNOS4210_CPUFREQ
 	def_bool CPU_EXYNOS4210

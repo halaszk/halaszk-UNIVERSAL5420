@@ -64,7 +64,7 @@ static unsigned int freq_max[CA_END] __read_mostly;	/* Maximum (Big/Little) cloc
  * It is used to revise cpu frequency when changing cluster
  */
 #ifdef CONFIG_ARM_EXYNOS5420_CPUFREQ
-#define STEP_LEVEL_CA7_MAX	650000
+#define STEP_LEVEL_CA7_MAX	750000
 #define COLD_VOLT_OFFSET	37500
 #define ENABLE_MIN_COLD		1
 #else
