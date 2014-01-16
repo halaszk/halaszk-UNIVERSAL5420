@@ -1009,6 +1009,11 @@ define_one_global_rw(max_eagle_count);
 
 static struct global_attr cpufreq_table =
 		__ATTR(cpufreq_table, S_IRUGO, show_freq_table, NULL);
+static struct global_attr cpufreq_min_limit =
+		__ATTR(cpufreq_min_limit, S_IRUGO | S_IWUSR, show_min_freq, store_min_freq);
+static struct global_attr cpufreq_max_limit =
+		__ATTR(cpufreq_max_limit, S_IRUGO | S_IWUSR, show_max_freq, store_max_freq);
+
 static struct attribute *iks_attributes[] = {
 	&freq_table.attr,
 	&min_freq.attr,

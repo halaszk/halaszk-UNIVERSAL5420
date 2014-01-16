@@ -34,8 +34,8 @@
  * It helps to keep variable names smaller, simpler
  */
 #ifdef CONFIG_ARM_EXYNOS5420_CPUFREQ
-#define B_MAX_FREQ	(1900000)
-#define L_MAX_FREQ	(650000)
+#define B_MAX_FREQ	(2100000)
+#define L_MAX_FREQ	(750000)
 #else
 #define B_MAX_FREQ	(1600000)
 #define L_MAX_FREQ	(600000)
