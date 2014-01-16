@@ -73,6 +73,8 @@ static unsigned long lpj[CA_END];
 #define ARM_MAX_VOLT		1362500
 #define KFC_MAX_VOLT		1312500
 #define CPU_MAX_COUNT		4
+#define ARM_INT_SKEW_FREQ	1600000
+#define ARM_INT_SKEW_FREQ_H	1800000
 
 static struct exynos_dvfs_info *exynos_info[CA_END];
 static struct exynos_dvfs_info exynos_info_CA7;
@@ -109,6 +111,10 @@ static struct pm_qos_request boot_cpu_qos;
 static struct pm_qos_request min_cpu_qos;
 
 static struct cpufreq_policy fake_policy[CA_END][NR_CPUS];
+
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+static struct pm_qos_request min_int_qos;
+#endif
 
 static unsigned int get_limit_voltage(unsigned int voltage)
 {
@@ -422,6 +428,23 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 		goto out;
 	}
 
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+	if (target_freq >= ARM_INT_SKEW_FREQ) {
+		if (pm_qos_request_active(&min_int_qos)) {
+			if (target_freq >= ARM_INT_SKEW_FREQ_H) {
+				pm_qos_update_request(&min_int_qos, 400000);
+			} else if ((curr_freq < ARM_INT_SKEW_FREQ_H) &&
+					(target_freq < ARM_INT_SKEW_FREQ_H)) {
+#if defined(CONFIG_S5P_DP)
+				pm_qos_update_request(&min_int_qos, 222000);
+#else
+				pm_qos_update_request(&min_int_qos, 111000);
+#endif
+			}
+		}
+	}
+#endif
+
 	/*
 	 * ARM clock source will be changed APLL to MPLL temporary
 	 * To support this level, need to control regulator for
@@ -490,6 +513,22 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 
 		regulator_set_voltage(regulator, volt, volt);
 	}
+
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+	if (target_freq < ARM_INT_SKEW_FREQ) {
+		if (pm_qos_request_active(&min_int_qos))
+			pm_qos_update_request(&min_int_qos, 0);
+	} else if ((target_freq >= ARM_INT_SKEW_FREQ) &&
+			(target_freq < ARM_INT_SKEW_FREQ_H) &&
+			(curr_freq >= ARM_INT_SKEW_FREQ_H)) {
+		if (pm_qos_request_active(&min_int_qos))
+#if defined(CONFIG_S5P_DP)
+		pm_qos_update_request(&min_int_qos, 222000);
+#else
+		pm_qos_update_request(&min_int_qos, 111000);
+#endif
+	}
+#endif
 
 out:
 	cpufreq_cpu_put(policy);
@@ -1013,7 +1052,6 @@ static struct global_attr cpufreq_min_limit =
 		__ATTR(cpufreq_min_limit, S_IRUGO | S_IWUSR, show_min_freq, store_min_freq);
 static struct global_attr cpufreq_max_limit =
 		__ATTR(cpufreq_max_limit, S_IRUGO | S_IWUSR, show_max_freq, store_max_freq);
-
 static struct attribute *iks_attributes[] = {
 	&freq_table.attr,
 	&min_freq.attr,
@@ -1414,10 +1452,36 @@ static int __init exynos_cpufreq_init(void)
 		goto err_cpufreq;
 	}
 
+	ret = sysfs_create_file(power_kobj, &cpufreq_table.attr);
+	if (ret) {
+		pr_err("%s: failed to create cpufreq_table sysfs interface\n", __func__);
+		goto err_cpufreq;
+	}
+
+	ret = sysfs_create_file(power_kobj, &cpufreq_min_limit.attr);
+	if (ret) {
+		pr_err("%s: failed to create cpufreq_min_limit sysfs interface\n", __func__);
+		goto err_cpufreq;
+	}
+
+	ret = sysfs_create_file(power_kobj, &cpufreq_max_limit.attr);
+	if (ret) {
+		pr_err("%s: failed to create cpufreq_max_limit sysfs interface\n", __func__);
+		goto err_cpufreq;
+	}
+
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+	pm_qos_add_request(&min_int_qos, PM_QOS_DEVICE_THROUGHPUT, 0);
+#endif
+
 	pm_qos_add_request(&boot_cpu_qos, PM_QOS_CPU_FREQ_MIN, 0);
 	pm_qos_update_request_timeout(&boot_cpu_qos, 1200000, 60000 * 1000);
 
 	exynos_cpufreq_init_done = true;
+
+#ifdef CONFIG_EXYNOS5_DYNAMIC_CPU_HOTPLUG
+	dm_cpu_hotplug_init();
+#endif
 
 	return 0;
 

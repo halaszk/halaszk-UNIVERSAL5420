@@ -123,7 +123,7 @@ rm ${KERNELDIR}/READY/Kernel_*
 stat ${KERNELDIR}/boot.img
 cp ${KERNELDIR}/boot.img /${KERNELDIR}/READY/boot/
 cd ${KERNELDIR}/READY/
-        zip -r Kernel_${GETVER}-`date +"[%H-%M]-[%d-%m]-SM-N900-PWR-CORE"`.zip .
+        zip -r Kernel_${GETVER}-`date +"[%H-%M]-[%d-%m]-SM-N900-IKS-CORE-PWR-CORE"`.zip .
 rm ${KERNELDIR}/boot.img
 rm ${KERNELDIR}/READY/boot/boot.img
 rm ${KERNELDIR}/READY/.config
