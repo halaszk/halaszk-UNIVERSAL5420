@@ -95,13 +95,20 @@ enum BOOST_LEVEL {
 	TKEY_BOOSTER_LEVEL2,
 };
 
-#define TKEY_BOOSTER_CPU_FREQ1 1600000
-#define TKEY_BOOSTER_MIF_FREQ1 667000
-#define TKEY_BOOSTER_INT_FREQ1 333000
+static unsigned int TKEY_BOOSTER_CPU_FREQ1 = 1600000;
+static unsigned int TKEY_BOOSTER_MIF_FREQ1 = 667000;
+static unsigned int TKEY_BOOSTER_INT_FREQ1 = 333000;
 
-#define TKEY_BOOSTER_CPU_FREQ2 650000
-#define TKEY_BOOSTER_MIF_FREQ2 400000
-#define TKEY_BOOSTER_INT_FREQ2 111000
+static unsigned int TKEY_BOOSTER_CPU_FREQ2 = 650000;
+static unsigned int TKEY_BOOSTER_MIF_FREQ2 = 400000;
+static unsigned int TKEY_BOOSTER_INT_FREQ2 = 111000;
+
+module_param_named(qos_cpu_freq_lvl_1, TKEY_BOOSTER_CPU_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_lvl_1, TKEY_BOOSTER_MIF_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_lvl_1, TKEY_BOOSTER_INT_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_lvl_2, TKEY_BOOSTER_CPU_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_lvl_2, TKEY_BOOSTER_MIF_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_lvl_2, TKEY_BOOSTER_INT_FREQ2, uint, S_IWUSR | S_IRUGO);
 #endif
 /* #define TK_INFORM_CHARGER	1 */
 
