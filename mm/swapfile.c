@@ -1746,6 +1746,16 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 		mutex_unlock(&inode->i_mutex);
 	}
 	filp_close(swap_file, NULL);
+
+	/*
+	* clear SWP_USED flag after all resources freed
+	* so that swapon can reuse this swap_info in alloc_swap_info() safely
+	* it is ok to not hold p->lock after we cleared its SWP_WRITEOK
+	*/
+	spin_lock(&swap_lock);
+	p->flags = 0;
+	spin_unlock(&swap_lock);
+
 	err = 0;
 	atomic_inc(&proc_poll_event);
 	wake_up_interruptible(&proc_poll_wait);
