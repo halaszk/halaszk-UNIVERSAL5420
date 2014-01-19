@@ -71,17 +71,28 @@
 #define TOUCH_BOOSTER_OFF_TIME	500
 #define TOUCH_BOOSTER_CHG_TIME	130
 
-#define TOUCH_BOOSTER_CPU_FRQ_1	1600000
-#define TOUCH_BOOSTER_MIF_FRQ_1	667000
-#define TOUCH_BOOSTER_INT_FRQ_1	333000
+static unsigned int TOUCH_BOOSTER_CPU_FRQ_1 = 1600000;
+static unsigned int TOUCH_BOOSTER_MIF_FRQ_1 = 667000;
+static unsigned int TOUCH_BOOSTER_INT_FRQ_1 = 333000;
 
-#define TOUCH_BOOSTER_CPU_FRQ_2	650000
-#define TOUCH_BOOSTER_MIF_FRQ_2	400000
-#define TOUCH_BOOSTER_INT_FRQ_2	111000
+static unsigned int TOUCH_BOOSTER_CPU_FRQ_2 = 650000;
+static unsigned int TOUCH_BOOSTER_MIF_FRQ_2 = 400000;
+static unsigned int TOUCH_BOOSTER_INT_FRQ_2 = 111000;
 
-#define TOUCH_BOOSTER_CPU_FRQ_3	650000
-#define TOUCH_BOOSTER_MIF_FRQ_3	667000
-#define TOUCH_BOOSTER_INT_FRQ_3	333000
+static unsigned int TOUCH_BOOSTER_CPU_FRQ_3 = 650000;
+static unsigned int TOUCH_BOOSTER_MIF_FRQ_3 = 667000;
+static unsigned int TOUCH_BOOSTER_INT_FRQ_3 = 333000;
+
+module_param_named(qos_cpu_freq_level_1, TOUCH_BOOSTER_CPU_FRQ_1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_level_1, TOUCH_BOOSTER_MIF_FRQ_1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_level_1, TOUCH_BOOSTER_INT_FRQ_1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_level_2, TOUCH_BOOSTER_CPU_FRQ_2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_level_2, TOUCH_BOOSTER_MIF_FRQ_2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_level_2, TOUCH_BOOSTER_INT_FRQ_2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_level_3, TOUCH_BOOSTER_CPU_FRQ_3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_level_3, TOUCH_BOOSTER_MIF_FRQ_3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_level_3, TOUCH_BOOSTER_INT_FRQ_3, uint, S_IWUSR | S_IRUGO);
+
 #endif
 
 #define SECURE_TSP
