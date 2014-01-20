@@ -17,7 +17,7 @@
 #define WACOM_I2C_BOOT 0x57
 #endif
 
-#ifdef CONFIG_V1A
+#if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 #define WACOM_X_INVERT 0
 #define WACOM_XY_SWITCH 0
 

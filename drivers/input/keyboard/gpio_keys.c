@@ -31,16 +31,14 @@
 #include <linux/spinlock.h>
 #include <linux/wakelock.h>
 
-#if defined(CONFIG_SEC_FACTORY)
-#define CONFIG_W1_KTHREAD
+#ifdef CONFIG_FAST_BOOT
+#include <linux/fake_shut_down.h>
+#include <linux/wakelock.h>
 #endif
 
-#if !defined(CONFIG_W1_KTHREAD)
-extern void w1_master_search(void);
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
 #endif
-
-extern int verification, fail_cnt;
-
 struct gpio_button_data {
 	struct gpio_keys_button *button;
 	struct input_dev *input;
@@ -82,8 +80,35 @@ struct gpio_keys_drvdata {
 	struct gpio_button_data data[0];
 };
 
+#ifdef CONFIG_FAST_BOOT
+struct timer_list fake_timer;
+bool fake_pressed;
+
+struct wake_lock fake_lock;
+
+static void gpio_keys_fake_off_check(unsigned long _data)
+{
+	struct input_dev *input = (struct input_dev *)_data;
+	unsigned int type = EV_KEY;
+
+	if (fake_pressed == false)
+		return ;
+
+	printk(KERN_DEBUG"[Keys] make event\n");
+	fake_shut_down = false;
+	raw_notifier_call_chain(&fsd_notifier_list,
+			FAKE_SHUT_DOWN_CMD_OFF, NULL);
+
+	input_event(input, type, KEY_FAKE_PWR, 1);
+	input_sync(input);
+
+	input_event(input, type, KEY_FAKE_PWR, 0);
+	input_sync(input);
+}
+#endif
+
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-#if defined(CONFIG_N1A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 
 extern unsigned int lpcharge;
 
@@ -96,39 +121,6 @@ static int __init get_auto_power_on_off_powerkey_set(char *str)
 }
 early_param("auto_powerkey", get_auto_power_on_off_powerkey_set);
 #endif
-#endif
-#if !defined(CONFIG_SEC_FACTORY)
-static int check_verification_status(void);
-
-static int check_verification_status(void)
-{
-	int limit_cnt;
-#if defined(CONFIG_W1_KTHREAD)
-	limit_cnt = 4;
-#else
-	limit_cnt = 0;
-#endif
-
-#if !defined(CONFIG_W1_KTHREAD)
-	w1_master_search();
-	/* one more chance to verify */
-	if (verification != 0)
-		w1_master_search();
-#endif
-
-	if (verification != 0) {
-		if (fail_cnt > limit_cnt) {
-			printk("%s : fail counter is over %d\n",__func__, limit_cnt);
-			return -1;
-		} else {
-			printk("%s : Not verified, but ...\n",__func__);
-			return 0;
-		}
-	} else {
-		printk("%s : Verified\n",__func__);
-		return 0;
-	}
-}
 #endif
 
 /*
@@ -461,6 +453,7 @@ static ssize_t hall_detect_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct gpio_keys_drvdata *ddata = dev_get_drvdata(dev);
+	pr_info("COVER ACT 0 %s\n", __func__);
 
 	if (ddata->flip_cover)
 		sprintf(buf, "OPEN");
@@ -587,7 +580,7 @@ static int gpio_key_init_dvfs(struct gpio_button_data *bdata)
 #endif
 
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-#if defined(CONFIG_N1A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 static struct timer_list poweroff_keypad_timer;
 static void poweroff_keypad_timer_handler(unsigned long data)
 {
@@ -608,6 +601,29 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	unsigned int type = button->type ?: EV_KEY;
 	struct irq_desc *desc = irq_to_desc(gpio_to_irq(button->gpio));
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0) ^ button->active_low;
+
+#ifdef CONFIG_FAST_BOOT
+		/*Fake pwr off control*/
+		if (fake_shut_down || fake_pressed) {
+			if (button->code == KEY_POWER) {
+				if (!!state) {
+					printk(KERN_DEBUG"[Keys] start fake check\n");
+					fake_pressed = true;
+					if (!wake_lock_active(&fake_lock))
+						wake_lock(&fake_lock);
+					mod_timer(&fake_timer,
+						jiffies + msecs_to_jiffies(500));
+				} else {
+					printk(KERN_DEBUG"[Keys] end fake checkPwr 0\n");
+					fake_pressed = false;
+					if (wake_lock_active(&fake_lock))
+						wake_unlock(&fake_lock);
+				}
+			}
+			bdata->wakeup = false;
+			return ;
+		}
+#endif
 
 	if (type == EV_ABS) {
 		if (state) {
@@ -649,6 +665,10 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 #ifdef KEY_BOOSTER
 		if (button->code == KEY_HOMEPAGE)
 			gpio_key_set_dvfs_lock(bdata, !!state);
+#endif
+#ifdef CONFIG_INPUT_BOOSTER
+		if (button->code == KEY_HOMEPAGE)
+			INPUT_BOOSTER_SEND_EVENT(KEY_HOMEPAGE, !!state);
 #endif
 	}
 }
@@ -866,13 +886,8 @@ static void flip_cover_work(struct work_struct *work)
 
 	second = gpio_get_value(ddata->gpio_flip_cover);
 
-#ifdef CONFIG_W1_SLAVE_DS28EL15
-	printk(KERN_DEBUG "[keys] %s : %d, Verification(%d)\n",
-		__func__, ddata->flip_cover, verification);
-#else
 	printk(KERN_DEBUG "keys:%s #2 : %d\n",
 		__func__, second);
-#endif
 
 	if(first == second && ddata->flip_cover != first) {
 		ddata->flip_cover = first;
@@ -891,15 +906,8 @@ static void flip_cover_work(struct work_struct *work)
 
 	first = gpio_get_value(ddata->gpio_flip_cover);
 
-#ifdef CONFIG_W1_SLAVE_DS28EL15
-	printk(KERN_DEBUG "[keys] %s : %d, Verification(%d)\n",
-		__func__, ddata->flip_cover, verification);
-
-	if (check_verification_status() != 0 && first == 0)	return;
-#else
 	printk(KERN_DEBUG "keys:%s #1 : %d\n",
 		__func__, first);
-#endif
 
 	if(ddata->flip_cover != first) {
 		ddata->flip_cover = first;
@@ -965,12 +973,18 @@ static void gpio_keys_close(struct input_dev *input)
 #ifdef CONFIG_SENSORS_HALL
 //	cancel_delayed_work_sync(&ddata->flip_cover_dwork);
 #endif
-#ifdef KEY_BOOSTER
+#if defined (KEY_BOOSTER) || defined (CONFIG_INPUT_BOOSTER)
 	for (i = 0; i < ddata->n_buttons; i++) {
 		struct gpio_button_data *bdata = &ddata->data[i];
 
-		if (bdata->button->code == KEY_HOMEPAGE)
+		if (bdata->button->code == KEY_HOMEPAGE) {
+#ifdef CONFIG_INPUT_BOOSTER
+			INPUT_BOOSTER_SEND_EVENT(KEY_HOMEPAGE,
+				BOOSTER_MODE_FORCE_OFF);
+#else
 			gpio_key_set_dvfs_lock(bdata, 2);
+#endif
+		}
 	}
 #endif
 }
@@ -1229,10 +1243,18 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 		gpio_keys_report_event(&ddata->data[i]);
 	input_sync(input);
 
+#ifdef CONFIG_FAST_BOOT
+	/*Fake power off*/
+	input_set_capability(input, EV_KEY, KEY_FAKE_PWR);
+	setup_timer(&fake_timer, gpio_keys_fake_off_check,
+			(unsigned long)input);
+	wake_lock_init(&fake_lock, WAKE_LOCK_SUSPEND, "fake_lock");
+#endif
+
 	device_init_wakeup(&pdev->dev, wakeup);
 
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-#if defined(CONFIG_N1A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 	if(set_auto_power_on_off_powerkey_val) {
 		init_timer(&poweroff_keypad_timer);
 		poweroff_keypad_timer.function = poweroff_keypad_timer_handler;
@@ -1314,7 +1336,7 @@ static int gpio_keys_suspend(struct device *dev)
 		}
 #ifdef CONFIG_SENSORS_HALL
 		enable_irq_wake(ddata->irq_flip_cover);
-#endif		
+#endif
 	}
 
 	return 0;

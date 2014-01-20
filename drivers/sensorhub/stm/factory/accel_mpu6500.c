@@ -86,6 +86,10 @@ int set_accel_cal(struct ssp_data *data)
 	accel_cal[2] = data->accelcal.z;
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return -ENOMEM;
+	}
 	msg->cmd = MSG2SSP_AP_MCU_SET_ACCEL_CAL;
 	msg->length = 6;
 	msg->options = AP2HUB_WRITE;
@@ -107,17 +111,19 @@ int set_accel_cal(struct ssp_data *data)
 
 static int enable_accel_for_cal(struct ssp_data *data)
 {
-	u8 uBuf[2] = {0, 10};
+	u8 uBuf[4] = { 0, };
+	s32 dMsDelay = get_msdelay(data->adDelayBuf[ACCELEROMETER_SENSOR]);
+	memcpy(&uBuf[0], &dMsDelay, 4);
 
 	if (atomic_read(&data->aSensorEnable) & (1 << ACCELEROMETER_SENSOR)) {
 		if (get_msdelay(data->adDelayBuf[ACCELEROMETER_SENSOR]) != 10) {
 			send_instruction(data, CHANGE_DELAY,
-				ACCELEROMETER_SENSOR, uBuf, 2);
+				ACCELEROMETER_SENSOR, uBuf, 4);
 			return SUCCESS;
 		}
 	} else {
 		send_instruction(data, ADD_SENSOR,
-			ACCELEROMETER_SENSOR, uBuf, 2);
+			ACCELEROMETER_SENSOR, uBuf, 4);
 	}
 
 	return FAIL;
@@ -125,17 +131,17 @@ static int enable_accel_for_cal(struct ssp_data *data)
 
 static void disable_accel_for_cal(struct ssp_data *data, int iDelayChanged)
 {
-	u8 uBuf[2] = {0, 10};
+	u8 uBuf[4] = { 0, };
+	s32 dMsDelay = get_msdelay(data->adDelayBuf[ACCELEROMETER_SENSOR]);
+	memcpy(&uBuf[0], &dMsDelay, 4);
 
 	if (atomic_read(&data->aSensorEnable) & (1 << ACCELEROMETER_SENSOR)) {
-		uBuf[1] = get_msdelay(data->adDelayBuf[ACCELEROMETER_SENSOR]);
-		uBuf[0] = get_delay_cmd(uBuf[1]);
 		if (iDelayChanged)
 			send_instruction(data, CHANGE_DELAY,
-				ACCELEROMETER_SENSOR, uBuf, 2);
+				ACCELEROMETER_SENSOR, uBuf, 4);
 	} else {
 		send_instruction(data, REMOVE_SENSOR,
-			ACCELEROMETER_SENSOR, uBuf, 2);
+			ACCELEROMETER_SENSOR, uBuf, 4);
 	}
 }
 
@@ -274,7 +280,7 @@ static ssize_t accel_reactive_alert_store(struct device *dev,
 		msg = kzalloc(sizeof(*msg), GFP_KERNEL);
 		if (msg == NULL) {
 			pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
-			goto exit;
+			return -ENOMEM;
 		}
 		msg->cmd = ACCELEROMETER_FACTORY;
 		msg->length = 1;

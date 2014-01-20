@@ -445,17 +445,18 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 	if (ret) {
 		dev_err(&client->dev,
 			"%s : Failed to create_attrs\n", __func__);
-		goto err_irq;
+		goto err_create_attr;
 	}
 
 	dev_dbg(&client->dev,
 		"%s: SEC Fuelgauge Driver Loaded\n", __func__);
 	return 0;
 
+err_create_attr:
+	wake_lock_destroy(&fuelgauge->fuel_alert_wake_lock);
 err_irq:
 	if (fuelgauge->irq)
 		free_irq(fuelgauge->irq, fuelgauge);
-	wake_lock_destroy(&fuelgauge->fuel_alert_wake_lock);
 err_supply_unreg:
 	power_supply_unregister(&fuelgauge->psy_fg);
 err_free:

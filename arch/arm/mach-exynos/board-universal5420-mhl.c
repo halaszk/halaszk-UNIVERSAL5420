@@ -40,8 +40,13 @@
 
 static bool mhl_power_on;
 
-#define MHL_DEFAULT_SWING 0x27 /*0x2D*/
-
+#if defined(CONFIG_HA)
+#define MHL_DEFAULT_SWING 0x27 /*default value is 0x2D*/
+#elif defined(CONFIG_N2A_WIFI)
+#define MHL_DEFAULT_SWING 0x2D
+#else
+#define MHL_DEFAULT_SWING 0x25
+#endif
 
 static void sii8240_cfg_gpio(void)
 {
@@ -74,12 +79,19 @@ static void sii8240_power_onoff(bool on)
 	struct regulator *regulator1_8, *regulator3_3, *regulator1_2;
 
 	regulator1_8 = regulator_get(NULL, MHL_LDO1_8);
-	regulator3_3 = regulator_get(NULL, MHL_LDO3_3);
-	regulator1_2 = regulator_get(NULL, MHL_LDO1_2);
-	if ((IS_ERR(regulator1_8)) || (IS_ERR(regulator3_3))
-		|| (IS_ERR(regulator1_2))) {
-		pr_err("%s : regulato is not available", __func__);
+	if (IS_ERR(regulator1_8)) {
+		pr_err("%s : regulator 1.8 is not available", __func__);
 		return;
+	}
+	regulator3_3 = regulator_get(NULL, MHL_LDO3_3);
+	if (IS_ERR(regulator3_3)) {
+		pr_err("%s : regulator 3.3 is not available", __func__);
+		goto err_exit0;
+	}
+	regulator1_2 = regulator_get(NULL, MHL_LDO1_2);
+	if (IS_ERR(regulator1_2)) {
+		pr_err("%s : regulator 1.2 is not available", __func__);
+		goto err_exit1;
 	}
 
 	if (mhl_power_on == on) {
@@ -111,10 +123,12 @@ static void sii8240_power_onoff(bool on)
 
 		gpio_set_value(GPIO_MHL_RST, 0);
 	}
-	regulator_put(regulator3_3);
-	regulator_put(regulator1_8);
-	regulator_put(regulator1_2);
 
+	regulator_put(regulator1_2);
+err_exit1:
+	regulator_put(regulator3_3);
+err_exit0:
+	regulator_put(regulator1_8);
 }
 
 static void sii8240_reset(void)
@@ -130,62 +144,21 @@ static void sii8240_reset(void)
 	usleep_range(10000, 20000);
 }
 
-#ifdef __MHL_NEW_CBUS_MSC_CMD__
-static void sii9234_vbus_present(bool on, int value)
+static bool sii8240_vbus_present(void)
 {
-	struct power_supply *psy = power_supply_get_by_name(PSY_CHG_NAME);
-	union power_supply_propval power_value;
-	u8 intval;
-	pr_info("%s: on(%d), vbus type(%d)\n", __func__, on, value);
-
-	if (!psy) {
-		pr_err("%s: fail to get %s psy\n", __func__, PSY_CHG_NAME);
-		return;
-	}
-
-	power_value.intval = ((POWER_SUPPLY_TYPE_MISC << 4) |
-			(on << 2) | (value << 0));
-
-	pr_info("%s: value.intval(0x%x)\n", __func__, power_value.intval);
-	psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &power_value);
-
-	return;
-}
-#endif
-
-#ifdef CONFIG_SAMSUNG_MHL_UNPOWERED
-static int sii9234_get_vbus_status(void)
-{
-	struct power_supply *psy = power_supply_get_by_name(PSY_BAT_NAME);
 	union power_supply_propval value;
-	u8 intval;
 
-	if (!psy) {
-		pr_err("%s: fail to get %s psy\n", __func__, PSY_BAT_NAME);
-		return -1;
-	}
+	psy_do_property("sec-charger", get, POWER_SUPPLY_PROP_ONLINE, value);
+	pr_info("sii8240: sec-charger : %d\n", value.intval);
 
-	psy->get_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
-	pr_info("%s: value.intval(0x%x)\n", __func__, value.intval);
-
-	return (int)value.intval;
+	if (value.intval == POWER_SUPPLY_TYPE_BATTERY ||
+			value.intval == POWER_SUPPLY_TYPE_WPC)
+		return false;
+	else
+		return true;
 }
 
-static void sii9234_otg_control(bool onoff)
-{
-	otg_control(onoff);
-
-	gpio_request(GPIO_OTG_EN, "USB_OTG_EN");
-	gpio_direction_output(GPIO_OTG_EN, onoff);
-	gpio_free(GPIO_OTG_EN);
-
-	pr_info("[MHL] %s: onoff =%d\n", __func__, onoff);
-
-	return;
-}
-#endif
-#ifndef CONFIG_MACH_V1
-static void muic_mhl_cb(bool otg_enable, int plim)
+static void sii8240_charger_mhl_cb(bool otg_enable, int plim)
 {
 	union power_supply_propval value;
 	int i, ret = 0;
@@ -205,7 +178,7 @@ static void muic_mhl_cb(bool otg_enable, int plim)
 	default:
 		break;
 	}
-	pr_info("muic_mhl_cb:otg_enable=%d, plim=%d\n", otg_enable, plim);
+	pr_info("sii8240:otg_enable=%d, plim=%d\n", otg_enable, plim);
 
 	if (plim == 0x00) {
 		pr_info("TA charger 500mA\n");
@@ -223,11 +196,7 @@ static void muic_mhl_cb(bool otg_enable, int plim)
 		current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 
 	if (otg_enable) {
-		psy_do_property("sec-charger", get,
-					POWER_SUPPLY_PROP_ONLINE, value);
-		pr_info("sec-charger : %d\n", value.intval);
-		if (value.intval == POWER_SUPPLY_TYPE_BATTERY ||
-				value.intval == POWER_SUPPLY_TYPE_WPC) {
+		if(!sii8240_vbus_present()) {
 			if (!lpcharge) {
 				otg_control(true);
 				current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
@@ -257,7 +226,7 @@ static void muic_mhl_cb(bool otg_enable, int plim)
 			__func__, ret);
 	}
 }
-#endif
+
 static BLOCKING_NOTIFIER_HEAD(acc_notifier);
 
 int acc_register_notifier(struct notifier_block *nb)
@@ -280,21 +249,8 @@ static struct sii8240_platform_data sii8240_pdata = {
 	.mhl_sel = NULL,
 	.hw_onoff = sii8240_power_onoff,
 	.hw_reset = sii8240_reset,
-	.enable_vbus = NULL,
-#if defined(__MHL_NEW_CBUS_MSC_CMD__)
-	.vbus_present = sii9234_vbus_present,
-#else
-	.vbus_present = NULL,
-#endif
-#ifdef CONFIG_SAMSUNG_MHL_UNPOWERED
-	.get_vbus_status = sii9234_get_vbus_status,
-	.sii9234_otg_control = sii9234_otg_control,
-#endif
-#ifdef CONFIG_MACH_V1
-	.sii8240_muic_cb = NULL,
-#else
-	.sii8240_muic_cb = muic_mhl_cb,
-#endif
+	.vbus_present = sii8240_vbus_present,
+	.charger_mhl_cb = sii8240_charger_mhl_cb,
 	.reg_notifier   = acc_register_notifier,
 	.unreg_notifier = acc_unregister_notifier,
 

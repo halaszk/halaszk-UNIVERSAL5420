@@ -31,4 +31,15 @@ config IR_REMOCON_FPGA
 	  Lattice FPGA can support IR LED.
 	  To compile this driver as a module, choose M here.
 	  If unsure, say N.
+
+config ICE4_TWO_FUNC_INPUT
+	tristate "this feature allows spi for i2c"
+	depends on ICE4_FPGA
+	default n
+	help
+	  This is a configuration for input port setting.
+	  Lattice FPGA can support this configuration
+	  To compile this driver as a module, choose M here.
+	  If unsure, say N.
+
 endmenu

@@ -14,9 +14,84 @@
  */
 #include "ssp.h"
 
+#include "../../staging/iio/iio.h"
+#include "../../staging/iio/events.h"
+#include "../../staging/iio/sysfs.h"
+#include "../../staging/iio/buffer.h"
+#include "../../staging/iio/types.h"
+
 /*************************************************************************/
 /* SSP Kernel -> HAL input evnet function                                */
 /*************************************************************************/
+#define IIO_BUFFER_12_BYTES         20 /* 12 + timestamp 8*/
+#define IIO_BUFFER_6_BYTES         14
+#define IIO_BUFFER_1_BYTES			9
+#define IIO_BUFFER_17_BYTES			25
+
+/* data header defines */
+static int ssp_push_17bytes_buffer(struct iio_dev *indio_dev,
+							u64 t, int *q)
+{
+	u8 buf[IIO_BUFFER_17_BYTES];
+	int i;
+
+	for (i = 0; i < 4; i++)
+		memcpy(buf + 4 * i, &q[i], sizeof(q[i]));
+	buf[16] = (u8)q[5];
+	memcpy(buf + 17, &t, sizeof(t));
+	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+
+	return 0;
+}
+
+static int ssp_push_12bytes_buffer(struct iio_dev *indio_dev, u64 t,
+									int *q)
+{
+	u8 buf[IIO_BUFFER_12_BYTES];
+	int i;
+
+	for (i = 0; i < 3; i++)
+		memcpy(buf + 4 * i, &q[i], sizeof(q[i]));
+	memcpy(buf + 12, &t, sizeof(t));
+	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+
+	return 0;
+}
+
+static int ssp_push_6bytes_buffer(struct iio_dev *indio_dev,
+							u64 t, s16 *d)
+{
+	u8 buf[IIO_BUFFER_6_BYTES];
+	int i;
+
+	for (i = 0; i < 3; i++)
+		memcpy(buf + i * 2, &d[i], sizeof(d[i]));
+
+	memcpy(buf + 6, &t, sizeof(t));
+	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+
+	return 0;
+}
+
+static int ssp_push_1bytes_buffer(struct iio_dev *indio_dev,
+							u64 t, u8 *d)
+{
+	u8 buf[IIO_BUFFER_1_BYTES];
+
+	memcpy(buf, d, sizeof(u8));
+	memcpy(buf + 1, &t, sizeof(t));
+	iio_push_to_buffer(indio_dev->buffer, buf, 0);
+
+	return 0;
+}
+
+void report_meta_data(struct ssp_data *data, struct sensor_value *s)
+{
+	input_report_rel(data->meta_input_dev, REL_DIAL, s->meta_data.what);
+	input_report_rel(data->meta_input_dev, REL_HWHEEL, s->meta_data.sensor + 1);
+	input_sync(data->meta_input_dev);
+}
+
 void convert_acc_data(s16 *iValue)
 {
 	if (*iValue > MAX_ACCEL_2G)
@@ -25,74 +100,48 @@ void convert_acc_data(s16 *iValue)
 
 void report_acc_data(struct ssp_data *data, struct sensor_value *accdata)
 {
+	s16 accel_buf[3];
+
 	data->buf[ACCELEROMETER_SENSOR].x = accdata->x;
 	data->buf[ACCELEROMETER_SENSOR].y = accdata->y;
 	data->buf[ACCELEROMETER_SENSOR].z = accdata->z;
 
-	input_report_rel(data->acc_input_dev, REL_X,
-		data->buf[ACCELEROMETER_SENSOR].x);
-	input_report_rel(data->acc_input_dev, REL_Y,
-		data->buf[ACCELEROMETER_SENSOR].y);
-	input_report_rel(data->acc_input_dev, REL_Z,
-		data->buf[ACCELEROMETER_SENSOR].z);
-	input_sync(data->acc_input_dev);
+	accel_buf[0] = data->buf[ACCELEROMETER_SENSOR].x;
+	accel_buf[1] = data->buf[ACCELEROMETER_SENSOR].y;
+	accel_buf[2] = data->buf[ACCELEROMETER_SENSOR].z;
+
+	ssp_push_6bytes_buffer(data->accel_indio_dev, accdata->timestamp,
+		accel_buf);
 }
 
 void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 {
-	long lTemp[3] = {0,};
+	int lTemp[3] = {0,};
+
 	data->buf[GYROSCOPE_SENSOR].x = gyrodata->x;
 	data->buf[GYROSCOPE_SENSOR].y = gyrodata->y;
 	data->buf[GYROSCOPE_SENSOR].z = gyrodata->z;
 
 	if (data->uGyroDps == GYROSCOPE_DPS500) {
-		lTemp[0] = (long)data->buf[GYROSCOPE_SENSOR].x;
-		lTemp[1] = (long)data->buf[GYROSCOPE_SENSOR].y;
-		lTemp[2] = (long)data->buf[GYROSCOPE_SENSOR].z;
+		lTemp[0] = (int)data->buf[GYROSCOPE_SENSOR].x;
+		lTemp[1] = (int)data->buf[GYROSCOPE_SENSOR].y;
+		lTemp[2] = (int)data->buf[GYROSCOPE_SENSOR].z;
 	} else if (data->uGyroDps == GYROSCOPE_DPS250)	{
-		lTemp[0] = (long)data->buf[GYROSCOPE_SENSOR].x >> 1;
-		lTemp[1] = (long)data->buf[GYROSCOPE_SENSOR].y >> 1;
-		lTemp[2] = (long)data->buf[GYROSCOPE_SENSOR].z >> 1;
-	} else if (data->uGyroDps == GYROSCOPE_DPS2000)	{
-		lTemp[0] = (long)data->buf[GYROSCOPE_SENSOR].x << 2;
-		lTemp[1] = (long)data->buf[GYROSCOPE_SENSOR].y << 2;
-		lTemp[2] = (long)data->buf[GYROSCOPE_SENSOR].z << 2;
+		lTemp[0] = (int)data->buf[GYROSCOPE_SENSOR].x >> 1;
+		lTemp[1] = (int)data->buf[GYROSCOPE_SENSOR].y >> 1;
+		lTemp[2] = (int)data->buf[GYROSCOPE_SENSOR].z >> 1;
+	} else if (data->uGyroDps == GYROSCOPE_DPS2000) {
+		lTemp[0] = (int)data->buf[GYROSCOPE_SENSOR].x << 2;
+		lTemp[1] = (int)data->buf[GYROSCOPE_SENSOR].y << 2;
+		lTemp[2] = (int)data->buf[GYROSCOPE_SENSOR].z << 2;
 	} else {
-		lTemp[0] = (long)data->buf[GYROSCOPE_SENSOR].x;
-		lTemp[1] = (long)data->buf[GYROSCOPE_SENSOR].y;
-		lTemp[2] = (long)data->buf[GYROSCOPE_SENSOR].z;
+		lTemp[0] = (int)data->buf[GYROSCOPE_SENSOR].x;
+		lTemp[1] = (int)data->buf[GYROSCOPE_SENSOR].y;
+		lTemp[2] = (int)data->buf[GYROSCOPE_SENSOR].z;
 	}
 
-	input_report_rel(data->gyro_input_dev, REL_RX, lTemp[0]);
-	input_report_rel(data->gyro_input_dev, REL_RY, lTemp[1]);
-	input_report_rel(data->gyro_input_dev, REL_RZ, lTemp[2]);
-	input_sync(data->gyro_input_dev);
-}
-
-void report_gyro_uncaldata(struct ssp_data *data,
-		struct sensor_value *gyrodata)
-{
-	data->buf[UNCALIBRATED_GYRO].uncal_x = gyrodata->uncal_x;
-	data->buf[UNCALIBRATED_GYRO].uncal_y = gyrodata->uncal_y;
-	data->buf[UNCALIBRATED_GYRO].uncal_z = gyrodata->uncal_z;
-	data->buf[UNCALIBRATED_GYRO].offset_x= gyrodata->offset_x;
-	data->buf[UNCALIBRATED_GYRO].offset_y= gyrodata->offset_y;
-	data->buf[UNCALIBRATED_GYRO].offset_z= gyrodata->offset_z;
-
-	input_report_rel(data->uncal_gyro_input_dev, REL_RX,
-		data->buf[UNCALIBRATED_GYRO].uncal_x);
-	input_report_rel(data->uncal_gyro_input_dev, REL_RY,
-		data->buf[UNCALIBRATED_GYRO].uncal_y);
-	input_report_rel(data->uncal_gyro_input_dev, REL_RZ,
-		data->buf[UNCALIBRATED_GYRO].uncal_z);
-	input_report_rel(data->uncal_gyro_input_dev, REL_HWHEEL,
-		data->buf[UNCALIBRATED_GYRO].offset_x);
-	input_report_rel(data->uncal_gyro_input_dev, REL_DIAL,
-		data->buf[UNCALIBRATED_GYRO].offset_y);
-	input_report_rel(data->uncal_gyro_input_dev, REL_WHEEL,
-		data->buf[UNCALIBRATED_GYRO].offset_z);
-
-	input_sync(data->uncal_gyro_input_dev);
+	ssp_push_12bytes_buffer(data->gyro_indio_dev, gyrodata->timestamp,
+		lTemp);
 }
 
 void report_geomagnetic_raw_data(struct ssp_data *data,
@@ -105,10 +154,44 @@ void report_geomagnetic_raw_data(struct ssp_data *data,
 
 void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 {
+#ifdef SAVE_MAG_LOG
+	s16 arrTemp[9] = {0, };
+
+	arrTemp[0] = magdata->log_data[0];	// ST1 Reg
+	arrTemp[1] = (short)((magdata->log_data[3] << 8) +\
+				magdata->log_data[2]);
+	arrTemp[2] = (short)((magdata->log_data[5] << 8) +\
+				magdata->log_data[4]);
+	arrTemp[3] = (short)((magdata->log_data[7] << 8) +\
+				magdata->log_data[6]);
+	arrTemp[4] = magdata->log_data[1];	// ST2 Reg
+	arrTemp[5] = (short)((magdata->log_data[9] << 8) +\
+				magdata->log_data[8]);
+	arrTemp[6] = (short)((magdata->log_data[11] << 8) +\
+				magdata->log_data[10]);
+	arrTemp[7] = (short)((magdata->log_data[13] << 8) +\
+				magdata->log_data[12]);
+
+	/* We report data & register to HAL only when ST1 register sets to 1 */
+	if (arrTemp[0] == 1) {
+		input_report_rel(data->mag_input_dev, REL_X, arrTemp[0] + 1);
+		input_report_rel(data->mag_input_dev, REL_Y, arrTemp[1]);
+		input_report_rel(data->mag_input_dev, REL_Z, arrTemp[2]);
+		input_report_rel(data->mag_input_dev, REL_RX, arrTemp[3]);
+		input_report_rel(data->mag_input_dev, REL_RY, arrTemp[4] + 1);
+		input_report_rel(data->mag_input_dev, REL_RZ, arrTemp[5]);
+		input_report_rel(data->mag_input_dev, REL_HWHEEL, arrTemp[6]);
+		input_report_rel(data->mag_input_dev, REL_DIAL, arrTemp[7]);
+
+		input_sync(data->mag_input_dev);
+	} else {
+		pr_info("[SSP] %s, not initialised, val = %d", __func__, arrTemp[0]);
+	}
+#else
 	data->buf[GEOMAGNETIC_SENSOR].cal_x = magdata->cal_x;
 	data->buf[GEOMAGNETIC_SENSOR].cal_y = magdata->cal_y;
 	data->buf[GEOMAGNETIC_SENSOR].cal_z = magdata->cal_z;
-	data->buf[GEOMAGNETIC_SENSOR].cal_accu = magdata->cal_accu;
+	data->buf[GEOMAGNETIC_SENSOR].accuracy = magdata->accuracy;
 
 	input_report_rel(data->mag_input_dev, REL_RX,
 		data->buf[GEOMAGNETIC_SENSOR].cal_x);
@@ -117,9 +200,10 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 	input_report_rel(data->mag_input_dev, REL_RZ,
 		data->buf[GEOMAGNETIC_SENSOR].cal_z);
 	input_report_rel(data->mag_input_dev, REL_HWHEEL,
-		data->buf[GEOMAGNETIC_SENSOR].cal_accu + 1);
+		data->buf[GEOMAGNETIC_SENSOR].accuracy + 1);
 
 	input_sync(data->mag_input_dev);
+#endif
 }
 
 void report_mag_uncaldata(struct ssp_data *data, struct sensor_value *magdata)
@@ -143,31 +227,81 @@ void report_mag_uncaldata(struct ssp_data *data, struct sensor_value *magdata)
 		data->buf[GEOMAGNETIC_UNCALIB_SENSOR].offset_y);
 	input_report_rel(data->uncal_mag_input_dev, REL_WHEEL,
 		data->buf[GEOMAGNETIC_UNCALIB_SENSOR].offset_z);
-
 	input_sync(data->uncal_mag_input_dev);
 }
 
-void report_grot_vec_sensordata(struct ssp_data *data,
-	struct sensor_value *grvec_data)
+void report_uncalib_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 {
-	data->buf[GAME_ROTATION_VECTOR].quat_vec[0] = grvec_data->quat_vec[0];
-	data->buf[GAME_ROTATION_VECTOR].quat_vec[1] = grvec_data->quat_vec[1];
-	data->buf[GAME_ROTATION_VECTOR].quat_vec[2] = grvec_data->quat_vec[2];
-	data->buf[GAME_ROTATION_VECTOR].quat_vec[3] = grvec_data->quat_vec[3];
-	data->buf[GAME_ROTATION_VECTOR].vec_accu = grvec_data->vec_accu;
+	data->buf[GYRO_UNCALIB_SENSOR].uncal_x = gyrodata->uncal_x;
+	data->buf[GYRO_UNCALIB_SENSOR].uncal_y = gyrodata->uncal_y;
+	data->buf[GYRO_UNCALIB_SENSOR].uncal_z = gyrodata->uncal_z;
+	data->buf[GYRO_UNCALIB_SENSOR].offset_x = gyrodata->offset_x;
+	data->buf[GYRO_UNCALIB_SENSOR].offset_y = gyrodata->offset_y;
+	data->buf[GYRO_UNCALIB_SENSOR].offset_z = gyrodata->offset_z;
 
-	input_report_rel(data->grot_vec_input_dev, REL_RX,
-		data->buf[GAME_ROTATION_VECTOR].quat_vec[0]);
-	input_report_rel(data->grot_vec_input_dev, REL_RY,
-		data->buf[GAME_ROTATION_VECTOR].quat_vec[1]);
-	input_report_rel(data->grot_vec_input_dev, REL_RZ,
-		data->buf[GAME_ROTATION_VECTOR].quat_vec[2]);
-	input_report_rel(data->grot_vec_input_dev, REL_HWHEEL,
-		data->buf[GAME_ROTATION_VECTOR].quat_vec[3]);
-	input_report_rel(data->grot_vec_input_dev, REL_DIAL,
-		data->buf[GAME_ROTATION_VECTOR].vec_accu + 1);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_RX,
+		data->buf[GYRO_UNCALIB_SENSOR].uncal_x);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_RY,
+		data->buf[GYRO_UNCALIB_SENSOR].uncal_y);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_RZ,
+		data->buf[GYRO_UNCALIB_SENSOR].uncal_z);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_HWHEEL,
+		data->buf[GYRO_UNCALIB_SENSOR].offset_x);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_DIAL,
+		data->buf[GYRO_UNCALIB_SENSOR].offset_y);
+	input_report_rel(data->uncalib_gyro_input_dev, REL_WHEEL,
+		data->buf[GYRO_UNCALIB_SENSOR].offset_z);
+	input_sync(data->uncalib_gyro_input_dev);
+}
 
-	input_sync(data->grot_vec_input_dev);
+void report_sig_motion_data(struct ssp_data *data,
+	struct sensor_value *sig_motion_data)
+{
+	data->buf[SIG_MOTION_SENSOR].sig_motion = sig_motion_data->sig_motion;
+
+	input_report_rel(data->sig_motion_input_dev, REL_MISC,
+		data->buf[SIG_MOTION_SENSOR].sig_motion);
+	input_sync(data->sig_motion_input_dev);
+}
+
+void report_rot_data(struct ssp_data *data, struct sensor_value *rotdata)
+{
+	int rot_buf[5];
+
+	data->buf[ROTATION_VECTOR].quat_a = rotdata->quat_a;
+	data->buf[ROTATION_VECTOR].quat_b = rotdata->quat_b;
+	data->buf[ROTATION_VECTOR].quat_c = rotdata->quat_c;
+	data->buf[ROTATION_VECTOR].quat_d = rotdata->quat_d;
+
+	data->buf[ROTATION_VECTOR].acc_rot = rotdata->acc_rot;
+	rot_buf[0] = rotdata->quat_a;
+	rot_buf[1] = rotdata->quat_b;
+	rot_buf[2] = rotdata->quat_c;
+	rot_buf[3] = rotdata->quat_d;
+	rot_buf[4] = rotdata->acc_rot;
+
+	ssp_push_17bytes_buffer(data->rot_indio_dev, rotdata->timestamp,
+		rot_buf);
+}
+
+void report_game_rot_data(struct ssp_data *data, struct sensor_value *grvec_data)
+{
+	int grot_buf[5];
+
+	data->buf[GAME_ROTATION_VECTOR].quat_a = grvec_data->quat_a;
+	data->buf[GAME_ROTATION_VECTOR].quat_b = grvec_data->quat_b;
+	data->buf[GAME_ROTATION_VECTOR].quat_c = grvec_data->quat_c;
+	data->buf[GAME_ROTATION_VECTOR].quat_d = grvec_data->quat_d;
+	data->buf[GAME_ROTATION_VECTOR].acc_rot = grvec_data->acc_rot;
+
+	grot_buf[0] = grvec_data->quat_a;
+	grot_buf[1] = grvec_data->quat_b;
+	grot_buf[2] = grvec_data->quat_c;
+	grot_buf[3] = grvec_data->quat_d;
+	grot_buf[4] = grvec_data->acc_rot;
+
+	ssp_push_17bytes_buffer(data->game_rot_indio_dev, grvec_data->timestamp,
+		grot_buf);
 }
 
 void report_gesture_data(struct ssp_data *data, struct sensor_value *gesdata)
@@ -305,46 +439,42 @@ void report_prox_raw_data(struct ssp_data *data,
 	data->buf[PROXIMITY_RAW].prox[0] = proxrawdata->prox[0];
 }
 
-void report_temp_humidity_data(struct ssp_data *data,
-	struct sensor_value *temp_humi_data)
-{
-	data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[0] =
-		temp_humi_data->data[0];
-	data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[1] =
-		temp_humi_data->data[1];
-	data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[2] =
-		temp_humi_data->data[2];
-
-	/* Temperature */
-	input_report_rel(data->temp_humi_input_dev, REL_HWHEEL,
-		data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[0]);
-	/* Humidity */
-	input_report_rel(data->temp_humi_input_dev, REL_DIAL,
-		data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[1]);
-
-	input_sync(data->temp_humi_input_dev);
-	if (data->buf[TEMPERATURE_HUMIDITY_SENSOR].data[2])
-		wake_lock_timeout(&data->ssp_wake_lock, 2 * HZ);
-}
-
 void report_step_det_data(struct ssp_data *data,
 		struct sensor_value *stepdet_data)
 {
 	data->buf[STEP_DETECTOR].step_det = stepdet_data->step_det;
-
-	input_report_rel(data->step_det_input_dev, REL_MISC,
-		data->buf[STEP_DETECTOR].step_det + 1);
-	input_sync(data->step_det_input_dev);
+	ssp_push_1bytes_buffer(data->step_det_indio_dev, stepdet_data->timestamp,
+			&stepdet_data->step_det);
 }
 
-void report_sig_motion_sensordata(struct ssp_data *data,
+void report_step_cnt_data(struct ssp_data *data,
 	struct sensor_value *sig_motion_data)
 {
-	data->buf[SIGNIFICANT_MOTION].sig_motion = sig_motion_data->sig_motion;
+	data->buf[STEP_COUNTER].step_diff = sig_motion_data->step_diff;
 
-	input_report_rel(data->sig_motion_input_dev, REL_MISC,
-		data->buf[SIGNIFICANT_MOTION].sig_motion);
-	input_sync(data->sig_motion_input_dev);
+	data->step_count_total += data->buf[STEP_COUNTER].step_diff;
+
+	input_report_rel(data->step_cnt_input_dev, REL_MISC,
+		data->step_count_total + 1);
+	input_sync(data->step_cnt_input_dev);
+}
+
+void report_temp_humidity_data(struct ssp_data *data,
+	struct sensor_value *temp_humi_data)
+{
+	data->buf[TEMPERATURE_HUMIDITY_SENSOR].x = temp_humi_data->x;
+	data->buf[TEMPERATURE_HUMIDITY_SENSOR].y = temp_humi_data->y;
+	data->buf[TEMPERATURE_HUMIDITY_SENSOR].z = temp_humi_data->z;
+
+	/* Temperature */
+	input_report_rel(data->temp_humi_input_dev, REL_HWHEEL,
+		data->buf[TEMPERATURE_HUMIDITY_SENSOR].x);
+	/* Humidity */
+	input_report_rel(data->temp_humi_input_dev, REL_DIAL,
+		data->buf[TEMPERATURE_HUMIDITY_SENSOR].y);
+	input_sync(data->temp_humi_input_dev);
+	if (data->buf[TEMPERATURE_HUMIDITY_SENSOR].z)
+		wake_lock_timeout(&data->ssp_wake_lock, 2 * HZ);
 }
 
 void report_bulk_comp_data(struct ssp_data *data)
@@ -357,14 +487,6 @@ void report_bulk_comp_data(struct ssp_data *data)
 int initialize_event_symlink(struct ssp_data *data)
 {
 	int iRet = 0;
-
-	iRet = sensors_create_symlink(data->acc_input_dev);
-	if (iRet < 0)
-		goto iRet_acc_sysfs_create_link;
-
-	iRet = sensors_create_symlink(data->gyro_input_dev);
-	if (iRet < 0)
-		goto iRet_gyro_sysfs_create_link;
 
 	iRet = sensors_create_symlink(data->pressure_input_dev);
 	if (iRet < 0)
@@ -394,31 +516,31 @@ int initialize_event_symlink(struct ssp_data *data)
 	if (iRet < 0)
 		goto iRet_uncal_mag_sysfs_create_link;
 
-	iRet = sensors_create_symlink(data->step_det_input_dev);
-	if (iRet < 0)
-		goto iRet_step_det_sysfs_create_link;
-
 	iRet = sensors_create_symlink(data->sig_motion_input_dev);
 	if (iRet < 0)
 		goto iRet_sig_motion_sysfs_create_link;
 
-	iRet = sensors_create_symlink(data->uncal_gyro_input_dev);
+	iRet = sensors_create_symlink(data->uncalib_gyro_input_dev);
 	if (iRet < 0)
 		goto iRet_uncal_gyro_sysfs_create_link;
 
-	iRet = sensors_create_symlink(data->grot_vec_input_dev);
+	iRet = sensors_create_symlink(data->step_cnt_input_dev);
 	if (iRet < 0)
-		goto iRet_grot_vec_sysfs_create_link;
+		goto iRet_step_cnt_sysfs_create_link;
+
+	iRet = sensors_create_symlink(data->meta_input_dev);
+	if (iRet < 0)
+		goto iRet_meta_sysfs_create_link;
 
 	return SUCCESS;
 
-iRet_grot_vec_sysfs_create_link:
-	sensors_remove_symlink(data->uncal_gyro_input_dev);
+iRet_meta_sysfs_create_link:
+	sensors_remove_symlink(data->step_cnt_input_dev);
+iRet_step_cnt_sysfs_create_link:
+	sensors_remove_symlink(data->uncalib_gyro_input_dev);
 iRet_uncal_gyro_sysfs_create_link:
 	sensors_remove_symlink(data->sig_motion_input_dev);
 iRet_sig_motion_sysfs_create_link:
-	sensors_remove_symlink(data->step_det_input_dev);
-iRet_step_det_sysfs_create_link:
 	sensors_remove_symlink(data->uncal_mag_input_dev);
 iRet_uncal_mag_sysfs_create_link:
 	sensors_remove_symlink(data->mag_input_dev);
@@ -433,19 +555,12 @@ iRet_light_sysfs_create_link:
 iRet_gesture_sysfs_create_link:
 	sensors_remove_symlink(data->pressure_input_dev);
 iRet_prs_sysfs_create_link:
-	sensors_remove_symlink(data->gyro_input_dev);
-iRet_gyro_sysfs_create_link:
-	sensors_remove_symlink(data->acc_input_dev);
-iRet_acc_sysfs_create_link:
 	pr_err("[SSP]: %s - could not create event symlink\n", __func__);
-
 	return FAIL;
 }
 
 void remove_event_symlink(struct ssp_data *data)
 {
-	sensors_remove_symlink(data->acc_input_dev);
-	sensors_remove_symlink(data->gyro_input_dev);
 	sensors_remove_symlink(data->pressure_input_dev);
 	sensors_remove_symlink(data->gesture_input_dev);
 	sensors_remove_symlink(data->light_input_dev);
@@ -453,46 +568,212 @@ void remove_event_symlink(struct ssp_data *data)
 	sensors_remove_symlink(data->temp_humi_input_dev);
 	sensors_remove_symlink(data->mag_input_dev);
 	sensors_remove_symlink(data->uncal_mag_input_dev);
-	sensors_remove_symlink(data->step_det_input_dev);
 	sensors_remove_symlink(data->sig_motion_input_dev);
-	sensors_remove_symlink(data->uncal_gyro_input_dev);
-	sensors_remove_symlink(data->grot_vec_input_dev);
+	sensors_remove_symlink(data->uncalib_gyro_input_dev);
+	sensors_remove_symlink(data->step_cnt_input_dev);
+	sensors_remove_symlink(data->meta_input_dev);
 }
+
+static const struct iio_info accel_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec accel_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_6_BYTES*8,
+				IIO_BUFFER_6_BYTES*8, 0)
+	}
+};
+
+static const struct iio_info gyro_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec gyro_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_12_BYTES*8,
+				IIO_BUFFER_12_BYTES*8, 0)
+	}
+};
+
+static const struct iio_info game_rot_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec game_rot_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES*8,
+				IIO_BUFFER_17_BYTES*8, 0)
+	}
+};
+
+static const struct iio_info rot_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec rot_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_17_BYTES*8,
+				IIO_BUFFER_17_BYTES*8, 0)
+	}
+};
+
+static const struct iio_info step_det_info = {
+	.driver_module = THIS_MODULE,
+};
+
+static const struct iio_chan_spec step_det_channels[] = {
+	{
+		.type = IIO_TIMESTAMP,
+		.channel = -1,
+		.scan_index = 3,
+		.scan_type = IIO_ST('s', IIO_BUFFER_1_BYTES*8,
+				IIO_BUFFER_1_BYTES*8, 0)
+	}
+};
 
 int initialize_input_dev(struct ssp_data *data)
 {
 	int iRet = 0;
 
-	data->acc_input_dev = input_allocate_device();
-	if (data->acc_input_dev == NULL)
-		goto err_initialize_acc_input_dev;
+	/* Registering iio device - start */
+	data->accel_indio_dev = iio_allocate_device(0);
+	if (!data->accel_indio_dev)
+		goto err_alloc_accel;
 
-	data->acc_input_dev->name = "accelerometer_sensor";
-	input_set_capability(data->acc_input_dev, EV_REL, REL_X);
-	input_set_capability(data->acc_input_dev, EV_REL, REL_Y);
-	input_set_capability(data->acc_input_dev, EV_REL, REL_Z);
+	data->accel_indio_dev->name = "accelerometer_sensor";
+	data->accel_indio_dev->dev.parent = &data->spi->dev;
+	data->accel_indio_dev->info = &accel_info;
+	data->accel_indio_dev->channels = accel_channels;
+	data->accel_indio_dev->num_channels = ARRAY_SIZE(accel_channels);
+	data->accel_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->accel_indio_dev->currentmode = INDIO_DIRECT_MODE;
 
-	iRet = input_register_device(data->acc_input_dev);
-	if (iRet < 0) {
-		input_free_device(data->acc_input_dev);
-		goto err_initialize_acc_input_dev;
-	}
-	input_set_drvdata(data->acc_input_dev, data);
+	iRet = ssp_iio_configure_ring(data->accel_indio_dev);
+	if (iRet)
+		goto err_config_ring_accel;
 
-	data->gyro_input_dev = input_allocate_device();
-	if (data->gyro_input_dev == NULL)
-		goto err_initialize_gyro_input_dev;
+	iRet = iio_buffer_register(data->accel_indio_dev, data->accel_indio_dev->channels,
+					data->accel_indio_dev->num_channels);
+	if (iRet)
+		goto err_register_buffer_accel;
 
-	data->gyro_input_dev->name = "gyro_sensor";
-	input_set_capability(data->gyro_input_dev, EV_REL, REL_RX);
-	input_set_capability(data->gyro_input_dev, EV_REL, REL_RY);
-	input_set_capability(data->gyro_input_dev, EV_REL, REL_RZ);
-	iRet = input_register_device(data->gyro_input_dev);
-	if (iRet < 0) {
-		input_free_device(data->gyro_input_dev);
-		goto err_initialize_gyro_input_dev;
-	}
-	input_set_drvdata(data->gyro_input_dev, data);
+	iRet = iio_device_register(data->accel_indio_dev);
+	if (iRet)
+		goto err_register_device_accel;
+
+	data->gyro_indio_dev = iio_allocate_device(0);
+	if (!data->gyro_indio_dev)
+		goto err_alloc_gyro;
+
+	data->gyro_indio_dev->name = "gyro_sensor";
+	data->gyro_indio_dev->dev.parent = &data->spi->dev;
+	data->gyro_indio_dev->info = &gyro_info;
+	data->gyro_indio_dev->channels = gyro_channels;
+	data->gyro_indio_dev->num_channels = ARRAY_SIZE(gyro_channels);
+	data->gyro_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->gyro_indio_dev->currentmode = INDIO_DIRECT_MODE;
+
+	iRet = ssp_iio_configure_ring(data->gyro_indio_dev);
+	if (iRet)
+		goto err_config_ring_gyro;
+
+	iRet = iio_buffer_register(data->gyro_indio_dev, data->gyro_indio_dev->channels,
+					data->gyro_indio_dev->num_channels);
+	if (iRet)
+		goto err_register_buffer_gyro;
+
+	iRet = iio_device_register(data->gyro_indio_dev);
+	if (iRet)
+		goto err_register_device_gyro;
+
+	data->game_rot_indio_dev = iio_allocate_device(0);
+	if (!data->game_rot_indio_dev)
+		goto err_alloc_game_rot;
+
+	data->game_rot_indio_dev->name = "game_rotation_vector";
+	data->game_rot_indio_dev->dev.parent = &data->spi->dev;
+	data->game_rot_indio_dev->info = &game_rot_info;
+	data->game_rot_indio_dev->channels = game_rot_channels;
+	data->game_rot_indio_dev->num_channels = ARRAY_SIZE(game_rot_channels);
+	data->game_rot_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->game_rot_indio_dev->currentmode = INDIO_DIRECT_MODE;
+
+	iRet = ssp_iio_configure_ring(data->game_rot_indio_dev);
+	if (iRet)
+		goto err_config_ring_game_rot;
+
+	iRet = iio_buffer_register(data->game_rot_indio_dev, data->game_rot_indio_dev->channels,
+					data->game_rot_indio_dev->num_channels);
+	if (iRet)
+		goto err_register_buffer_game_rot;
+
+	iRet = iio_device_register(data->game_rot_indio_dev);
+	if (iRet)
+		goto err_register_device_game_rot;
+
+	data->rot_indio_dev = iio_allocate_device(0);
+	if (!data->rot_indio_dev)
+		goto err_alloc_rot;
+
+	data->rot_indio_dev->name = "rotation_vector_sensor";
+	data->rot_indio_dev->dev.parent = &data->spi->dev;
+	data->rot_indio_dev->info = &rot_info;
+	data->rot_indio_dev->channels = rot_channels;
+	data->rot_indio_dev->num_channels = ARRAY_SIZE(rot_channels);
+	data->rot_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->rot_indio_dev->currentmode = INDIO_DIRECT_MODE;
+
+	iRet = ssp_iio_configure_ring(data->rot_indio_dev);
+	if (iRet)
+		goto err_config_ring_rot;
+
+	iRet = iio_buffer_register(data->rot_indio_dev, data->rot_indio_dev->channels,
+					data->rot_indio_dev->num_channels);
+	if (iRet)
+		goto err_register_buffer_rot;
+
+	iRet = iio_device_register(data->rot_indio_dev);
+	if (iRet)
+		goto err_register_device_rot;
+
+	data->step_det_indio_dev= iio_allocate_device(0);
+	if (!data->step_det_indio_dev)
+		goto err_alloc_step_det;
+
+	data->step_det_indio_dev->name = "step_det_sensor";
+	data->step_det_indio_dev->dev.parent = &data->spi->dev;
+	data->step_det_indio_dev->info = &step_det_info;
+	data->step_det_indio_dev->channels = step_det_channels;
+	data->step_det_indio_dev->num_channels = ARRAY_SIZE(step_det_channels);
+	data->step_det_indio_dev->modes = INDIO_DIRECT_MODE;
+	data->step_det_indio_dev->currentmode = INDIO_DIRECT_MODE;
+
+	iRet = ssp_iio_configure_ring(data->step_det_indio_dev);
+	if (iRet)
+		goto err_config_ring_step_det;
+
+	iRet = iio_buffer_register(data->step_det_indio_dev, data->step_det_indio_dev->channels,
+					data->step_det_indio_dev->num_channels);
+	if (iRet)
+		goto err_register_buffer_step_det;
+
+	iRet = iio_device_register(data->step_det_indio_dev);
+	if (iRet)
+		goto err_register_device_step_det;
+	/* Registering iio device - end */
 
 	data->pressure_input_dev = input_allocate_device();
 	if (data->pressure_input_dev == NULL)
@@ -614,10 +895,23 @@ int initialize_input_dev(struct ssp_data *data)
 		goto err_initialize_mag_input_dev;
 
 	data->mag_input_dev->name = "geomagnetic_sensor";
+#ifdef SAVE_MAG_LOG
+	input_set_capability(data->mag_input_dev, EV_REL, REL_X);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_Y);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_Z);
 	input_set_capability(data->mag_input_dev, EV_REL, REL_RX);
 	input_set_capability(data->mag_input_dev, EV_REL, REL_RY);
 	input_set_capability(data->mag_input_dev, EV_REL, REL_RZ);
 	input_set_capability(data->mag_input_dev, EV_REL, REL_HWHEEL);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_DIAL);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_WHEEL);
+#else
+	input_set_capability(data->mag_input_dev, EV_REL, REL_RX);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_RY);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_RZ);
+	input_set_capability(data->mag_input_dev, EV_REL, REL_HWHEEL);
+#endif
+
 	iRet = input_register_device(data->mag_input_dev);
 	if (iRet < 0) {
 		input_free_device(data->mag_input_dev);
@@ -643,19 +937,6 @@ int initialize_input_dev(struct ssp_data *data)
 	}
 	input_set_drvdata(data->uncal_mag_input_dev, data);
 
-	data->step_det_input_dev = input_allocate_device();
-	if (data->step_det_input_dev == NULL)
-		goto err_initialize_step_det_input_dev;
-
-	data->step_det_input_dev->name = "step_det_sensor";
-	input_set_capability(data->step_det_input_dev, EV_REL, REL_MISC);
-	iRet = input_register_device(data->step_det_input_dev);
-	if (iRet < 0) {
-		input_free_device(data->step_det_input_dev);
-		goto err_initialize_step_det_input_dev;
-	}
-	input_set_drvdata(data->step_det_input_dev, data);
-
 	data->sig_motion_input_dev = input_allocate_device();
 	if (data->sig_motion_input_dev == NULL)
 		goto err_initialize_sig_motion_input_dev;
@@ -669,54 +950,64 @@ int initialize_input_dev(struct ssp_data *data)
 	}
 	input_set_drvdata(data->sig_motion_input_dev, data);
 
-	data->uncal_gyro_input_dev = input_allocate_device();
-	if (data->uncal_gyro_input_dev == NULL)
+	data->uncalib_gyro_input_dev = input_allocate_device();
+	if (data->uncalib_gyro_input_dev == NULL)
 		goto err_initialize_uncal_gyro_input_dev;
 
-	data->uncal_gyro_input_dev->name = "uncal_gyro_sensor";
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_RX);
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_RY);
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_RZ);
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_HWHEEL);
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_DIAL);
-	input_set_capability(data->uncal_gyro_input_dev, EV_REL, REL_WHEEL);
-	iRet = input_register_device(data->uncal_gyro_input_dev);
+	data->uncalib_gyro_input_dev->name = "uncal_gyro_sensor";
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_RX);
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_RY);
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_RZ);
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_HWHEEL);
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_DIAL);
+	input_set_capability(data->uncalib_gyro_input_dev, EV_REL, REL_WHEEL);
+	iRet = input_register_device(data->uncalib_gyro_input_dev);
 	if (iRet < 0) {
-		input_free_device(data->uncal_gyro_input_dev);
+		input_free_device(data->uncalib_gyro_input_dev);
 		goto err_initialize_uncal_gyro_input_dev;
 	}
-	input_set_drvdata(data->uncal_gyro_input_dev, data);
+	input_set_drvdata(data->uncalib_gyro_input_dev, data);
 
-	data->grot_vec_input_dev = input_allocate_device();
-	if (data->grot_vec_input_dev == NULL)
-		goto err_initialize_grot_vec_input_dev;
+	data->step_cnt_input_dev = input_allocate_device();
+	if (data->step_cnt_input_dev == NULL)
+		goto err_initialize_step_cnt_input_dev;
 
-	data->grot_vec_input_dev->name = "game_rotation_vector";
-	input_set_capability(data->grot_vec_input_dev, EV_REL, REL_RX);
-	input_set_capability(data->grot_vec_input_dev, EV_REL, REL_RY);
-	input_set_capability(data->grot_vec_input_dev, EV_REL, REL_RZ);
-	input_set_capability(data->grot_vec_input_dev, EV_REL, REL_HWHEEL);
-	input_set_capability(data->grot_vec_input_dev, EV_REL, REL_DIAL);
-	iRet = input_register_device(data->grot_vec_input_dev);
+	data->step_cnt_input_dev->name = "step_cnt_sensor";
+	input_set_capability(data->step_cnt_input_dev, EV_REL, REL_MISC);
+	iRet = input_register_device(data->step_cnt_input_dev);
 	if (iRet < 0) {
-		input_free_device(data->grot_vec_input_dev);
-		goto err_initialize_grot_vec_input_dev;
+		input_free_device(data->step_cnt_input_dev);
+		goto err_initialize_step_cnt_input_dev;
 	}
-	input_set_drvdata(data->grot_vec_input_dev, data);
+	input_set_drvdata(data->step_cnt_input_dev, data);
+
+	data->meta_input_dev= input_allocate_device();
+	if (data->meta_input_dev == NULL)
+		goto err_initialize_meta_input_dev;
+
+	data->meta_input_dev->name = "meta_event";
+	input_set_capability(data->meta_input_dev, EV_REL, REL_HWHEEL);
+	input_set_capability(data->meta_input_dev, EV_REL, REL_DIAL);
+	iRet = input_register_device(data->meta_input_dev);
+	if (iRet < 0) {
+		input_free_device(data->meta_input_dev);
+		goto err_initialize_meta_input_dev;
+	}
+	input_set_drvdata(data->meta_input_dev, data);
 
 	return SUCCESS;
 
-err_initialize_grot_vec_input_dev:
-	pr_err("[SSP]: %s - could not allocate grot vec input device\n", __func__);
-	input_unregister_device(data->uncal_gyro_input_dev);
+err_initialize_meta_input_dev:
+	pr_err("[SSP]: %s - could not allocate meta event input device\n", __func__);
+	input_unregister_device(data->step_cnt_input_dev);
+err_initialize_step_cnt_input_dev:
+	pr_err("[SSP]: %s - could not allocate step cnt input device\n", __func__);
+	input_unregister_device(data->uncalib_gyro_input_dev);
 err_initialize_uncal_gyro_input_dev:
 	pr_err("[SSP]: %s - could not allocate uncal gyro input device\n", __func__);
 	input_unregister_device(data->sig_motion_input_dev);
 err_initialize_sig_motion_input_dev:
 	pr_err("[SSP]: %s - could not allocate sig motion input device\n", __func__);
-	input_unregister_device(data->step_det_input_dev);
-err_initialize_step_det_input_dev:
-	pr_err("[SSP]: %s - could not allocate step det input device\n", __func__);
 	input_unregister_device(data->uncal_mag_input_dev);
 err_initialize_uncal_mag_input_dev:
 	pr_err("[SSP]: %s - could not allocate uncal mag input device\n", __func__);
@@ -738,19 +1029,71 @@ err_initialize_light_input_dev:
 	input_unregister_device(data->pressure_input_dev);
 err_initialize_pressure_input_dev:
 	pr_err("[SSP]: %s - could not allocate pressure input device\n", __func__);
-	input_unregister_device(data->gyro_input_dev);
-err_initialize_gyro_input_dev:
-	pr_err("[SSP]: %s - could not allocate gyro input device\n", __func__);
-	input_unregister_device(data->acc_input_dev);
-err_initialize_acc_input_dev:
-	pr_err("[SSP]: %s - could not allocate acc input device\n", __func__);
+	iio_device_unregister(data->step_det_indio_dev);
+err_register_device_step_det:
+	pr_err("[SSP]: failed to register step_det device\n");
+	iio_buffer_unregister(data->step_det_indio_dev);
+err_register_buffer_step_det:
+	pr_err("[SSP]: failed to register step_det buffer\n");
+	ssp_iio_unconfigure_ring(data->step_det_indio_dev);
+err_config_ring_step_det:
+	pr_err("[SSP]: failed to configure step_det ring buffer\n");
+	iio_free_device(data->step_det_indio_dev);
+err_alloc_step_det:
+	pr_err("[SSP]: failed to allocate memory for iio step_det device\n");
+	iio_device_unregister(data->rot_indio_dev);
+err_register_device_rot:
+	pr_err("[SSP]: failed to register rot device\n");
+	iio_buffer_unregister(data->rot_indio_dev);
+err_register_buffer_rot:
+	pr_err("[SSP]: failed to register rot buffer\n");
+	ssp_iio_unconfigure_ring(data->rot_indio_dev);
+err_config_ring_rot:
+	pr_err("[SSP]: failed to configure rot ring buffer\n");
+	iio_free_device(data->rot_indio_dev);
+err_alloc_rot:
+	pr_err("[SSP]: failed to allocate memory for iio rot device\n");
+	iio_device_unregister(data->game_rot_indio_dev);
+err_register_device_game_rot:
+	pr_err("[SSP]: failed to register game_rot device\n");
+	iio_buffer_unregister(data->game_rot_indio_dev);
+err_register_buffer_game_rot:
+	pr_err("[SSP]: failed to register game_rot buffer\n");
+	ssp_iio_unconfigure_ring(data->game_rot_indio_dev);
+err_config_ring_game_rot:
+	pr_err("[SSP]: failed to configure game_rot ring buffer\n");
+	iio_free_device(data->game_rot_indio_dev);
+err_alloc_game_rot:
+	pr_err("[SSP]: failed to allocate memory for iio game_rot device\n");
+	iio_device_unregister(data->gyro_indio_dev);
+err_register_device_gyro:
+	pr_err("[SSP]: failed to register gyro device\n");
+	iio_buffer_unregister(data->gyro_indio_dev);
+err_register_buffer_gyro:
+	pr_err("[SSP]: failed to register gyro buffer\n");
+	ssp_iio_unconfigure_ring(data->gyro_indio_dev);
+err_config_ring_gyro:
+	pr_err("[SSP]: failed to configure gyro ring buffer\n");
+	iio_free_device(data->gyro_indio_dev);
+err_alloc_gyro:
+	pr_err("[SSP]: failed to allocate memory for iio gyro device\n");
+	iio_device_unregister(data->accel_indio_dev);
+err_register_device_accel:
+	pr_err("[SSP]: failed to register accel device\n");
+	iio_buffer_unregister(data->accel_indio_dev);
+err_register_buffer_accel:
+	pr_err("[SSP]: failed to register accel buffer\n");
+	ssp_iio_unconfigure_ring(data->accel_indio_dev);
+err_config_ring_accel:
+	pr_err("[SSP]: failed to configure accel ring buffer\n");
+	iio_free_device(data->accel_indio_dev);
+err_alloc_accel:
+	pr_err("[SSP]: failed to allocate memory for iio accel device\n");
 	return ERROR;
 }
 
 void remove_input_dev(struct ssp_data *data)
 {
-	input_unregister_device(data->acc_input_dev);
-	input_unregister_device(data->gyro_input_dev);
 	input_unregister_device(data->pressure_input_dev);
 	input_unregister_device(data->gesture_input_dev);
 	input_unregister_device(data->light_input_dev);
@@ -758,8 +1101,8 @@ void remove_input_dev(struct ssp_data *data)
 	input_unregister_device(data->temp_humi_input_dev);
 	input_unregister_device(data->mag_input_dev);
 	input_unregister_device(data->uncal_mag_input_dev);
-	input_unregister_device(data->step_det_input_dev);
 	input_unregister_device(data->sig_motion_input_dev);
-	input_unregister_device(data->uncal_gyro_input_dev);
-	input_unregister_device(data->grot_vec_input_dev);
+	input_unregister_device(data->uncalib_gyro_input_dev);
+	input_unregister_device(data->step_cnt_input_dev);
+	input_unregister_device(data->meta_input_dev);
 }

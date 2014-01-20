@@ -11,7 +11,11 @@
 #define	TK_REGULATOR_NAME	"vtouch_1.8v"
 
 /* LDO Regulator */
+#ifdef CONFIG_CHAGALL
+#define	TK_LED_REGULATOR_NAME	"key_led_3.3v"
+#else
 #define	TK_LED_REGULATOR_NAME	"vtouch_3.3v"
+#endif
 
 /* LED LDO Type*/
 #define LED_LDO_WITH_REGULATOR

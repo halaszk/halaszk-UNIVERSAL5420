@@ -140,6 +140,10 @@ ssize_t mcu_factorytest_store(struct device *dev,
 
 	if (sysfs_streq(buf, "1")) {
 		msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+		if (msg == NULL) {
+			pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+			return -ENOMEM;
+		}
 		msg->cmd = MCU_FACTORY;
 		msg->length = 5;
 		msg->options = AP2HUB_READ;
@@ -198,6 +202,10 @@ ssize_t mcu_sleep_factorytest_store(struct device *dev,
 
 	if (sysfs_streq(buf, "1")) {
 		msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+		if (msg == NULL) {
+			pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+			return -ENOMEM;
+		}
 		msg->cmd = MCU_SLEEP_FACTORY;
 		msg->length = FACTORY_DATA_MAX;
 		msg->options = AP2HUB_READ;
@@ -266,9 +274,9 @@ exit:
 		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
 		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
 		fsb[PROXIMITY_SENSOR].prox[0], fsb[PROXIMITY_SENSOR].prox[1],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[2],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].x,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].y,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].z,
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w
 #ifdef CONFIG_SENSORS_SSP_MAX88921
@@ -295,6 +303,6 @@ exit:
 //#endif
 		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
 		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1]);
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].x,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].y);
 }

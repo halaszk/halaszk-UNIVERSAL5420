@@ -134,8 +134,8 @@ static void lp855x_pwm_ctrl(struct lp855x *lp, int br, int max_br)
 	if (br <= 0) {
 		pwm_config(lp->pwm, 0, period);
 		pwm_disable(lp->pwm);
-	}
-	else {
+		lp->pre_duty = 0;
+	} else {
 		if (br < lp->min_brightness)
 			br = lp->min_brightness;
 
@@ -151,18 +151,18 @@ static void lp855x_pwm_ctrl(struct lp855x *lp, int br, int max_br)
 
 		if(abs(lp->pre_duty - duty) > (10000000/period*5)) {
 			lp->pre_duty = duty;
-		pwm_config(lp->pwm, duty, period);
-		pwm_enable(lp->pwm);
+			pwm_config(lp->pwm, duty, period);
+			pwm_enable(lp->pwm);
+		} else {
+			dev_info(lp->dev, "pwm is not changed pre_duty =%d, duty = %d\n", lp->pre_duty, duty);
 		}
-		else
-			dev_dbg(lp->dev, "pwm is not changed pre_duty =%d, duty = %d\n", lp->pre_duty, duty);
-		
-
-#ifdef CONFIG_LCD_LSL122DL01
-		duty = (duty*100) / period;
-		secfb_notifier_call_chain(SECFB_EVENT_BL_UPDATE, &duty);
-#endif
 	}
+#ifdef CONFIG_LCD_LSL122DL01
+	duty = (duty*100) / period;
+	if (duty == 0 && br > 0)
+		duty = 1;
+	secfb_notifier_call_chain(SECFB_EVENT_BL_UPDATE, &duty);
+#endif
 }
 
 static int lp855x_bl_update_status(struct backlight_device *bl)

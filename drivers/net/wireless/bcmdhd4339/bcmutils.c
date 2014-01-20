@@ -20,7 +20,7 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
- * $Id: bcmutils.c 412804 2013-07-16 16:26:39Z $
+ * $Id: bcmutils.c 427979 2013-10-07 08:35:57Z $
  */
 
 #include <bcm_cfg.h>
@@ -1024,6 +1024,21 @@ bcm_ether_atoe(const char *p, struct ether_addr *ea)
 	}
 
 	return (i == 6);
+}
+
+int
+bcm_atoipv4(const char *p, struct ipv4_addr *ip)
+{
+
+	int i = 0;
+	char *c;
+	for (;;) {
+		ip->addr[i++] = (uint8)bcm_strtoul(p, &c, 0);
+		if (*c++ != '.' || i == IPV4_ADDR_LEN)
+			break;
+		p = c;
+	}
+	return (i == IPV4_ADDR_LEN);
 }
 #endif	/* !BCMROMOFFLOAD_EXCLUDE_BCMUTILS_FUNCS */
 

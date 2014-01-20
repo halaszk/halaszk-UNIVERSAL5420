@@ -143,6 +143,7 @@ static int max77802_i2c_probe(struct i2c_client *i2c,
 	max77802->irq_gpio = pdata->irq_gpio;
 	max77802->irq_base = pdata->irq_base;
 	max77802->wtsr_smpl = pdata->wtsr_smpl;
+	max77802->jigon_ops = pdata->jigon_ops;
 
 	mutex_init(&max77802->iolock);
 

@@ -29,6 +29,8 @@
 #include <mach/sysmmu.h>
 #include <mach/regs-clock.h>
 
+#include <mach/sec_debug.h>
+
 #define clk_fin_rpll clk_ext_xtal_mux
 #define clk_fin_spll clk_ext_xtal_mux
 
@@ -322,8 +324,13 @@ static int exynos5_v_epll_ctrl(struct clk *clk, int enable)
 
 static int exynos5_v_vpll_ctrl(struct clk *clk, int enable)
 {
-	pr_info("VPLL is %s\n", enable ? "on" : "off");
-	return s5p_gatectrl(EXYNOS5_VPLL_CON0, clk, enable);
+	int ret = 0;
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"VPLL is %s ++++", enable ? "on" : "off");
+	ret = s5p_gatectrl(EXYNOS5_VPLL_CON0, clk, enable);
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"VPLL is %s ---", enable ? "on" : "off");
+	return ret;
 }
 
 static int exynos5_v_ipll_ctrl(struct clk *clk, int enable)
@@ -2504,13 +2511,6 @@ static struct clk exynos5420_init_clocks[] = {
 		.enable         = exynos5420_clksrc_mask_disp1_0_ctrl,
 		.ctrlbit        = (1 << 21),
 	}, {
-		.name		= "dp",
-#ifdef CONFIG_S5P_DP
-		.devname	= "s5p-dp",
-#endif
-		.enable		= exynos5420_clk_ip_disp1_ctrl,
-		.ctrlbit	= (1 << 4),
-	}, {
 		.name		= "axi_disp1",
 		.enable		= exynos5420_clk_bus_disp1_ctrl,
 		.parent		= &exynos5420_aclk_300_disp1.clk,
@@ -3006,9 +3006,7 @@ static struct clk exynos5420_init_clocks_off[] = {
 #ifndef CONFIG_S5P_DP
 	}, {
 		.name		= "dp",
-#ifdef CONFIG_S5P_DP
 		.devname	= "s5p-dp",
-#endif
 		.enable		= exynos5420_clk_ip_disp1_ctrl,
 		.ctrlbit	= (1 << 4),
 #endif
@@ -3098,6 +3096,7 @@ static struct clksrc_clk exynos5420_clksrcs_off[] = {
 		.sources = &exynos5420_clkset_group,
 		.reg_src = { .reg = EXYNOS5_CLKSRC_DISP1_0, .shift = 16, .size = 3 },
 		.reg_div = { .reg = EXYNOS5_CLKDIV_DISP1_0, .shift = 16, .size = 8 },
+#if !defined(CONFIG_FB_MDNIE_PWM) && !defined(CONFIG_FB_DBLC_PWM)
 	}, {
 		.clk	= {
 			.name		= "sclk_mdnie_pwm1",
@@ -3107,6 +3106,7 @@ static struct clksrc_clk exynos5420_clksrcs_off[] = {
 		.sources = &exynos5420_clkset_group,
 		.reg_src = { .reg = EXYNOS5_CLKSRC_DISP1_0, .shift = 12, .size = 3 },
 		.reg_div = { .reg = EXYNOS5_CLKDIV_DISP1_0, .shift = 8, .size = 8 },
+#endif
 	}, {
 		.clk	= {
 			.name		= "sclk_usbdrd30",
@@ -3218,6 +3218,18 @@ static struct clksrc_clk exynos5420_clksrcs[] = {
 			.ctrlbit	= (1 << 8),
 		},
 		.reg_div = { .reg = EXYNOS5_CLKDIV_DISP1_0, .shift = 4, .size = 4 },
+#if defined(CONFIG_FB_MDNIE_PWM) || defined(CONFIG_FB_DBLC_PWM)
+	}, {
+		.clk	= {
+			.name		= "sclk_mdnie_pwm1",
+			.enable		= exynos5420_clksrc_mask_disp1_0_ctrl,
+			.ctrlbit	= (1 << 12),
+		},
+		.sources = &exynos5420_clkset_group,
+		.reg_src = { .reg = EXYNOS5_CLKSRC_DISP1_0, .shift = 12, .size = 3 },
+		.reg_div = { .reg = EXYNOS5_CLKDIV_DISP1_0, .shift = 8, .size = 8 },
+#endif
+
 	}, {
 		.clk	= {
 			.name		= "sclk_usbdrd30",

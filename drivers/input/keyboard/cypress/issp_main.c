@@ -625,8 +625,9 @@ void ErrorTrap(unsigned char bErrorNumber)
 
 int ISSP_main(struct touchkey_i2c *tkey_i2c)
 {
+#ifdef RESET_MODE
 	unsigned long flags;
-
+#endif
 	issp_tkey_i2c = tkey_i2c;
 
 	printk(KERN_DEBUG"touchkey:%s\n", __func__);
@@ -666,7 +667,7 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	fIsError = fXRESInitializeTargetForISSP();
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 	/*INTFREE(); */
 #else
@@ -676,7 +677,7 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	fIsError = fPowerCycleInitializeTargetForISSP();
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 	/*INTFREE(); */
 #endif				/* RESET_MODE */
@@ -695,7 +696,7 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	fIsError = fVerifySiliconID();
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 #endif
 
@@ -710,7 +711,7 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	/*local_irq_save(flags);*/
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 	/*INTFREE(); */
 	/*local_irq_restore(flags);*/
@@ -741,12 +742,12 @@ this data should come from the HEX output of PSoC Designer.*/
 			fIsError = fSyncEnable();
 			if (fIsError) {
 				ErrorTrap(fIsError);
-				return fIsError;
+				return -fIsError;
 			}
 			fIsError = fReadWriteSetup();
 			if (fIsError) {
 				ErrorTrap(fIsError);
-				return fIsError;
+				return -fIsError;
 			}
 #endif
 			/*firmware read.
@@ -763,14 +764,14 @@ this data should come from the HEX output of PSoC Designer.*/
 				(unsigned char)iBlockCounter);
 			if (fIsError) {
 				ErrorTrap(fIsError);
-				return fIsError;
+				return -fIsError;
 			}
 			/*PTJ: READ-STATUS after PROGRAM-AND-VERIFY */
 #ifdef CY8C20x66
 			fIsError = fReadStatus();
 			if (fIsError) {
 				ErrorTrap(fIsError);
-				return fIsError;
+				return -fIsError;
 			}
 #endif
 			/*INTFREE(); */
@@ -852,25 +853,25 @@ this data should come from the HEX output of PSoC Designer.*/
 		fIsError = fSyncEnable();
 		if (fIsError) {
 			ErrorTrap(fIsError);
-			return fIsError;
+			return -fIsError;
 		}
 		fIsError = fReadWriteSetup();
 		if (fIsError) {
 			ErrorTrap(fIsError);
-			return fIsError;
+			return -fIsError;
 		}
 #endif
 		/* Load one bank of security data from hex file into buffer */
 		fIsError = fLoadSecurityData(bBankCounter);
 		if (fIsError) {
 			ErrorTrap(fIsError);
-			return fIsError;
+			return -fIsError;
 		}
 		/* Secure one bank of the target flash */
 		fIsError = fSecureTargetFlash();
 		if (fIsError) {
 			ErrorTrap(fIsError);
-			return fIsError;
+			return -fIsError;
 		}
 	}
 	/*INTFREE(); */
@@ -888,13 +889,13 @@ this data should come from the HEX output of PSoC Designer.*/
 	fIsError = fLoadSecurityData(bBankCounter);
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 #ifdef CY8C20x66
 	fIsError = fReadSecurity();
 	if (fIsError) {
 		ErrorTrap(fIsError);
-		return fIsError;
+		return -fIsError;
 	}
 #endif
 	/*INTFREE(); */
@@ -911,7 +912,7 @@ this data should come from the HEX output of PSoC Designer.*/
 		fIsError = fAccTargetBankChecksum(&iChecksumTarget);
 		if (fIsError) {
 			ErrorTrap(fIsError);
-			return fIsError;
+			return -fIsError;
 		}
 	}
 
@@ -926,7 +927,7 @@ this data should come from the HEX output of PSoC Designer.*/
 	if ((unsigned short)(iChecksumTarget & 0xffff) !=
 	    (unsigned short)(iChecksumData & 0xffff)) {
 		ErrorTrap(VERIFY_ERROR);
-		return fIsError;
+		return -VERIFY_ERROR;
 	}
 	/*printk(KERN_DEBUG"Doing Checksum END\n");*/
 

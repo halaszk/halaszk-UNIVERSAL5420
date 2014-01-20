@@ -195,12 +195,16 @@
 /* S5P_DP_TX_AMP_TUNING_CTL */
 #define CH3_AMP_SHIFT				(24)
 #define CH3_AMP_400_MV				(0x0 << 24)
+#define CH3_AMP_500_MV				(0x8 << 24)
 #define CH2_AMP_SHIFT				(16)
 #define CH2_AMP_400_MV				(0x0 << 16)
+#define CH2_AMP_500_MV				(0x8 << 16)
 #define CH1_AMP_SHIFT				(8)
 #define CH1_AMP_400_MV				(0x0 << 8)
+#define CH1_AMP_500_MV				(0x8 << 8)
 #define CH0_AMP_SHIFT				(0)
 #define CH0_AMP_400_MV				(0x0 << 0)
+#define CH0_AMP_500_MV				(0x8 << 0)
 
 /* S5P_DP_AUX_HW_RETRY_CTL */
 #define AUX_BIT_PERIOD_EXPECTED_DELAY(x)	(((x) & 0x7) << 8)

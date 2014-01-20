@@ -486,4 +486,8 @@ static __init int exynos_pm_domain_idle(void)
 
 	return 0;
 }
+#ifdef CONFIG_S5P_DP
+late_initcall_sync(exynos_pm_domain_idle);
+#else
 late_initcall(exynos_pm_domain_idle);
+#endif

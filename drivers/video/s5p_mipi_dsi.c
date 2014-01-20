@@ -726,7 +726,9 @@ static int s5p_mipi_dsi_set_display_mode(struct mipi_dsim_device *dsim,
 			dsim->pd->dsim_lcd_config->rgb_timing.vsync_len,
 			dsim->pd->dsim_lcd_config->rgb_timing.hsync_len);
 	}
-
+#if defined(CONFIG_FB_MIC)
+	width = s5p_mipi_dsi_calc_bs_size(dsim);
+#endif
 	s5p_mipi_dsi_set_main_disp_resol(dsim, height, width);
 	s5p_mipi_dsi_display_config(dsim);
 	return 0;
@@ -916,6 +918,9 @@ static int s5p_mipi_dsi_resume(struct device *dev)
 	s5p_mipi_dsi_init_dsim(dsim);
 	s5p_mipi_dsi_init_link(dsim);
 
+#if defined(CONFIG_FB_MIC)
+	s5p_mipi_dsi_config_mic(dsim);
+#endif
 	s5p_mipi_dsi_set_data_transfer_mode(dsim, 0);
 	s5p_mipi_dsi_set_display_mode(dsim, dsim->dsim_config);
 	s5p_mipi_dsi_set_hs_enable(dsim);
@@ -968,6 +973,9 @@ static int s5p_mipi_dsi_enable(struct mipi_dsim_device *dsim)
 	if (lcd_pd && lcd_pd->reset)
 		lcd_pd->reset(NULL);
 
+#if defined(CONFIG_FB_MIC)
+	s5p_mipi_dsi_config_mic(dsim);
+#endif
 	s5p_mipi_dsi_set_data_transfer_mode(dsim, 0);
 	s5p_mipi_dsi_set_display_mode(dsim, dsim->dsim_config);
 	s5p_mipi_dsi_set_hs_enable(dsim);
@@ -1346,12 +1354,16 @@ int s5p_mipi_dsi_clk_disable_by_fimd(struct device *dsim_device)
 	struct platform_device *pdev = to_platform_device(dsim_device);
 	struct mipi_dsim_device *dsim = platform_get_drvdata(pdev);
 
-	if (dsim->enabled == false || dsim->cmd_state == true) {
-		dev_warn(dsim->dev, "%s: MIPI will be used. Don't disable\n", __func__);
+	if (dsim->enabled == false) {
+		dev_warn(dsim->dev, "%s: MIPI already enabled. Don't disable\n", __func__);
 		return -EBUSY;
 	}
 
 #ifdef CONFIG_FB_I80IF
+	if (dsim->cmd_state == true) {
+		dev_warn(dsim->dev, "%s: MIPI will be used. Don't disable\n", __func__);
+		return -EBUSY;
+	}
 	s5p_mipi_dsi_enable_hs_clock(dsim, false);
 #endif
 	clk_disable(dsim->clock);
@@ -1499,6 +1511,9 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	s5p_mipi_dsi_init_dsim(dsim);
 	s5p_mipi_dsi_init_link(dsim);
 
+#if defined(CONFIG_FB_MIC)
+	s5p_mipi_dsi_config_mic(dsim);
+#endif
 	s5p_mipi_dsi_set_data_transfer_mode(dsim, 0);
 	s5p_mipi_dsi_set_display_mode(dsim, dsim->dsim_config);
 	s5p_mipi_dsi_set_hs_enable(dsim);

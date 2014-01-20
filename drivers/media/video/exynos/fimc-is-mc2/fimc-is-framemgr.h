@@ -102,7 +102,7 @@ enum fimc_is_frame_output {
 	OUT_SCP_FRAME
 };
 
-enum fimc_is_frame_init {
+enum fimc_is_frame_mem {
 	/* uninitialized memory */
 	FRAME_UNI_MEM,
 	/* initialized memory */
@@ -118,7 +118,6 @@ struct fimc_is_frame {
 	void			*work_data2;
 
 	/* group leader use */
-	enum fimc_is_frame_init	init;
 	struct camera2_shot	*shot;
 	struct camera2_shot_ext	*shot_ext;
 	u32			kvaddr_shot;
@@ -136,6 +135,7 @@ struct fimc_is_frame {
 	u32			dvaddr_buffer[4];
 
 	/* internal use */
+	enum fimc_is_frame_mem	memory;
 	u32			state;
 	u32			fcount;
 	u32			rcount;

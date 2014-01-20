@@ -40,6 +40,9 @@
 #define MFC_MAX_BUFFERS		32
 #define MFC_MAX_REF_BUFS	2
 #define MFC_FRAME_PLANES	2
+#define MFC_MAX_PLANES		3
+#define MFC_MAX_DPBS		32
+#define MFC_INFO_INIT_FD	-1
 
 #define MFC_NUM_CONTEXTS	16
 #define MFC_MAX_DRM_CTX		2
@@ -74,6 +77,8 @@ enum s5p_mfc_node_type {
 	MFCNODE_INVALID = -1,
 	MFCNODE_DECODER = 0,
 	MFCNODE_ENCODER = 1,
+	MFCNODE_DECODER_DRM = 3,
+	MFCNODE_ENCODER_DRM = 4,
 };
 
 /**
@@ -141,6 +146,12 @@ enum s5p_mfc_check_state {
 enum s5p_mfc_buf_cacheable_mask {
 	MFCMASK_DST_CACHE = (1 << 0),
 	MFCMASK_SRC_CACHE = (1 << 1),
+};
+
+enum s5p_mfc_inst_drm_type {
+	MFCDRM_NONE = 0,
+	MFCDRM_MAGIC_KEY,
+	MFCDRM_SECURE_NODE,
 };
 
 struct s5p_mfc_ctx;
@@ -231,7 +242,12 @@ struct s5p_mfc_dev {
 	struct v4l2_device	v4l2_dev;
 	struct video_device	*vfd_dec;
 	struct video_device	*vfd_enc;
+	struct video_device	*vfd_dec_drm;
+	struct video_device	*vfd_enc_drm;
 	struct device		*device;
+#ifdef CONFIG_ION_EXYNOS
+	struct ion_client	*mfc_ion_client;
+#endif
 
 	void __iomem		*regs_base;
 	int			irq;
@@ -553,6 +569,21 @@ struct s5p_mfc_codec_ops {
 	(((c)->c_ops->op) ?					\
 		((c)->c_ops->op(args)) : 0)
 
+struct stored_dpb_info {
+	int fd[MFC_MAX_PLANES];
+};
+
+struct dec_dpb_ref_info {
+	int index;
+	struct stored_dpb_info dpb[MFC_MAX_DPBS];
+};
+
+struct mfc_user_shared_handle {
+	int fd;
+	struct ion_handle *ion_handle;
+	void *virt;
+};
+
 struct s5p_mfc_raw_info {
 	int num_planes;
 	int stride[3];
@@ -585,6 +616,7 @@ struct s5p_mfc_dec {
 
 	struct s5p_mfc_extra_buf dsc;
 	unsigned long consumed;
+	unsigned long remained_size;
 	unsigned long dpb_status;
 	unsigned int dpb_flush;
 
@@ -603,6 +635,16 @@ struct s5p_mfc_dec {
 	int is_dual_dpb;
 	int tiled_buf_cnt;
 	struct s5p_mfc_raw_info tiled_ref;
+
+	/* For dynamic DPB */
+	int is_dynamic_dpb;
+	unsigned int dynamic_set;
+	unsigned int dynamic_used;
+	struct list_head ref_queue;
+	unsigned int ref_queue_cnt;
+	struct dec_dpb_ref_info *ref_info;
+	int assigned_fd[MFC_MAX_DPBS];
+	struct mfc_user_shared_handle sh_handle;
 };
 
 struct s5p_mfc_enc {
@@ -629,6 +671,8 @@ struct s5p_mfc_enc {
 		unsigned int bits;
 	} slice_size;
 	unsigned int in_slice;
+
+	int stored_tag;
 };
 
 /**
@@ -665,6 +709,7 @@ struct s5p_mfc_ctx {
 	int buf_width;
 	int buf_height;
 	int dpb_count;
+	int buf_stride;
 
 	struct s5p_mfc_raw_info raw_buf;
 	int mv_size;
@@ -741,7 +786,8 @@ static inline int mfc_need_wait_got_inst(struct s5p_mfc_ctx *ctx)
 
 	spin_lock_irq(&dev->condlock);
 
-	if ((ctx->state == MFCINST_INIT) || (ctx->state == MFCINST_GOT_INST))
+	if ((ctx->state == MFCINST_GOT_INST) &&
+		(test_bit(ctx->num, &dev->hw_lock)))
 		need_wait = 1;
 
 	spin_unlock_irq(&dev->condlock);
@@ -849,8 +895,17 @@ static inline unsigned int mfc_version(struct s5p_mfc_dev *dev)
 					(dev->fw.date >= 0x130329))
 #define FW_HAS_POC_TYPE_CTRL(dev)	(IS_MFCV6(dev) &&		\
 					(dev->fw.date >= 0x130405))
+#define FW_HAS_DYNAMIC_DPB(dev)		(IS_MFCv7X(dev) &&		\
+					(dev->fw.date >= 0x131108))
 
 #define HW_LOCK_CLEAR_MASK		(0xFFFFFFFF)
+
+/* Extra information for Decoder */
+#define	DEC_SET_DUAL_DPB		(1 << 0)
+#define	DEC_SET_DYNAMIC_DPB		(1 << 1)
+/* Extra information for Encoder */
+#define	ENC_SET_RGB_INPUT		(1 << 0)
+#define	ENC_SET_SPARE_SIZE		(1 << 1)
 
 struct s5p_mfc_fmt {
 	char *name;
@@ -871,6 +926,26 @@ static inline int clear_hw_bit(struct s5p_mfc_ctx *ctx)
 		ret = test_and_clear_bit(ctx->num, &dev->hw_lock);
 
 	return ret;
+}
+
+#ifdef CONFIG_ION_EXYNOS
+extern struct ion_device *ion_exynos;
+#endif
+
+static inline int is_decoder_node(enum s5p_mfc_node_type node)
+{
+	if (node == MFCNODE_DECODER || node == MFCNODE_DECODER_DRM)
+		return 1;
+
+	return 0;
+}
+
+static inline int is_drm_node(enum s5p_mfc_node_type node)
+{
+	if (node == MFCNODE_DECODER_DRM || node == MFCNODE_ENCODER_DRM)
+		return 1;
+
+	return 0;
 }
 
 #if defined(CONFIG_EXYNOS_MFC_V5)

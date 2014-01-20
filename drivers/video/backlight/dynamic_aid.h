@@ -19,6 +19,7 @@ struct formular_t {
 
 struct dynamic_aid_param_t {
 	int				vreg;
+	int				vref_h;
 	const int		*iv_tbl;
 	int				iv_max;
 	int				*mtp;

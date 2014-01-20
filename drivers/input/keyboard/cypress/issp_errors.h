@@ -39,7 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // The following are defines for error messages from the ISSP program.
 #define PASS           0
 // PASS is used to indicate that a function completed successfully.
-#define ERROR         -1
+#define ERROR         8
 // ERROR is a generic failure used within lower level functions before the
 // error is reported.  This should not be seen as an error that is reported
 // from main.

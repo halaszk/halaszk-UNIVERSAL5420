@@ -241,18 +241,6 @@ ssize_t mcu_sleep_factorytest_show(struct device *dev,
 			&iDataIdx, &(fsb[iSensorData]));
 	}
 
-	convert_acc_data(&fsb[ACCELEROMETER_SENSOR].x);
-	convert_acc_data(&fsb[ACCELEROMETER_SENSOR].y);
-	convert_acc_data(&fsb[ACCELEROMETER_SENSOR].z);
-
-	fsb[ACCELEROMETER_SENSOR].x -= data->accelcal.x;
-	fsb[ACCELEROMETER_SENSOR].y -= data->accelcal.y;
-	fsb[ACCELEROMETER_SENSOR].z -= data->accelcal.z;
-
-	fsb[GYROSCOPE_SENSOR].x -= data->gyrocal.x;
-	fsb[GYROSCOPE_SENSOR].y -= data->gyrocal.y;
-	fsb[GYROSCOPE_SENSOR].z -= data->gyrocal.z;
-
 	fsb[PRESSURE_SENSOR].pressure[0] -= data->iPressureCal;
 
 exit:
@@ -272,15 +260,15 @@ exit:
 		fsb[ACCELEROMETER_SENSOR].x, fsb[ACCELEROMETER_SENSOR].y,
 		fsb[ACCELEROMETER_SENSOR].z, fsb[GYROSCOPE_SENSOR].x,
 		fsb[GYROSCOPE_SENSOR].y, fsb[GYROSCOPE_SENSOR].z,
-		fsb[GEOMAGNETIC_SENSOR].x, fsb[GEOMAGNETIC_SENSOR].y,
-		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
+		fsb[GEOMAGNETIC_SENSOR].cal_x, fsb[GEOMAGNETIC_SENSOR].cal_y,
+		fsb[GEOMAGNETIC_SENSOR].cal_z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1],
 		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
 		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
 		fsb[PROXIMITY_SENSOR].prox[0], fsb[PROXIMITY_SENSOR].prox[1],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[2],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].x,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].y,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].z,
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w
 #ifdef CONFIG_SENSORS_SSP_MAX88921
@@ -297,8 +285,8 @@ exit:
 		fsb[ACCELEROMETER_SENSOR].x, fsb[ACCELEROMETER_SENSOR].y,
 		fsb[ACCELEROMETER_SENSOR].z, fsb[GYROSCOPE_SENSOR].x,
 		fsb[GYROSCOPE_SENSOR].y, fsb[GYROSCOPE_SENSOR].z,
-		fsb[GEOMAGNETIC_SENSOR].x, fsb[GEOMAGNETIC_SENSOR].y,
-		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
+		fsb[GEOMAGNETIC_SENSOR].cal_x, fsb[GEOMAGNETIC_SENSOR].cal_y,
+		fsb[GEOMAGNETIC_SENSOR].cal_z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1], fsb[PROXIMITY_SENSOR].prox[1],
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w,
@@ -307,6 +295,6 @@ exit:
 //#endif
 		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
 		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
-		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1]);
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].x,
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].y);
 }

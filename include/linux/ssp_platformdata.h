@@ -22,15 +22,12 @@
 #include <linux/shtc1_data.h>
 
 struct ssp_platform_data {
-	int (*wakeup_mcu)(void);
-	int (*check_mcu_ready)(void);
-	int (*check_mcu_busy)(void);
 	int (*set_mcu_reset)(int);
 	int (*check_ap_rev)(void);
 	void (*get_positions)(int *, int *);
 	u8 mag_matrix_size;
 	u8 *mag_matrix;
-#ifdef CONFIG_SENSORS_SSP_SHTC1
+#if defined(CONFIG_SENSORS_SSP_SHTC1)
 	u8 cp_thm_adc_channel;
 	u8 cp_thm_adc_arr_size;
 	u8 batt_thm_adc_arr_size;

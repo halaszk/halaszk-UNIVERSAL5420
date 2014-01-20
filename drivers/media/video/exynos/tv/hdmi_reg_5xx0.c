@@ -2805,7 +2805,11 @@ void hdmi_reg_i2s_audio_init(struct hdmi_device *hdev)
 		bit_ch  = 1;
 	} else if (bits_per_sample == 24) {
 		data_num = 3;
-		bit_ch  = 1;
+#ifdef CONFIG_SND_SOC_ADONISUNIV_WM5102
+		bit_ch  = 2;	/* fs 64 */
+#else
+		bit_ch  = 1;	/* fs 48 */
+#endif
 	} else if (bits_per_sample == 32) {
 		data_num = 1;
 		bit_ch  = 2;

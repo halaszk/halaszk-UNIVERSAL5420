@@ -34,6 +34,7 @@
 #include <linux/firmware.h>
 #include <linux/timer.h>
 #include <linux/list.h>
+#include <linux/rtc.h>
 #include <linux/regulator/consumer.h>
 #include <linux/ssp_platformdata.h>
 #ifdef CONFIG_SENSORS_SSP_STM
@@ -55,12 +56,14 @@
 
 #define FACTORY_DATA_MAX	99
 
+#undef SAVE_MAG_LOG	/* Magnetic sensor data logging flag */
+
 #if SSP_DBG
 #define SSP_FUNC_DBG 1
 #define SSP_DATA_DBG 0
 
 /* ssp mcu device ID */
-#define DEVICE_ID			0x55
+#define DEVICE_ID		0x55
 
 
 #define ssp_dbg(dev, format, ...) do { \
@@ -86,39 +89,17 @@
 #define data_dbg(dev, format, ...)
 #endif
 
-#define SSP_SW_RESET_TIME		3000
+#define SSP_SW_RESET_TIME	3000
 #define DEFUALT_POLLING_DELAY	(200 * NSEC_PER_MSEC)
-#define PROX_AVG_READ_NUM		80
+#define PROX_AVG_READ_NUM	80
 #define DEFAULT_RETRIES		3
-#define DATA_PACKET_SIZE		960
+#define DATA_PACKET_SIZE	960
 
 /* SSP Binary Type */
 enum {
 	KERNEL_BINARY = 0,
 	KERNEL_CRASHED_BINARY,
 	UMS_BINARY,
-};
-
-/* Sensor Sampling Time Define */
-enum {
-	SENSOR_NS_DELAY_FASTEST = 10000000,	/* 10msec */
-	SENSOR_NS_DELAY_GAME = 20000000,	/* 20msec */
-	SENSOR_NS_DELAY_UI = 66700000,	/* 66.7msec */
-	SENSOR_NS_DELAY_NORMAL = 200000000,	/* 200msec */
-};
-
-enum {
-	SENSOR_MS_DELAY_FASTEST = 10,	/* 10msec */
-	SENSOR_MS_DELAY_GAME = 20,		/* 20msec */
-	SENSOR_MS_DELAY_UI = 66,		/* 66.7msec */
-	SENSOR_MS_DELAY_NORMAL = 200,	/* 200msec */
-};
-
-enum {
-	SENSOR_CMD_DELAY_FASTEST = 0,	/* 10msec */
-	SENSOR_CMD_DELAY_GAME,		/* 20msec */
-	SENSOR_CMD_DELAY_UI,		/* 66.7msec */
-	SENSOR_CMD_DELAY_NORMAL,		/* 200msec */
 };
 
 /*
@@ -149,6 +130,16 @@ enum {
 	ADC_CHG,
 };
 
+enum {
+    SENSORS_BATCH_DRY_RUN               = 0x00000001,
+    SENSORS_BATCH_WAKE_UPON_FIFO_FULL   = 0x00000002
+};
+
+enum {
+    META_DATA_FLUSH_COMPLETE = 1,
+};
+
+
 #define SSP_INVALID_REVISION	99999
 #define SSP_INVALID_REVISION2	0xFFFFFF
 
@@ -162,70 +153,74 @@ enum {
 #define DEFUALT_IR_CURRENT		100 //0xF0
 
 /* kernel -> ssp manager cmd*/
-#define SSP_LIBRARY_SLEEP_CMD	(1 << 5)
+#define SSP_LIBRARY_SLEEP_CMD		(1 << 5)
 #define SSP_LIBRARY_LARGE_DATA_CMD	(1 << 6)
-#define SSP_LIBRARY_WAKEUP_CMD	(1 << 7)
+#define SSP_LIBRARY_WAKEUP_CMD		(1 << 7)
 
 /* AP -> SSP Instruction */
-#define MSG2SSP_INST_BYPASS_SENSOR_ADD	0xA1
+#define MSG2SSP_INST_BYPASS_SENSOR_ADD		0xA1
 #define MSG2SSP_INST_BYPASS_SENSOR_REMOVE	0xA2
-#define MSG2SSP_INST_REMOVE_ALL		0xA3
+#define MSG2SSP_INST_REMOVE_ALL			0xA3
 #define MSG2SSP_INST_CHANGE_DELAY		0xA4
 #define MSG2SSP_INST_LIBRARY_ADD		0xB1
 #define MSG2SSP_INST_LIBRARY_REMOVE		0xB2
-#define MSG2SSP_INST_LIB_NOTI		0xB4
-#define MSG2SSP_INST_LIB_DATA		0xC1
+#define MSG2SSP_INST_LIB_NOTI			0xB4
+#define MSG2SSP_INST_LIB_DATA			0xC1
 
-#define MSG2SSP_AP_STT			0xC8
+#define MSG2SSP_AP_STT				0xC8
 #define MSG2SSP_AP_MCU_SET_GYRO_CAL		0xCD
 #define MSG2SSP_AP_MCU_SET_ACCEL_CAL		0xCE
 #define MSG2SSP_AP_STATUS_WAKEUP		0xD1
-#define MSG2SSP_AP_STATUS_SLEEP		0xD2
+#define MSG2SSP_AP_STATUS_SLEEP			0xD2
 #define MSG2SSP_AP_STATUS_RESUME		0xD3
 #define MSG2SSP_AP_STATUS_SUSPEND		0xD4
-#define MSG2SSP_AP_STATUS_RESET		0xD5
+#define MSG2SSP_AP_STATUS_RESET			0xD5
 #define MSG2SSP_AP_STATUS_POW_CONNECTED	0xD6
 #define MSG2SSP_AP_STATUS_POW_DISCONNECTED	0xD7
 #define MSG2SSP_AP_TEMPHUMIDITY_CAL_DONE	0xDA
 #define MSG2SSP_AP_MCU_SET_DUMPMODE		0xDB
 #define MSG2SSP_AP_MCU_DUMP_FINISH		0xDC
-
-
+#define MSG2SSP_AP_MCU_BATCH_FLUSH		0xDD
+#define MSG2SSP_AP_MCU_BATCH_COUNT		0xDF
 
 
 #define MSG2SSP_AP_WHOAMI			0x0F
-#define MSG2SSP_AP_FIRMWARE_REV		0xF0
+#define MSG2SSP_AP_FIRMWARE_REV			0xF0
 #define MSG2SSP_AP_SENSOR_FORMATION		0xF1
-#define MSG2SSP_AP_SENSOR_PROXTHRESHOLD	0xF2
-#define MSG2SSP_AP_SENSOR_BARCODE_EMUL	0xF3
+#define MSG2SSP_AP_SENSOR_PROXTHRESHOLD		0xF2
+#define MSG2SSP_AP_SENSOR_BARCODE_EMUL		0xF3
 #define MSG2SSP_AP_SENSOR_SCANNING		0xF4
 #define MSG2SSP_AP_SET_MAGNETIC_HWOFFSET	0xF5
 #define MSG2SSP_AP_GET_MAGNETIC_HWOFFSET	0xF6
 #define MSG2SSP_AP_SENSOR_GESTURE_CURRENT	0xF7
-#define MSG2SSP_AP_GET_THERM		0xF8
-#define MSG2SSP_AP_GET_BIG_DATA		0xF9
-#define MSG2SSP_AP_SET_BIG_DATA		0xFA
+#define MSG2SSP_AP_GET_THERM			0xF8
+#define MSG2SSP_AP_GET_BIG_DATA			0xF9
+#define MSG2SSP_AP_SET_BIG_DATA			0xFA
 #define MSG2SSP_AP_START_BIG_DATA		0xFB
 #define MSG2SSP_AP_MCU_SANITY_CHECK		0xFC
 #define MSG2SSP_AP_SET_MAGNETIC_STATIC_MATRIX	0xFD
+#define MSG2SSP_AP_SENSOR_TILT			0xEA
+#define MSG2SSP_AP_MCU_SET_TIME			0xFE
+#define MSG2SSP_AP_MCU_GET_TIME			0xFF
+
 
 #define MSG2SSP_AP_FUSEROM			0X01
 
 /* voice data */
-#define TYPE_WAKE_UP_VOICE_SERVICE			0x01
-#define TYPE_WAKE_UP_VOICE_SOUND_SOURCE_AM		0x01
+#define TYPE_WAKE_UP_VOICE_SERVICE		0x01
+#define TYPE_WAKE_UP_VOICE_SOUND_SOURCE_AM	0x01
 #define TYPE_WAKE_UP_VOICE_SOUND_SOURCE_GRAMMER	0x02
 
 /* Factory Test */
-#define ACCELEROMETER_FACTORY	0x80
+#define ACCELEROMETER_FACTORY		0x80
 #define GYROSCOPE_FACTORY		0x81
 #define GEOMAGNETIC_FACTORY		0x82
 #define PRESSURE_FACTORY		0x85
-#define GESTURE_FACTORY		0x86
+#define GESTURE_FACTORY			0x86
 #define TEMPHUMIDITY_CRC_FACTORY	0x88
-#define GYROSCOPE_TEMP_FACTORY	0x8A
-#define GYROSCOPE_DPS_FACTORY	0x8B
-#define MCU_FACTORY		0x8C
+#define GYROSCOPE_TEMP_FACTORY		0x8A
+#define GYROSCOPE_DPS_FACTORY		0x8B
+#define MCU_FACTORY			0x8C
 #define MCU_SLEEP_FACTORY		0x8D
 
 /* Factory data length */
@@ -276,6 +271,7 @@ enum {
 	GO_SLEEP,
 	REMOVE_LIBRARY,
 	ADD_LIBRARY,
+	GET_LOGGING,
 };
 
 /* SENSOR_TYPE */
@@ -291,19 +287,27 @@ enum {
 	TEMPERATURE_HUMIDITY_SENSOR,
 	LIGHT_SENSOR,
 	PROXIMITY_RAW,
-	ORIENTATION_SENSOR = 11,
-	STEP_DETECTOR,
-	SIGNIFICANT_MOTION,
-	UNCALIBRATED_GYRO,
-	GAME_ROTATION_VECTOR,
-	SENSOR_MAX,	/*  = 16 */
+	ORIENTATION_SENSOR,
+	STEP_DETECTOR = 12,
+	SIG_MOTION_SENSOR,
+	GYRO_UNCALIB_SENSOR,
+	GAME_ROTATION_VECTOR = 15,
+	ROTATION_VECTOR,
+	STEP_COUNTER,
+	SENSOR_MAX,	/*  = 17 */
 };
 
 #define SSP_BYPASS_SENSORS_EN_ALL (1 << ACCELEROMETER_SENSOR |\
 	1 << GYROSCOPE_SENSOR | 1 << GEOMAGNETIC_UNCALIB_SENSOR |\
 	1 << GEOMAGNETIC_SENSOR | 1 << PRESSURE_SENSOR |\
 	1 << TEMPERATURE_HUMIDITY_SENSOR | 1 << LIGHT_SENSOR|\
-	1 << UNCALIBRATED_GYRO | 1 << GAME_ROTATION_VECTOR) /* PROXIMITY_SENSOR is not continuos */
+	1 << GYRO_UNCALIB_SENSOR | 1 << GAME_ROTATION_VECTOR) /* PROXIMITY_SENSOR is not continuos */
+
+struct meta_data_event {
+	s32 what;
+	s32 sensor;
+} __attribute__((__packed__));
+
 
 struct sensor_value {
 	union {
@@ -312,19 +316,26 @@ struct sensor_value {
 			s16 y;
 			s16 z;
 		};
-		struct {		/* calibtated */
+		struct {		/*calibrated mag, gyro*/
 			s16 cal_x;
 			s16 cal_y;
 			s16 cal_z;
-			u8 cal_accu;
+			u8 accuracy;
 		};
-		struct {		/* uncalibtated */
+		struct {		/*uncalibrated mag, gyro*/
 			s16 uncal_x;
 			s16 uncal_y;
 			s16 uncal_z;
 			s16 offset_x;
 			s16 offset_y;
 			s16 offset_z;
+		};
+		struct {		/* rotation vector */
+			s32 quat_a;
+			s32 quat_b;
+			s32 quat_c;
+			s32 quat_d;
+			u8 acc_rot;
 		};
 		struct {
 			u16 r;
@@ -336,16 +347,18 @@ struct sensor_value {
 			u16 amb_pga;
 #endif
 		};
-		struct {		/* quaternion vector */
-			s32 quat_vec[4];
-			u8 vec_accu;
-		};
 		u16 prox[4];
 		s16 data[19];
 		s32 pressure[3];
 		u8 step_det;
 		u8 sig_motion;
+		u32 step_diff;
+#ifdef SAVE_MAG_LOG
+		u8 log_data[20];
+#endif
+		struct meta_data_event meta_data;
 	};
+	u64 timestamp;
 } __attribute__((__packed__));
 
 extern struct class *sensors_event_class;
@@ -362,20 +375,20 @@ struct hw_offset_data {
 	char z;
 };
 
-
 /* ssp_msg options bit*/
 #define SSP_SPI		0	/* read write mask */
-#define SSP_GYRO_DPS	2	/* gyro dps mask */
-#define SSP_INDEX		2	/* data index mask */
+#define SSP_RETURN	2	/* write and read option */
+#define SSP_GYRO_DPS	3	/* gyro dps mask */
+#define SSP_INDEX	3	/* data index mask */
 
-#define SSP_SPI_MASK	(3 << SSP_SPI)	/* read write mask */
+#define SSP_SPI_MASK		(3 << SSP_SPI)	/* read write mask */
 #define SSP_GYRO_DPS_MASK	(3 << SSP_GYRO_DPS)
-#define SSP_INDEX_MASK	(63 << SSP_INDEX)	/* dump index mask. Index is up to 64 */
+#define SSP_INDEX_MASK		(8191 << SSP_INDEX)	/* dump index mask. Index is up to 8191 */
 
 struct ssp_msg {
 	u8 cmd;
 	u16 length;
-	u8 options;
+	u16 options;
 	u32 data;
 
 	struct list_head list;
@@ -390,7 +403,8 @@ enum {
 	AP2HUB_READ = 0,
 	AP2HUB_WRITE,
 	HUB2AP_WRITE,
-	AP2HUB_READY
+	AP2HUB_READY,
+	AP2HUB_RETURN
 };
 
 enum {
@@ -406,20 +420,41 @@ enum {
 };
 
 struct ssp_data {
-	struct input_dev *acc_input_dev;
-	struct input_dev *gyro_input_dev;
-	struct input_dev *mag_input_dev;
-	struct input_dev *gesture_input_dev;
+	struct iio_dev *accel_indio_dev;
+	struct iio_dev *gyro_indio_dev;
+	struct iio_dev *rot_indio_dev;
+	struct iio_dev *game_rot_indio_dev;
+	struct iio_dev *step_det_indio_dev;
+	struct iio_trigger *accel_trig;
+	struct iio_trigger *gyro_trig;
+	struct iio_trigger *rot_trig;
+	struct iio_trigger *game_rot_trig;
+	struct iio_trigger *step_det_trig;
+
 	struct input_dev *pressure_input_dev;
 	struct input_dev *light_input_dev;
 	struct input_dev *prox_input_dev;
 	struct input_dev *temp_humi_input_dev;
+	struct input_dev *mag_input_dev;
 	struct input_dev *uncal_mag_input_dev;
-	struct input_dev *uncal_gyro_input_dev;
-	struct input_dev *step_det_input_dev;
+	struct input_dev *gesture_input_dev;
 	struct input_dev *sig_motion_input_dev;
-	struct input_dev *grot_vec_input_dev;
-
+	struct input_dev *uncalib_gyro_input_dev;
+	struct input_dev *step_cnt_input_dev;
+	struct input_dev *meta_input_dev;
+#ifdef CONFIG_SENSORS_SSP_STM
+	struct spi_device *spi;
+#endif
+	struct i2c_client *client;
+	struct wake_lock ssp_wake_lock;
+	struct timer_list debug_timer;
+	struct workqueue_struct *debug_wq;
+	struct work_struct work_debug;
+	struct calibraion_data accelcal;
+	struct calibraion_data gyrocal;
+	struct hw_offset_data magoffset;
+	struct sensor_value buf[SENSOR_MAX];
+	struct device *sen_dev;
 	struct device *mcu_device;
 	struct device *acc_device;
 	struct device *gyro_device;
@@ -429,21 +464,9 @@ struct ssp_data {
 	struct device *light_device;
 	struct device *ges_device;
 	struct device *temphumidity_device;
-	struct miscdevice shtc1_device;
-
-#ifdef CONFIG_SENSORS_SSP_STM
-	struct spi_device *spi;
-#endif
-	struct i2c_client *client;
-	struct wake_lock ssp_wake_lock;
-	struct timer_list debug_timer;
-	struct workqueue_struct *debug_wq;
 	struct delayed_work work_firmware;
-	struct work_struct work_debug;
-	struct calibraion_data accelcal;
-	struct calibraion_data gyrocal;
-	struct hw_offset_data magoffset;
-	struct sensor_value buf[SENSOR_MAX];
+	struct miscdevice shtc1_device;
+	struct miscdevice batch_io_device;
 
 /*snamy.jeong@samsung.com temporary code for voice data sending to mcu*/
 	struct device *voice_device;
@@ -452,11 +475,13 @@ struct ssp_data {
 	bool bAccelAlert;
 	bool bProximityRawEnabled;
 	bool bGeomagneticRawEnabled;
+	bool bGeomagneticLogged;
 	bool bBarcodeEnabled;
 	bool bMcuDumpMode;
 	bool bBinaryChashed;
 	bool bProbeIsDone;
 	bool bDumping;
+	bool bTimeSyncing;
 
 	unsigned int uProxCanc;
 	unsigned int uProxHiThresh;
@@ -490,13 +515,13 @@ struct ssp_data {
 	char uLastResumeState;
 	char uLastAPState;
 	s32 iPressureCal;
+	u64 step_count_total;
 
 	atomic_t aSensorEnable;
 	int64_t adDelayBuf[SENSOR_MAX];
+	s32 batchLatencyBuf[SENSOR_MAX];
+	s8 batchOptBuf[SENSOR_MAX];
 
-	int (*wakeup_mcu)(void);
-	int (*check_mcu_ready)(void);
-	int (*check_mcu_busy)(void);
 	int (*set_mcu_reset)(int);
 	void (*get_sensor_data[SENSOR_MAX])(char *, int *,
 		struct sensor_value *);
@@ -541,6 +566,7 @@ struct ssp_data {
 	int mcu_int2;
 	struct list_head pending_list;
 	void (*ssp_big_task[BIG_TYPE_MAX])(struct work_struct *);
+	u64 timestamp;
 };
 
 struct ssp_big {
@@ -549,6 +575,11 @@ struct ssp_big {
 	u32 length;
 	u32 addr;
 };
+
+int ssp_iio_configure_ring(struct iio_dev *);
+void ssp_iio_unconfigure_ring(struct iio_dev *);
+int ssp_iio_probe_trigger(struct ssp_data *, struct iio_dev *, struct iio_trigger *);
+void ssp_iio_remove_trigger(struct iio_trigger *);
 
 void ssp_enable(struct ssp_data *, bool);
 int ssp_spi_async(struct ssp_data *, struct ssp_msg *);
@@ -589,6 +620,9 @@ void remove_sysfs(struct ssp_data *);
 void remove_event_symlink(struct ssp_data *);
 int ssp_send_cmd(struct ssp_data *, char, int);
 int send_instruction(struct ssp_data *, u8, u8, u8 *, u8);
+int send_instruction_sync(struct ssp_data *, u8, u8, u8 *, u8);
+int flush(struct ssp_data *, u8);
+int get_batch_count(struct ssp_data *, u8);
 int select_irq_msg(struct ssp_data *);
 int get_chipid(struct ssp_data *);
 int get_fuserom_data(struct ssp_data *);
@@ -606,8 +640,7 @@ void sync_sensor_state(struct ssp_data *);
 void set_proximity_threshold(struct ssp_data *, unsigned int, unsigned int);
 void set_proximity_barcode_enable(struct ssp_data *, bool);
 void set_gesture_current(struct ssp_data *, unsigned char);
-unsigned int get_delay_cmd(u8);
-unsigned int get_msdelay(int64_t);
+int get_msdelay(int64_t);
 unsigned int get_sensor_scanning_info(struct ssp_data *);
 unsigned int get_firmware_rev(struct ssp_data *);
 int forced_to_download_binary(struct ssp_data *, int);
@@ -616,24 +649,27 @@ void enable_debug_timer(struct ssp_data *);
 void disable_debug_timer(struct ssp_data *);
 int initialize_debug_timer(struct ssp_data *);
 int proximity_open_lcd_ldi(struct ssp_data *);
+void report_meta_data(struct ssp_data *, struct sensor_value *);
 void report_acc_data(struct ssp_data *, struct sensor_value *);
 void report_gyro_data(struct ssp_data *, struct sensor_value *);
-void report_gyro_uncaldata(struct ssp_data *, struct sensor_value *);
 void report_mag_data(struct ssp_data *, struct sensor_value *);
 void report_mag_uncaldata(struct ssp_data *, struct sensor_value *);
-void report_geomagnetic_raw_data(struct ssp_data *, struct sensor_value *);
-void report_grot_vec_sensordata(struct ssp_data *, struct sensor_value *);
+void report_rot_data(struct ssp_data *, struct sensor_value *);
+void report_game_rot_data(struct ssp_data *, struct sensor_value *);
 void report_step_det_data(struct ssp_data *, struct sensor_value *);
-void report_sig_motion_sensordata(struct ssp_data *, struct sensor_value *);
 void report_gesture_data(struct ssp_data *, struct sensor_value *);
 void report_pressure_data(struct ssp_data *, struct sensor_value *);
 void report_light_data(struct ssp_data *, struct sensor_value *);
 void report_prox_data(struct ssp_data *, struct sensor_value *);
 void report_prox_raw_data(struct ssp_data *, struct sensor_value *);
+void report_geomagnetic_raw_data(struct ssp_data *, struct sensor_value *);
+void report_sig_motion_data(struct ssp_data *, struct sensor_value *);
+void report_uncalib_gyro_data(struct ssp_data *, struct sensor_value *);
+void report_step_cnt_data(struct ssp_data *, struct sensor_value *);
+int print_mcu_debug(char *, int *, int);
 void report_temp_humidity_data(struct ssp_data *, struct sensor_value *);
 void report_bulk_comp_data(struct ssp_data *data);
 unsigned int get_module_rev(struct ssp_data *data);
-int print_mcu_debug(char *, int *, int);
 void reset_mcu(struct ssp_data *);
 void convert_acc_data(s16 *);
 int sensors_register(struct device *, void *,
@@ -671,5 +707,6 @@ void ssp_send_big_library_task(struct work_struct *work);
 void ssp_pcm_dump_task(struct work_struct *work);
 void ssp_temp_task(struct work_struct *work);
 #endif
-
+int set_time(struct ssp_data *);
+int get_time(struct ssp_data *);
 #endif

@@ -59,6 +59,13 @@ register */
 /* Version register */
 #define S5P_DSIM_VERSION	(0x70)  /* Specifies the DSIM version information */
 
+/*  MIC register */
+#define S5P_DSIM_MIC_CTRL       (0x88)
+#define DSIM_MIC_CTRL_EN        (1 << 1)
+#define DSIM_MIC_CTRL_ON_OFF    (1 << 0)
+#define S5P_DSIM_MIC_ON_H       (0x90)
+#define S5P_DSIM_MIC_ON_HFP     (0x9C)
+
 /* DSIM_STATUS */
 #define DSIM_STOP_STATE_DAT(x)	(((x) & 0xf) << 0)
 #define DSIM_ULPS_DAT(x)	(((x) & 0xf) << 4)

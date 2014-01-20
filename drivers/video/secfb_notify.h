@@ -5,6 +5,9 @@
 #define SECFB_EVENT_CABC_READ	0x100
 #define SECFB_EVENT_CABC_WRITE	0x101
 #define SECFB_EVENT_BL_UPDATE	0x102
+#define SECFB_EVENT_MDNIE_OUTDOOR	0x103
+
+
 
 extern int secfb_register_client(struct notifier_block *nb);
 extern int secfb_unregister_client(struct notifier_block *nb);

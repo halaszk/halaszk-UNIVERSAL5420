@@ -22,6 +22,8 @@
 #include <linux/suspend.h>
 #include <kbase/src/platform/mali_kbase_dvfs.h>
 
+#include <mach/sec_debug.h>
+
 #define HZ_IN_MHZ                           (1000000)
 #ifdef CONFIG_MALI_T6XX_RT_PM
 #define RUNTIME_PM_DELAY_TIME 100
@@ -167,7 +169,8 @@ static int pm_callback_runtime_on(kbase_device *kbdev)
 	struct device *dev =  kbdev->osdev.dev;
 	struct exynos_context * platform = (struct exynos_context *) kbdev->platform_context;
 
-	pr_info("g3d turn on\n");
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"g3d turn on++++");
 
 	kbase_platform_clock_on(kbdev);
 #ifdef CONFIG_MALI_T6XX_DVFS
@@ -206,17 +209,23 @@ static int pm_callback_runtime_on(kbase_device *kbdev)
 		return 0;
 	}
 
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"g3d turn on---");
+
 	return 0;
 }
 
 static void pm_callback_runtime_off(kbase_device *kbdev)
 {
-	pr_info("g3d turn off\n");
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"g3d turn off++++");
 	kbase_platform_clock_off(kbdev);
 #ifdef CONFIG_MALI_T6XX_DVFS
 	if (kbase_platform_dvfs_enable(false, MALI_DVFS_CURRENT_FREQ) != MALI_TRUE)
 		printk("[err] disabling dvfs is faled\n");
 #endif
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"g3d turn off---");
 }
 
 static kbase_pm_callback_conf pm_callbacks = {

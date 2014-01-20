@@ -130,6 +130,10 @@ int set_gyro_cal(struct ssp_data *data)
 	gyro_cal[2] = data->gyrocal.z;
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return -ENOMEM;
+	}
 	msg->cmd = MSG2SSP_AP_MCU_SET_GYRO_CAL;
 	msg->length = 6;
 	msg->options = AP2HUB_WRITE;
@@ -173,6 +177,10 @@ short mpu6500_gyro_get_temp(struct ssp_data *data)
 	int iRet = 0;
 
 	struct ssp_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		goto exit;
+	}
 	msg->cmd = GYROSCOPE_TEMP_FACTORY;
 	msg->length = 2;
 	msg->options = AP2HUB_READ;
@@ -291,19 +299,24 @@ static ssize_t mpu6500_gyro_selftest(struct device *dev,
 	struct ssp_data *data = dev_get_drvdata(dev);
 
 	struct ssp_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		goto exit;
+	}
 	msg->cmd = GYROSCOPE_FACTORY;
 	msg->length = 36;
 	msg->options = AP2HUB_READ;
 	msg->buffer = chTempBuf;
 	msg->free_buffer = 0;
 
-	iRet = ssp_spi_sync(data, msg, 3000);
+	iRet = ssp_spi_sync(data, msg, 7000);
 
 	if (iRet != SUCCESS) {
 		pr_err("[SSP]: %s - Gyro Selftest Timeout!!\n", __func__);
+		ret_val = 1;
 		goto exit;
 	}
-	
+
 	data->uTimeOutCnt = 0;
 
 	pr_err("[SSP]%d %d %d %d %d %d %d %d %d %d %d %d", chTempBuf[0],
@@ -516,6 +529,10 @@ static ssize_t gyro_selftest_dps_store(struct device *dev,
 		goto exit;
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		goto exit;
+	}
 	msg->cmd = GYROSCOPE_DPS_FACTORY;
 	msg->length = 1;
 	msg->options = AP2HUB_READ;

@@ -82,6 +82,7 @@ static sec_charging_current_t charging_current_table[] = {
 	{1900,	1600,	200,	40*60},
 	{0,	0,	0,	0},
 	{0,	0,	0,	0},
+	{0,	0,	0,	0},/* LAN hub */
 };
 
 static bool sec_bat_adc_none_init(
@@ -148,12 +149,14 @@ static bool sec_chg_gpio_init(void)
 
 static int sec_bat_is_lpm_check(char *str)
 {
-	get_option(&str, &lpcharge);
+	if (strncmp(str, "charger", 7) == 0)
+		lpcharge = 1;
+
 	pr_info("%s: Low power charging mode: %d\n", __func__, lpcharge);
 
 	return lpcharge;
 }
-__setup("lpcharge=", sec_bat_is_lpm_check);
+__setup("androidboot.mode=", sec_bat_is_lpm_check);
 
 static bool sec_bat_is_lpm(void)
 {
@@ -191,12 +194,12 @@ static int sec_bat_check_cable_callback(void)
 	return current_cable_type;
 }
 
-static bool sec_bat_check_jig_status(void) 
+static bool sec_bat_check_jig_status(void)
 {
 	if (current_cable_type == POWER_SUPPLY_TYPE_UARTOFF)
 		return true;
 	else
-		return false; 
+		return false;
 
 }
 
@@ -287,7 +290,7 @@ static int sec_bat_get_cable_from_extended_cable_type(
 			}
 			break;
 		case ONLINE_SUB_TYPE_SMART_OTG:
-			cable_type = POWER_SUPPLY_TYPE_USB;
+			cable_type = POWER_SUPPLY_TYPE_MAINS;
 			charge_current_max = 1000;
 			charge_current = 1000;
 			break;
@@ -325,6 +328,14 @@ static int sec_bat_get_cable_from_extended_cable_type(
 	value.intval = charge_current;
 	psy_do_property(sec_battery_pdata.charger_name, set,
 			POWER_SUPPLY_PROP_CURRENT_AVG, value);
+	if ((cable_main == POWER_SUPPLY_TYPE_MISC) &&
+		((cable_sub == ONLINE_SUB_TYPE_SMART_OTG) ||
+		(cable_sub == ONLINE_SUB_TYPE_SMART_NOTG))) {
+		value.intval = cable_type;
+		psy_do_property(sec_battery_pdata.charger_name, set,
+			POWER_SUPPLY_PROP_ONLINE, value);
+	}
+
 	return cable_type;
 }
 
@@ -417,6 +428,10 @@ static bool sec_bat_get_temperature_callback(
 static bool sec_fg_fuelalert_process(bool is_fuel_alerted) {return true; }
 
 static const sec_bat_adc_table_data_t temp_table[] = {
+	{  279,	 900 },
+	{  333,	 840 },
+	{  379,	 790 },
+	{  447,	 740 },
 	{  500,	 690 },
 	{  571,	 640 },
 	{  617,	 610 },
@@ -449,7 +464,7 @@ static const sec_bat_adc_table_data_t temp_table[] = {
 	{ 1849,  -60 },
 	{ 1859,  -70 },
 	{ 1868,  -80 },
-	{ 1875,  -110 },	
+	{ 1875,  -110 },
 	{ 1923,  -160 },
 	{ 1970,  -210 },
 	{ 1995,  -260 },
@@ -597,15 +612,15 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.temp_check_type = SEC_BATTERY_TEMP_CHECK_TEMP,
 	.temp_check_count = 1,
 	.temp_high_threshold_event = 700,
-	.temp_high_recovery_event = 415,
+	.temp_high_recovery_event = 460,
 	.temp_low_threshold_event = -30,
 	.temp_low_recovery_event = 0,
 	.temp_high_threshold_normal = 600,
-	.temp_high_recovery_normal = 400,
+	.temp_high_recovery_normal = 460,
 	.temp_low_threshold_normal = -50,
 	.temp_low_recovery_normal = 0,
 	.temp_high_threshold_lpm = 600,
-	.temp_high_recovery_lpm = 400,
+	.temp_high_recovery_lpm = 460,
 	.temp_low_threshold_lpm = -50,
 	.temp_low_recovery_lpm = 0,
 	.full_check_type = SEC_BATTERY_FULLCHARGED_CHGPSY,

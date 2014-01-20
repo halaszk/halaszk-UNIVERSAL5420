@@ -637,6 +637,7 @@ int fimc_is_group_open(struct fimc_is_groupmgr *groupmgr,
 	group->id = id;
 	group->instance = instance;
 	group->fcount = 0;
+	group->pcount = 0;
 	atomic_set(&group->scount, 0);
 	atomic_set(&group->rcount, 0);
 	atomic_set(&group->backup_fcount, 0);
@@ -1149,6 +1150,8 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 {
 	int ret = 0;
 	unsigned long flags;
+	struct fimc_is_device_sensor *sensor;
+	struct fimc_is_device_ischain *device;
 	struct fimc_is_framemgr *framemgr;
 	struct fimc_is_frame *frame;
 	struct fimc_is_subdev *leader, *scc, *dis, *scp;
@@ -1156,11 +1159,15 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 
 	BUG_ON(!groupmgr);
 	BUG_ON(!group);
+	BUG_ON(!group->device);
+	BUG_ON(!group->device->sensor);
 	BUG_ON(group->instance >= FIMC_IS_MAX_NODES);
 	BUG_ON(group->id >= GROUP_ID_MAX);
 	BUG_ON(!queue);
 	BUG_ON(index >= FRAMEMGR_MAX_REQUEST);
 
+	device = group->device;
+	sensor = device->sensor;
 	leader = &group->leader;
 	scc = group->subdev[ENTRY_SCALERC];
 	dis = group->subdev[ENTRY_DIS];
@@ -1178,7 +1185,7 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 		goto p_err;
 	}
 
-	if (frame->init == FRAME_UNI_MEM) {
+	if (unlikely(frame->memory == FRAME_UNI_MEM)) {
 		err("frame %d is NOT init", index);
 		ret = EINVAL;
 		goto p_err;
@@ -1233,6 +1240,11 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 			merr("scp %d frame is drop2", group, frame->fcount);
 		}
 
+		if (!test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state) &&
+			(framemgr->frame_req_cnt >= 3))
+			mwarn("GROUP%d is working lately(%d)",
+				group, group->id, framemgr->frame_req_cnt);
+
 		frame->fcount = frame->shot->dm.request.frameCount;
 		frame->rcount = frame->shot->ctl.request.frameCount;
 		frame->work_data1 = groupmgr;
@@ -1245,11 +1257,12 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 #endif
 
 #ifdef ENABLE_FAST_SHOT
-		if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state))
+		if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state)) {
 			memcpy(&group->fast_ctl.aa, &frame->shot->ctl.aa,
 				sizeof(struct camera2_aa_ctl));
 			memcpy(&group->fast_ctl.scaler, &frame->shot->ctl.scaler,
 				sizeof(struct camera2_scaler_ctl));
+		}
 #endif
 
 		fimc_is_frame_trans_fre_to_req(framemgr, frame);
@@ -1260,6 +1273,13 @@ int fimc_is_group_buffer_queue(struct fimc_is_groupmgr *groupmgr,
 	}
 
 	framemgr_x_barrier_irqr(framemgr, index, flags);
+
+	if (unlikely(frame->memory == FRAME_INI_MEM) &&
+		!test_bit(FIMC_IS_SENSOR_FRONT_START, &sensor->state)) {
+		fimc_is_itf_map(device, GROUP_ID(group->id),
+			frame->dvaddr_shot, frame->shot_size);
+		frame->memory = FRAME_MAP_MEM;
+	}
 
 	fimc_is_group_start_trigger(groupmgr, group, frame);
 
@@ -1362,6 +1382,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 		goto p_err;
 	}
 
+	PROGRAM_COUNT(1);
 	ret = down_interruptible(&group->smp_shot);
 	if (ret) {
 		err("down is fail1(%d)", ret);
@@ -1370,6 +1391,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 	atomic_dec(&group->smp_shot_count);
 	try_sdown = true;
 
+	PROGRAM_COUNT(2);
 	ret = down_interruptible(&groupmgr->group_smp_res[group->id]);
 	if (ret) {
 		err("down is fail2(%d)", ret);
@@ -1379,6 +1401,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 
 	if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state)) {
 		if (atomic_read(&group->smp_shot_count) < MIN_OF_SYNC_SHOTS) {
+			PROGRAM_COUNT(3);
 			ret = down_interruptible(&group->smp_trigger);
 			if (ret) {
 				err("down is fail3(%d)", ret);
@@ -1392,6 +1415,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 			 */
 			if (atomic_read(&group->backup_fcount) >=
 				atomic_read(&group->sensor_fcount)) {
+				PROGRAM_COUNT(4);
 				ret = down_interruptible(&group->smp_trigger);
 				if (ret) {
 					err("down is fail4(%d)", ret);
@@ -1416,8 +1440,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 			(uint64_t)curtime.tv_sec * 1000000000 + curtime.tv_nsec;
 
 		/* real automatic increase */
-		if (async_step &&
-		    (atomic_read(&group->smp_shot_count) > MIN_OF_SYNC_SHOTS))
+		if (async_step && (atomic_read(&group->smp_shot_count) > MIN_OF_SYNC_SHOTS))
 			atomic_inc(&group->sensor_fcount);
 	}
 
@@ -1437,6 +1460,7 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 		down(&group->smp_trigger);
 #endif
 
+	PROGRAM_COUNT(5);
 	device = group->device;
 	group_next = group->next;
 	group_prev = group->prev;
@@ -1561,15 +1585,17 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 	fimc_is_group_debug_aa_shot(group, ldr_frame);
 #endif
 
+	PROGRAM_COUNT(6);
 	ret = group->start_callback(group->device, ldr_frame);
 	if (ret) {
 		merr("start_callback is fail", group);
 		fimc_is_group_cancel(group, ldr_frame);
-		fimc_is_group_done(groupmgr, group, ldr_frame);
+		fimc_is_group_done(groupmgr, group, ldr_frame, VB2_BUF_STATE_ERROR);
 	} else {
 		atomic_inc(&group->scount);
 	}
 
+	PROGRAM_COUNT(7);
 	return ret;
 
 p_err:
@@ -1586,16 +1612,19 @@ p_err:
 
 int fimc_is_group_done(struct fimc_is_groupmgr *groupmgr,
 	struct fimc_is_group *group,
-	struct fimc_is_frame *ldr_frame)
+	struct fimc_is_frame *ldr_frame,
+	u32 done_state)
 {
 	int ret = 0;
 	u32 resources;
+	struct fimc_is_device_ischain *device;
 
 	BUG_ON(!groupmgr);
 	BUG_ON(!group);
 	BUG_ON(!ldr_frame);
 	BUG_ON(group->instance >= FIMC_IS_MAX_NODES);
 	BUG_ON(group->id >= GROUP_ID_MAX);
+	BUG_ON(!group->device);
 
 #ifdef ENABLE_VDIS
 	/* current group notify to next group that shot done is arrvied */
@@ -1621,6 +1650,13 @@ int fimc_is_group_done(struct fimc_is_groupmgr *groupmgr,
 			group->id, groupmgr->group_smp_res[group->id].count,
 			group->async_shots, group->sync_shots);
 		sema_init(&groupmgr->group_smp_res[group->id], resources - 1);
+	}
+
+	device = group->device;
+	if (test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state) &&
+		(done_state != VB2_BUF_STATE_DONE)) {
+		merr("GRP%d NOT DONE(reprocessing)\n", group, group->id);
+		fimc_is_hw_logdump(device->interface);
 	}
 
 #ifdef DEBUG_AA

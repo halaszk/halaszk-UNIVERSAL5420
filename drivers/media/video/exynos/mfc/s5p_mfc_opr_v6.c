@@ -467,7 +467,7 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 	if (dev->num_drm_inst)
-		alloc_ctx = dev->alloc_ctx_drm;
+		alloc_ctx = dev->alloc_ctx_fw;
 #endif
 	dev->ctx_buf.alloc =
 			s5p_mfc_mem_alloc_priv(alloc_ctx, buf_size->dev_ctx);
@@ -564,8 +564,10 @@ void set_linear_stride_size(struct s5p_mfc_ctx *ctx, struct s5p_mfc_fmt *fmt)
 	case V4L2_PIX_FMT_NV12MT:
 	case V4L2_PIX_FMT_NV12M:
 	case V4L2_PIX_FMT_NV21M:
-		raw->stride[0] = ALIGN(ctx->img_width, 16);
-		raw->stride[1] = ALIGN(ctx->img_width, 16);
+		raw->stride[0] = (ctx->buf_stride > ctx->img_width) ?
+			ALIGN(ctx->img_width, 16) : ctx->img_width;
+		raw->stride[1] = (ctx->buf_stride > ctx->img_width) ?
+			ALIGN(ctx->img_width, 16) : ctx->img_width;
 		raw->stride[2] = 0;
 		break;
 	case V4L2_PIX_FMT_RGB24:
@@ -578,9 +580,11 @@ void set_linear_stride_size(struct s5p_mfc_ctx *ctx, struct s5p_mfc_fmt *fmt)
 		ctx->raw_buf.stride[1] = 0;
 		ctx->raw_buf.stride[2] = 0;
 		break;
+	case V4L2_PIX_FMT_ARGB32:
 	case V4L2_PIX_FMT_RGB32X:
 	case V4L2_PIX_FMT_BGR32:
-		ctx->raw_buf.stride[0] = ctx->img_width * 4;
+		ctx->raw_buf.stride[0] = (ctx->buf_stride > ctx->img_width) ?
+			(ALIGN(ctx->img_width, 16) * 4) : (ctx->img_width * 4);
 		ctx->raw_buf.stride[1] = 0;
 		ctx->raw_buf.stride[2] = 0;
 		break;
@@ -721,6 +725,7 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx)
 		raw->plane_size[1] = 0;
 		raw->plane_size[2] = 0;
 		break;
+	case V4L2_PIX_FMT_ARGB32:
 	case V4L2_PIX_FMT_BGR32:
 	case V4L2_PIX_FMT_RGB32X:
 		raw->plane_size[0] = ALIGN(default_size * 4, 256);
@@ -777,12 +782,28 @@ int mfc_set_dec_dis_buffer(struct s5p_mfc_ctx *ctx, struct list_head *buf_queue)
 {
 	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct s5p_mfc_dev *dev = ctx->dev;
+	struct s5p_mfc_raw_info *raw = &ctx->raw_buf;
 	struct s5p_mfc_buf *buf;
 	int i, j;
 
+	/* Do not setting DPB */
+	if (dec->is_dynamic_dpb) {
+		for (i = 0; i < raw->num_planes; i++) {
+			s5p_mfc_write_shm(dev, raw->plane_size[i],
+					D_FIRST_DIS_SIZE + (i * 4));
+			/* Stride should be multiple of 16 */
+			s5p_mfc_write_shm(dev, raw->stride[i],
+					D_FIRST_DIS_STRIDE + (i * 4));
+			mfc_debug(2, "DIS plane%d.size = %d, stride = %d\n", i,
+				raw->plane_size[i], raw->stride[i]);
+		}
+
+		return 0;
+	}
+
 	i = 0;
 	list_for_each_entry(buf, buf_queue, list) {
-		for (j = 0; j < ctx->raw_buf.num_planes; j++) {
+		for (j = 0; j < raw->num_planes; j++) {
 			mfc_debug(2, "# DIS plane%d addr = %x\n",
 							j, buf->planes.raw[j]);
 			s5p_mfc_write_shm(dev, buf->planes.raw[j],
@@ -794,14 +815,14 @@ int mfc_set_dec_dis_buffer(struct s5p_mfc_ctx *ctx, struct list_head *buf_queue)
 	mfc_debug(2, "# number of display buffer = %d\n", dec->total_dpb_count);
 	s5p_mfc_write_shm(dev, dec->total_dpb_count, D_NUM_DIS);
 
-	for (i = 0; i < ctx->raw_buf.num_planes; i++) {
-		s5p_mfc_write_shm(dev, ctx->raw_buf.plane_size[i],
+	for (i = 0; i < raw->num_planes; i++) {
+		s5p_mfc_write_shm(dev, raw->plane_size[i],
 						D_FIRST_DIS_SIZE + (i * 4));
 		/* Stride should be multiple of 16 */
-		s5p_mfc_write_shm(dev, ctx->raw_buf.stride[i],
+		s5p_mfc_write_shm(dev, raw->stride[i],
 						D_FIRST_DIS_STRIDE + (i * 4));
 		mfc_debug(2, "# DIS plane%d.size = %d, stride = %d\n", i,
-			ctx->raw_buf.plane_size[i], ctx->raw_buf.stride[i]);
+			raw->plane_size[i], raw->stride[i]);
 	}
 
 	return 0;
@@ -887,6 +908,8 @@ int s5p_mfc_set_dec_frame_buffer(struct s5p_mfc_ctx *ctx)
 	if ((ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12MT_16X16) &&
 			FW_HAS_INITBUF_TILE_MODE(dev))
 		reg |= (0x1 << S5P_FIMV_D_OPT_TILE_MODE_SHIFT);
+	if (dec->is_dynamic_dpb)
+		reg |= (0x1 << S5P_FIMV_D_OPT_DYNAMIC_DPB_SET_SHIFT);
 	WRITEL(reg, S5P_FIMV_D_INIT_BUFFER_OPTIONS);
 
 	frame_size_mv = ctx->mv_size;
@@ -914,6 +937,9 @@ int s5p_mfc_set_dec_frame_buffer(struct s5p_mfc_ctx *ctx)
 	} else {
 		i = 0;
 		list_for_each_entry(buf, buf_queue, list) {
+			/* Do not setting DPB */
+			if (dec->is_dynamic_dpb)
+				break;
 			mfc_debug(2, "Luma %x\n", buf->planes.raw[0]);
 			WRITEL(buf->planes.raw[0],
 					S5P_FIMV_D_LUMA_DPB + (i * 4));
@@ -1194,6 +1220,7 @@ static int s5p_mfc_set_enc_params(struct s5p_mfc_ctx *ctx)
 	case V4L2_PIX_FMT_RGB32X:
 		pix_val = 7;
 		break;
+	case V4L2_PIX_FMT_ARGB32:
 	case V4L2_PIX_FMT_BGR32:
 		pix_val = 8;
 		break;
@@ -1538,7 +1565,14 @@ static int s5p_mfc_set_enc_params_h264(struct s5p_mfc_ctx *ctx)
 	if (FW_HAS_POC_TYPE_CTRL(dev)) {
 		reg = READL(S5P_FIMV_E_H264_OPTIONS_2);
 		reg &= ~(0x3 << 0);
+/* MMRND_AVRC. Start */
+#if 1
+		/* pic_order_cnt_type = 2 */
+		reg |= (0x0 << 0); /* TODO: add new CID for this */
+#else
 		reg |= (0x1 << 0); /* TODO: add new CID for this */
+#endif
+/* MMRND_AVRC. End */
 		WRITEL(reg, S5P_FIMV_E_H264_OPTIONS_2);
 	}
 
@@ -2015,6 +2049,12 @@ int s5p_mfc_decode_one_frame(struct s5p_mfc_ctx *ctx, int last_frame)
 	mfc_debug(2, "Setting flags to %08lx (free:%d WTF:%d)\n",
 				dec->dpb_status, ctx->dst_queue_cnt,
 						dec->dpb_queue_cnt);
+	if (dec->is_dynamic_dpb) {
+		mfc_debug(2, "Dynamic:0x%08x, Available:0x%08lx\n",
+					dec->dynamic_set, dec->dpb_status);
+		WRITEL(dec->dynamic_set, S5P_FIMV_D_DYNAMIC_DPB_FLAG_LOWER);
+		WRITEL(0x0, S5P_FIMV_D_DYNAMIC_DPB_FLAG_UPPER);
+	}
 	WRITEL(dec->dpb_status, S5P_FIMV_D_AVAILABLE_DPB_FLAG_LOWER);
 	WRITEL(0x0, S5P_FIMV_D_AVAILABLE_DPB_FLAG_UPPER);
 	WRITEL(dec->slice_enable, S5P_FIMV_D_SLICE_IF_ENABLE);
@@ -2080,7 +2120,7 @@ int s5p_mfc_h264_set_aso_slice_order(struct s5p_mfc_ctx *ctx)
 }
 
 /* Encode a single frame */
-int s5p_mfc_encode_one_frame(struct s5p_mfc_ctx *ctx)
+int s5p_mfc_encode_one_frame(struct s5p_mfc_ctx *ctx, int last_frame)
 {
 	struct s5p_mfc_dev *dev = ctx->dev;
 
@@ -2099,7 +2139,16 @@ int s5p_mfc_encode_one_frame(struct s5p_mfc_ctx *ctx)
 	s5p_mfc_set_slice_mode(ctx);
 
 	WRITEL(ctx->inst_no, S5P_FIMV_INSTANCE_ID);
-	s5p_mfc_cmd_host2risc(S5P_FIMV_CH_FRAME_START, NULL);
+	/* Issue different commands to instance basing on whether it
+	 * is the last frame or not. */
+	switch (last_frame) {
+	case 0:
+		s5p_mfc_cmd_host2risc(S5P_FIMV_CH_FRAME_START, NULL);
+		break;
+	case 1:
+		s5p_mfc_cmd_host2risc(S5P_FIMV_CH_LAST_FRAME, NULL);
+		break;
+	}
 
 	mfc_debug(2, "--\n");
 
@@ -2136,10 +2185,55 @@ static inline int s5p_mfc_get_new_ctx(struct s5p_mfc_dev *dev)
 	return new_ctx;
 }
 
+static int mfc_set_dynamic_dpb(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *dst_vb)
+{
+	struct s5p_mfc_dev *dev = ctx->dev;
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
+	struct s5p_mfc_raw_info *raw = &ctx->raw_buf;
+	int dst_index;
+	int i;
+
+	dst_index = dst_vb->vb.v4l2_buf.index;
+	dst_vb->used = 1;
+	set_bit(dst_index, &dec->dpb_status);
+	dec->dynamic_set = 1 << dst_index;
+	mfc_debug(2, "ADDING Flag after: %lx\n", dec->dpb_status);
+	mfc_debug(2, "Dst addr [%d] = 0x%x\n", dst_index,
+			dst_vb->planes.raw[0]);
+
+	if (dec->is_dual_dpb) {
+		for (i = 0; i < raw->num_planes; i++) {
+			s5p_mfc_write_shm(dev, dst_vb->planes.raw[i],
+				D_FIRST_DIS0 + (i * 0x100) + (dst_index * 4));
+			s5p_mfc_write_shm(dev, raw->plane_size[i],
+				D_FIRST_DIS_SIZE + (i * 4));
+
+			/* Stride should be multiple of 16 */
+			s5p_mfc_write_shm(dev, raw->stride[i],
+				D_FIRST_DIS_STRIDE + (i * 4));
+
+			mfc_debug(2, "[DIS] plane%d addr = %x\n",
+					i, dst_vb->planes.raw[i]);
+			mfc_debug(2, "[DIS] size = %d, stride = %d\n",
+					raw->plane_size[i], raw->stride[i]);
+		}
+	} else {
+		WRITEL(dst_vb->planes.raw[0],
+				S5P_FIMV_D_LUMA_DPB + (dst_index * 4));
+		WRITEL(dst_vb->planes.raw[1],
+				S5P_FIMV_D_CHROMA_DPB + (dst_index * 4));
+		WRITEL(raw->plane_size[0], S5P_FIMV_D_LUMA_DPB_SIZE);
+		WRITEL(raw->plane_size[1], S5P_FIMV_D_CHROMA_DPB_SIZE);
+	}
+
+	return 0;
+}
+
 static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev;
-	struct s5p_mfc_buf *temp_vb;
+	struct s5p_mfc_buf *temp_vb, *dst_vb;
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	unsigned long flags;
 
 	if (!ctx) {
@@ -2152,6 +2246,12 @@ static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 		return -EINVAL;
 	}
 	spin_lock_irqsave(&dev->irqlock, flags);
+
+	if ((dec->is_dynamic_dpb) && (ctx->dst_queue_cnt == 0)) {
+		mfc_debug(2, "No dst buffer\n");
+		spin_unlock_irqrestore(&dev->irqlock, flags);
+		return -EAGAIN;
+	}
 
 	/* Frames are being decoded */
 	if (list_empty(&ctx->src_queue)) {
@@ -2166,6 +2266,12 @@ static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 			s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0), 0, 0);
 	}
 
+	if (dec->is_dynamic_dpb) {
+		dst_vb = list_entry(ctx->dst_queue.next,
+						struct s5p_mfc_buf, list);
+		mfc_set_dynamic_dpb(ctx, dst_vb);
+	}
+
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
 	dev->curr_ctx = ctx->num;
@@ -2178,7 +2284,8 @@ static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev;
-	struct s5p_mfc_buf *temp_vb;
+	struct s5p_mfc_buf *temp_vb, *dst_vb;
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	unsigned long flags;
 	int last_frame = 0;
 	unsigned int index;
@@ -2200,24 +2307,39 @@ static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 		spin_unlock_irqrestore(&dev->irqlock, flags);
 		return -EAGAIN;
 	}
-	if (ctx->dst_queue_cnt < ctx->dpb_count) {
+	if ((dec->is_dynamic_dpb && ctx->dst_queue_cnt == 0) ||
+		(!dec->is_dynamic_dpb && ctx->dst_queue_cnt < ctx->dpb_count)) {
 		spin_unlock_irqrestore(&dev->irqlock, flags);
 		return -EAGAIN;
 	}
+
 	/* Get the next source buffer */
 	temp_vb = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
 	temp_vb->used = 1;
 	mfc_debug(2, "Temp vb: %p\n", temp_vb);
 	mfc_debug(2, "Src Addr: 0x%08lx\n",
 		(unsigned long)s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0));
-	s5p_mfc_set_dec_stream_buffer(ctx,
-			s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
-			0, temp_vb->vb.v4l2_planes[0].bytesused);
-	spin_unlock_irqrestore(&dev->irqlock, flags);
+	if (dec->consumed) {
+		s5p_mfc_set_dec_stream_buffer(ctx,
+				s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
+				dec->consumed, dec->remained_size);
+	} else {
+		s5p_mfc_set_dec_stream_buffer(ctx,
+				s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
+				0, temp_vb->vb.v4l2_planes[0].bytesused);
+	}
 
 	index = temp_vb->vb.v4l2_buf.index;
 	if (call_cop(ctx, set_buf_ctrls_val, ctx, &ctx->src_ctrls[index]) < 0)
 		mfc_err("failed in set_buf_ctrls_val\n");
+
+	if (dec->is_dynamic_dpb) {
+		dst_vb = list_entry(ctx->dst_queue.next,
+						struct s5p_mfc_buf, list);
+		mfc_set_dynamic_dpb(ctx, dst_vb);
+	}
+
+	spin_unlock_irqrestore(&dev->irqlock, flags);
 
 	dev->curr_ctx = ctx->num;
 	s5p_mfc_clean_ctx_int_flags(ctx);
@@ -2228,6 +2350,50 @@ static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 		ctx->state = MFCINST_FINISHING;
 	}
 	s5p_mfc_decode_one_frame(ctx, last_frame);
+
+	return 0;
+}
+
+static inline int s5p_mfc_run_enc_last_frames(struct s5p_mfc_ctx *ctx)
+{
+	struct s5p_mfc_dev *dev = ctx->dev;
+	unsigned long flags;
+	struct s5p_mfc_buf *dst_mb;
+	struct s5p_mfc_raw_info *raw;
+	dma_addr_t src_addr[3] = { 0, 0, 0 }, dst_addr;
+	unsigned int dst_size;
+
+	raw = &ctx->raw_buf;
+	spin_lock_irqsave(&dev->irqlock, flags);
+
+	/* Source is not used for encoding, but should exist. */
+	if (list_empty(&ctx->src_queue)) {
+		mfc_debug(2, "no src buffers.\n");
+		spin_unlock_irqrestore(&dev->irqlock, flags);
+		return -EAGAIN;
+	}
+
+	if (list_empty(&ctx->dst_queue)) {
+		mfc_debug(2, "no dst buffers.\n");
+		spin_unlock_irqrestore(&dev->irqlock, flags);
+		return -EAGAIN;
+	}
+
+	mfc_debug(2, "Set address zero for all planes\n");
+	s5p_mfc_set_enc_frame_buffer(ctx, &src_addr[0], raw->num_planes);
+
+	dst_mb = list_entry(ctx->dst_queue.next, struct s5p_mfc_buf, list);
+	dst_mb->used = 1;
+	dst_addr = s5p_mfc_mem_plane_addr(ctx, &dst_mb->vb, 0);
+	dst_size = vb2_plane_size(&dst_mb->vb, 0);
+
+	s5p_mfc_set_enc_stream_buffer(ctx, dst_addr, dst_size);
+
+	spin_unlock_irqrestore(&dev->irqlock, flags);
+
+	dev->curr_ctx = ctx->num;
+	s5p_mfc_clean_ctx_int_flags(ctx);
+	s5p_mfc_encode_one_frame(ctx, 1);
 
 	return 0;
 }
@@ -2245,6 +2411,7 @@ static inline int s5p_mfc_run_enc_frame(struct s5p_mfc_ctx *ctx)
 	*/
 	unsigned int dst_size;
 	unsigned int index, i;
+	int last_frame = 0;
 
 	raw = &ctx->raw_buf;
 	spin_lock_irqsave(&dev->irqlock, flags);
@@ -2263,10 +2430,19 @@ static inline int s5p_mfc_run_enc_frame(struct s5p_mfc_ctx *ctx)
 
 	src_mb = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
 	src_mb->used = 1;
-	for (i = 0; i < raw->num_planes; i++) {
-		src_addr[i] = s5p_mfc_mem_plane_addr(ctx, &src_mb->vb, i);
-		mfc_debug(2, "enc src[%d] addr: 0x%08lx",
+
+	if (src_mb->vb.v4l2_planes[0].bytesused == 0) {
+		last_frame = 1;
+		mfc_debug(2, "Setting ctx->state to FINISHING\n");
+		ctx->state = MFCINST_FINISHING;
+
+		mfc_debug(2, "Set address zero for all planes\n");
+	} else {
+		for (i = 0; i < raw->num_planes; i++) {
+			src_addr[i] = s5p_mfc_mem_plane_addr(ctx, &src_mb->vb, i);
+			mfc_debug(2, "enc src[%d] addr: 0x%08lx",
 					i, (unsigned long)src_addr[i]);
+		}
 	}
 
 	s5p_mfc_set_enc_frame_buffer(ctx, &src_addr[0], raw->num_planes);
@@ -2286,7 +2462,7 @@ static inline int s5p_mfc_run_enc_frame(struct s5p_mfc_ctx *ctx)
 
 	dev->curr_ctx = ctx->num;
 	s5p_mfc_clean_ctx_int_flags(ctx);
-	s5p_mfc_encode_one_frame(ctx);
+	s5p_mfc_encode_one_frame(ctx, last_frame);
 
 	return 0;
 }
@@ -2375,6 +2551,7 @@ static inline int s5p_mfc_run_init_enc(struct s5p_mfc_ctx *ctx)
 static inline int s5p_mfc_run_init_dec_buffers(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev;
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	int ret;
 
 	if (!ctx) {
@@ -2391,7 +2568,7 @@ static inline int s5p_mfc_run_init_dec_buffers(struct s5p_mfc_ctx *ctx)
 	 * First set the output frame buffers
 	 * s5p_mfc_alloc_dec_buffers(ctx); */
 
-	if (ctx->capture_state != QUEUE_BUFS_MMAPED) {
+	if (!dec->is_dynamic_dpb && (ctx->capture_state != QUEUE_BUFS_MMAPED)) {
 		mfc_err("It seems that not all destionation buffers were "
 			"mmaped.\nMFC requires that all destination are mmaped "
 			"before starting processing.\n");
@@ -2585,6 +2762,8 @@ void s5p_mfc_try_run(struct s5p_mfc_dev *dev)
 	} else if (ctx->type == MFCINST_ENCODER) {
 		switch (ctx->state) {
 		case MFCINST_FINISHING:
+			ret = s5p_mfc_run_enc_last_frames(ctx);
+			break;
 		case MFCINST_RUNNING:
 		case MFCINST_RUNNING_NO_OUTPUT:
 			ret = s5p_mfc_run_enc_frame(ctx);

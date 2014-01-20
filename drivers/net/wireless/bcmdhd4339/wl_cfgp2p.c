@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfgp2p.c 417759 2013-08-12 12:29:43Z $
+ * $Id: wl_cfgp2p.c 425724 2013-09-25 07:04:57Z $
  *
  */
 #include <typedefs.h>
@@ -599,6 +599,7 @@ wl_cfgp2p_set_p2p_mode(struct wl_priv *wl, u8 mode, u32 channel, u16 listen_ms, 
 		return BCME_NOTFOUND;
 	}
 
+
 	/* Put the WL driver into P2P Listen Mode to respond to P2P probe reqs */
 	discovery_mode.state = mode;
 	discovery_mode.chspec = wl_ch_host_to_driver(channel);
@@ -961,7 +962,7 @@ wl_cfgp2p_act_frm_search(struct wl_priv *wl, struct net_device *ndev,
 	p2p_scan_purpose_t p2p_scan_purpose = P2P_SCAN_AFX_PEER_NORMAL;
 	if (!p2p_is_on(wl) || ndev == NULL || bssidx == WL_INVALID)
 		return -BCME_ERROR;
-	CFGP2P_ERR((" Enter\n"));
+	CFGP2P_DBG((" Enter\n"));
 	if (bssidx == wl_to_p2p_bss_bssidx(wl, P2PAPI_BSSCFG_PRIMARY))
 		bssidx = wl_to_p2p_bss_bssidx(wl, P2PAPI_BSSCFG_DEVICE);
 	if (channel)
@@ -1577,6 +1578,7 @@ wl_cfgp2p_listen_complete(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 	CFGP2P_DBG((" Enter\n"));
 
 	ndev = cfgdev_to_wlc_ndev(cfgdev, wl);
+
 
 	if (wl_get_p2p_status(wl, LISTEN_EXPIRED) == 0) {
 		wl_set_p2p_status(wl, LISTEN_EXPIRED);
@@ -2507,6 +2509,7 @@ static int wl_cfgp2p_if_open(struct net_device *net)
 	if (!wdev || !wl || !wl->p2p)
 		return -EINVAL;
 	WL_TRACE(("Enter\n"));
+#if !defined(WL_IFACE_COMB_NUM_CHANNELS)
 	/* If suppose F/W download (ifconfig wlan0 up) hasn't been done by now,
 	 * do it here. This will make sure that in concurrent mode, supplicant
 	 * is not dependent on a particular order of interface initialization.
@@ -2515,6 +2518,7 @@ static int wl_cfgp2p_if_open(struct net_device *net)
 	 */
 	wdev->wiphy->interface_modes |= (BIT(NL80211_IFTYPE_P2P_CLIENT)
 		| BIT(NL80211_IFTYPE_P2P_GO));
+#endif /* !WL_IFACE_COMB_NUM_CHANNELS */
 	wl_cfg80211_do_driver_init(net);
 
 	return 0;
@@ -2543,9 +2547,11 @@ static int wl_cfgp2p_if_stop(struct net_device *net)
 	spin_unlock_irqrestore(&wl->cfgdrv_lock, flags);
 	if (clear_flag)
 		wl_clr_drv_status(wl, SCANNING, net);
+#if !defined(WL_IFACE_COMB_NUM_CHANNELS)
 	wdev->wiphy->interface_modes = (wdev->wiphy->interface_modes)
 					& (~(BIT(NL80211_IFTYPE_P2P_CLIENT)|
 					BIT(NL80211_IFTYPE_P2P_GO)));
+#endif /* !WL_IFACE_COMB_NUM_CHANNELS */
 	return 0;
 }
 

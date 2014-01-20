@@ -29,9 +29,12 @@
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
+#endif
 
-#if TSP_CHECK_ATCH
-static void mxt_atch_check_calibration(struct mxt_data *data);
+#if TSP_USE_ATMELDBG
+#include <asm/bug.h>
 #endif
 
 static int mxt_read_mem(struct mxt_data *data, u16 reg, u8 len, void *buf)
@@ -61,11 +64,16 @@ static int mxt_read_mem(struct mxt_data *data, u16 reg, u8 len, void *buf)
 	for (i = 0; i < 3 ; i++) {
 		ret = i2c_transfer(data->client->adapter, msg, 2);
 		if (ret < 0)
-			dev_err(&data->client->dev, "%s fail[%d] address[0x%x]\n",
+			tsp_debug_err(true, &data->client->dev, "%s fail[%d] address[0x%x]\n",
 				__func__, ret, le_reg);
-		else
+		else if (2 == ret)
 			break;
 	}
+
+	if (2 != ret)
+		tsp_debug_err(true, &data->client->dev,
+			"%s fail[%d] address[0x%x]\n", __func__, ret, le_reg);
+
 	return ret == 2 ? 0 : -EIO;
 }
 
@@ -86,7 +94,7 @@ static int mxt_write_mem(struct mxt_data *data,
 	for (i = 0; i < 3 ; i++) {
 		ret = i2c_master_send(data->client, tmp, sizeof(tmp));
 		if (ret < 0)
-			dev_err(&data->client->dev,	"%s %d times write error on address[0x%x,0x%x]\n",
+			tsp_debug_err(true, &data->client->dev,	"%s %d times write error on address[0x%x,0x%x]\n",
 				__func__, i, tmp[1], tmp[0]);
 		else
 			break;
@@ -101,8 +109,11 @@ static struct mxt_object *
 	struct mxt_object *object;
 	int i;
 
-	if (!data->objects)
+	if (!data->objects) {
+		tsp_debug_err(true, &data->client->dev,
+			"%s object is NULL\n", __func__);
 		return NULL;
+	}
 
 	for (i = 0; i < data->info.object_num; i++) {
 		object = data->objects + i;
@@ -110,7 +121,7 @@ static struct mxt_object *
 			return object;
 	}
 
-	dev_err(&data->client->dev, "Invalid object type T%d\n",
+	tsp_debug_err(true, &data->client->dev, "Invalid object type T%d\n",
 		type);
 
 	return NULL;
@@ -165,7 +176,7 @@ static int mxt_read_object(struct mxt_data *data,
 
 	error = mxt_read_mem(data, object->start_address + offset, 1, val);
 	if (error)
-		dev_err(&data->client->dev, "Error to read T[%d] offset[%d] val[%d]\n",
+		tsp_debug_err(true, &data->client->dev, "Error to read T[%d] offset[%d] val[%d]\n",
 			type, offset, *val);
 	return error;
 }
@@ -182,14 +193,14 @@ static int mxt_write_object(struct mxt_data *data,
 		return -EINVAL;
 
 	if (offset >= object->size * object->instances) {
-		dev_err(&data->client->dev, "Tried to write outside object T%d offset:%d, size:%d\n",
+		tsp_debug_err(true, &data->client->dev, "Tried to write outside object T%d offset:%d, size:%d\n",
 			type, offset, object->size);
 		return -EINVAL;
 	}
 	reg = object->start_address;
 	error = mxt_write_mem(data, reg + offset, 1, &val);
 	if (error)
-		dev_err(&data->client->dev, "Error to write T[%d] offset[%d] val[%d]\n",
+		tsp_debug_err(true, &data->client->dev, "Error to write T[%d] offset[%d] val[%d]\n",
 			type, offset, val);
 
 	return error;
@@ -267,7 +278,7 @@ static int mxt_read_config_crc(struct mxt_data *data, u32 *crc)
 	/* Read message from command processor, which only has one report ID */
 	error = mxt_read_message_reportid(data, &message, object->max_reportid);
 	if (error) {
-		dev_err(dev, "Failed to retrieve CRC\n");
+		tsp_debug_err(true, dev, "Failed to retrieve CRC\n");
 		return error;
 	}
 
@@ -301,7 +312,7 @@ static int mxt_init_write_config(struct mxt_data *data,
 		return -EINVAL;
 
 	if ((object->size == 0) || (object->start_address == 0)) {
-		dev_err(&data->client->dev,	"%s error T%d\n",
+		tsp_debug_err(true, &data->client->dev,	"%s error T%d\n",
 			 __func__, type);
 		return -ENODEV;
 	}
@@ -309,7 +320,7 @@ static int mxt_init_write_config(struct mxt_data *data,
 	ret = mxt_write_mem(data, object->start_address,
 			object->size, cfg);
 	if (ret) {
-		dev_err(&data->client->dev,	"%s write error T%d address[0x%x]\n",
+		tsp_debug_err(true, &data->client->dev,	"%s write error T%d address[0x%x]\n",
 			__func__, type, object->start_address);
 		return ret;
 	}
@@ -336,7 +347,7 @@ static int mxt_write_config_from_pdata(struct mxt_data *data)
 	int ret = 0;
 
 	if (!tsp_config) {
-		dev_info(dev, "No cfg data in pdata\n");
+		tsp_debug_info(true, dev, "No cfg data in pdata\n");
 		return 0;
 	}
 
@@ -361,7 +372,7 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 	int ret;
 
 	if (!fw_info->cfg_raw_data) {
-		dev_info(dev, "No cfg data in file\n");
+		tsp_debug_info(true, dev, "No cfg data in file\n");
 		ret = mxt_write_config_from_pdata(data);
 		return ret;
 	}
@@ -373,29 +384,29 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 
 	/* Check Version information */
 	if (fw_info->fw_ver != data->info.version) {
-		dev_err(dev, "Warning: version mismatch! %s\n", __func__);
+		tsp_debug_err(true, dev, "Warning: version mismatch! %s\n", __func__);
 		return 0;
 	}
 	if (fw_info->build_ver != data->info.build) {
-		dev_err(dev, "Warning: build num mismatch! %s\n", __func__);
+		tsp_debug_err(true, dev, "Warning: build num mismatch! %s\n", __func__);
 		return 0;
 	}
 
 	/* Check config CRC */
 	if (current_crc == fw_info->cfg_crc) {
-		dev_info(dev, "Skip writing Config:[CRC 0x%06X]\n",
+		tsp_debug_info(true, dev, "Skip writing Config:[CRC 0x%06X]\n",
 			current_crc);
 		return 0;
 	}
 
-	dev_info(dev, "Writing Config:[CRC 0x%06X!=0x%06X]\n",
+	tsp_debug_info(true, dev, "Writing Config:[CRC 0x%06X!=0x%06X]\n",
 		current_crc, fw_info->cfg_crc);
 
 	/* Write config info */
 	for (index = 0; index < fw_info->cfg_len;) {
 
 		if (index + sizeof(struct mxt_cfg_data) >= fw_info->cfg_len) {
-			dev_err(dev, "index(%d) of cfg_data exceeded total size(%d)!!\n",
+			tsp_debug_err(true, dev, "index(%d) of cfg_data exceeded total size(%d)!!\n",
 				index + sizeof(struct mxt_cfg_data),
 				fw_info->cfg_len);
 			return -EINVAL;
@@ -407,31 +418,31 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 
 		index += sizeof(struct mxt_cfg_data) + cfg_data->size;
 		if (index > fw_info->cfg_len) {
-			dev_err(dev, "index(%d) of cfg_data exceeded total size(%d) in T%d object!!\n",
+			tsp_debug_err(true, dev, "index(%d) of cfg_data exceeded total size(%d) in T%d object!!\n",
 				index, fw_info->cfg_len, cfg_data->type);
 			return -EINVAL;
 		}
 
 		object = mxt_get_object(data, cfg_data->type);
 		if (!object) {
-			dev_err(dev, "T%d is Invalid object type\n",
+			tsp_debug_err(true, dev, "T%d is Invalid object type\n",
 				cfg_data->type);
 			return -EINVAL;
 		}
 
 		/* Check and compare the size, instance of each object */
 		if (cfg_data->size > object->size) {
-			dev_err(dev, "T%d Object length exceeded!\n",
+			tsp_debug_err(true, dev, "T%d Object length exceeded!\n",
 				cfg_data->type);
 			return -EINVAL;
 		}
 		if (cfg_data->instance >= object->instances) {
-			dev_err(dev, "T%d Object instances exceeded!\n",
+			tsp_debug_err(true, dev, "T%d Object instances exceeded!\n",
 				cfg_data->type);
 			return -EINVAL;
 		}
 
-		dev_dbg(dev, "Writing config for obj %d len %d instance %d (%d/%d)\n",
+		tsp_debug_dbg(false, dev, "Writing config for obj %d len %d instance %d (%d/%d)\n",
 			cfg_data->type, object->size,
 			cfg_data->instance, index, fw_info->cfg_len);
 
@@ -441,7 +452,7 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 		ret = mxt_write_mem(data, reg, cfg_data->size,
 					 cfg_data->register_val);
 		if (ret) {
-			dev_err(dev, "Write T%d Object failed\n",
+			tsp_debug_err(true, dev, "Write T%d Object failed\n",
 				object->type);
 			return ret;
 		}
@@ -454,7 +465,7 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 		 * download every time until the configuration is updated.
 		 */
 		if (cfg_data->size < object->size) {
-			dev_err(dev, "Warning: zeroing %d byte(s) in T%d\n",
+			tsp_debug_err(true, dev, "Warning: zeroing %d byte(s) in T%d\n",
 				 object->size - cfg_data->size, cfg_data->type);
 
 			for (i = cfg_data->size + 1; i < object->size; i++) {
@@ -464,10 +475,14 @@ static int mxt_write_config(struct mxt_fw_info *fw_info)
 			}
 		}
 	}
-	dev_info(dev, "Updated configuration\n");
+	tsp_debug_info(true, dev, "Updated configuration\n");
 
 	return ret;
 }
+
+#if TSP_PATCH
+#include "mxts_patch.c"
+#endif
 
 /* TODO TEMP_ADONIS: need to inspect below functions */
 #if TSP_INFORM_CHARGER
@@ -477,29 +492,42 @@ static int set_charger_config(struct mxt_data *data)
 	int error = 0;
 	u8 value = 0;
 
-	dev_info(&data->client->dev, "Current state is %s",
+	tsp_debug_info(true, &data->client->dev, "Current state is %s",
 		data->charging_mode ? "Charging mode" : "Battery mode");
 
-	if(data->charging_mode){
-		dev_info(&data->client->dev, "T62 CHARGON Enable\n");
+	if(data->chargin_status	!= data->charging_mode){
+		if(data->charging_mode){
+			tsp_debug_info(true, &data->client->dev, "T62 CHARGON Enable\n");
 
-		error = mxt_read_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, &value);
-		if (error) {
-			dev_err(&data->client->dev, "Error read T62 [%d]\n", error);
-		} else {
-			value |= 0x01;
-			mxt_write_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, value);
-		}
-	}else{
-		dev_info(&data->client->dev, "T62 CHARGON Disable\n");
+			error = mxt_read_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, &value);
+			if (error) {
+				tsp_debug_err(true, &data->client->dev, "Error read T62 [%d]\n", error);
+			} else {
+#if TSP_PATCH
+				if(data->patch.event_cnt)
+					mxt_patch_test_event(data, 1);
+#else
+				value |= 0x01;
+				mxt_write_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, value);
+#endif
+			}
+		}else{
+			tsp_debug_info(true, &data->client->dev, "T62 CHARGON Disable\n");
 
-		error = mxt_read_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, &value);
-		if (error) {
-			dev_err(&data->client->dev, "Error read T62 [%d]\n", error);
-		} else {
-			value &= ~(0x01);
-			mxt_write_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, value);
+			error = mxt_read_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, &value);
+			if (error) {
+				tsp_debug_err(true, &data->client->dev, "Error read T62 [%d]\n", error);
+			} else {
+#if TSP_PATCH
+				if(data->patch.event_cnt)
+					mxt_patch_test_event(data, 0);
+#else
+				value &= ~(0x01);
+				mxt_write_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 1, value);
+#endif
+			}
 		}
+		data->chargin_status = data->charging_mode;
 	}
 	return 0;
 }
@@ -526,7 +554,7 @@ static void charger_noti_dwork(struct work_struct *work)
 		return ;
 	}
 
-	dev_info(&data->client->dev, "%s mode\n",
+	tsp_debug_info(true, &data->client->dev, "%s mode\n",
 		data->charging_mode ? "charging" : "battery");
 
 	set_charger_config(data);
@@ -543,6 +571,7 @@ static void mxt_report_input_data(struct mxt_data *data)
 	int i;
 	int count = 0;
 	int report_count = 0;
+	bool booster_restart = false;
 
 	for (i = 0; i < MXT_MAX_FINGER; i++) {
 		if (data->fingers[i].state == MXT_STATE_INACTIVE)
@@ -559,6 +588,12 @@ static void mxt_report_input_data(struct mxt_data *data)
 					data->fingers[i].x);
 			input_report_abs(data->input_dev, ABS_MT_POSITION_Y,
 					data->fingers[i].y);
+
+#if defined(CONFIG_N2A) && USE_FOR_SUFACE
+			/* Change for palm swape motion (20131211 USE_FOR_SUFACE) */
+			if (!data->charging_mode)
+				data->fingers[i].w += 10;
+#endif
 			input_report_abs(data->input_dev, ABS_MT_TOUCH_MAJOR,
 					data->fingers[i].w);
 			input_report_abs(data->input_dev, ABS_MT_PRESSURE,
@@ -566,6 +601,14 @@ static void mxt_report_input_data(struct mxt_data *data)
 #if TSP_USE_SHAPETOUCH
 			input_report_abs(data->input_dev, ABS_MT_COMPONENT,
 					data->fingers[i].component);
+
+#if USE_FOR_SUFACE
+			/* Change for palm swape motion (20131211 USE_FOR_SUFACE) */
+			if (!data->charging_mode) {
+				if(data->sumsize > 20)
+					data->sumsize += 30;
+			}
+#endif
 			input_report_abs(data->input_dev, ABS_MT_SUMSIZE,
 					data->sumsize);
 #endif
@@ -573,7 +616,6 @@ static void mxt_report_input_data(struct mxt_data *data)
 			input_report_abs(data->input_dev, ABS_MT_PALM,
 					data->palm);
 #endif
-			input_report_key(data->input_dev, BTN_TOOL_FINGER, 1);
 
 			if (data->fingers[i].type
 				 == MXT_T100_TYPE_HOVERING_FINGER)
@@ -592,37 +634,53 @@ static void mxt_report_input_data(struct mxt_data *data)
 #if TSP_USE_SHAPETOUCH
 
 #if TSP_USE_PALM_FLAG
-		if (data->fingers[i].state == MXT_STATE_PRESS)
-			dev_info(&data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d],W[%d],Z[%d],P[%d],COMP[%d],SUM[%d]\n",
+		if (data->fingers[i].state == MXT_STATE_PRESS) {
+			tsp_debug_info(true, &data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d],W[%d],Z[%d],P[%d],COMP[%d],SUM[%d]\n",
 				i, data->fingers[i].type,
 				data->fingers[i].event,	data->fingers[i].x, data->fingers[i].y,
 				data->fingers[i].w, data->fingers[i].z, data->palm,
 				data->fingers[i].component, data->sumsize);
+#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+			booster_restart = true;
+#endif
+		}
 #else
-		if (data->fingers[i].state == MXT_STATE_PRESS)
-			dev_info(&data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d],W[%d],Z[%d],COMP[%d],SUM[%d]\n",
+		if (data->fingers[i].state == MXT_STATE_PRESS) {
+			tsp_debug_info(true, &data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d],W[%d],Z[%d],COMP[%d],SUM[%d]\n",
 				i, data->fingers[i].type,
 				data->fingers[i].event, data->fingers[i].x, data->fingers[i].y,
 				data->fingers[i].w, data->fingers[i].z,
 				data->fingers[i].component, data->sumsize);
+#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+			booster_restart = true;
+#endif
+		}
 #endif /*TSP_USE_PALM_FLAG*/
 
 #else
-		if (data->fingers[i].state == MXT_STATE_PRESS)
-			dev_info(&data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d]\n",
+		if (data->fingers[i].state == MXT_STATE_PRESS) {
+			tsp_debug_info(true, &data->client->dev, "[P][%d]: T[%d][%d] X[%d],Y[%d]\n",
 				i, data->fingers[i].type,
 				data->fingers[i].event,
 				data->fingers[i].x, data->fingers[i].y);
+#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+			booster_restart = true;
+#endif
+		}
 #endif
 
 #else
-		if (data->fingers[i].state == MXT_STATE_PRESS)
-			dev_info(&data->client->dev, "[P][%d]: T[%d][%d]\n",
+		if (data->fingers[i].state == MXT_STATE_PRESS) {
+			tsp_debug_info(true, &data->client->dev, "[P][%d]: T[%d][%d]\n",
 				i, data->fingers[i].type,
 				data->fingers[i].event);
+#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+			booster_restart = true;
+#endif
+		}
 #endif
 		else if (data->fingers[i].state == MXT_STATE_RELEASE)
-			dev_info(&data->client->dev, "[R][%d]: T[%d][%d] M[%d]\n",
+			tsp_debug_info(true, &data->client->dev, "[R][%d]: T[%d][%d] M[%d]\n",
 				i, data->fingers[i].type,
 				data->fingers[i].event,
 				data->fingers[i].mcount);
@@ -637,10 +695,8 @@ static void mxt_report_input_data(struct mxt_data *data)
 		}
 	}
 
-	if (count == 0) {
+	if (count == 0)
 		input_report_key(data->input_dev, BTN_TOUCH, 0);
-		input_report_key(data->input_dev, BTN_TOOL_FINGER, 0);
-	}
 
 	if (report_count > 0) {
 #if TSP_USE_ATMELDBG
@@ -649,14 +705,26 @@ static void mxt_report_input_data(struct mxt_data *data)
 			input_sync(data->input_dev);
 	}
 
-#if (TSP_USE_SHAPETOUCH || TSP_BOOSTER)
+#if defined(TSP_USE_SHAPETOUCH) || defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
 	/* all fingers are released */
 	if (count == 0) {
 #if TSP_USE_SHAPETOUCH
 		data->sumsize = 0;
 #endif
-#if TSP_BOOSTER
-		mxt_set_dvfs_on(data, false);
+
+#ifdef CONFIG_INPUT_BOOSTER
+		INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH,
+			BOOSTER_MODE_OFF);
+#elif TSP_BOOSTER
+		mxt_set_dvfs_lock(data, TSP_BOOSTER_OFF, false);
+#endif
+	} else {
+#ifdef CONFIG_INPUT_BOOSTER
+		if (booster_restart)
+			INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH,
+				BOOSTER_MODE_ON);
+#elif TSP_BOOSTER
+		mxt_set_dvfs_lock(data, TSP_BOOSTER_ON, booster_restart);
 #endif
 	}
 #endif
@@ -677,7 +745,7 @@ static void mxt_release_all_finger(struct mxt_data *data)
 		count++;
 	}
 	if (count) {
-		dev_err(&data->client->dev, "%s\n", __func__);
+		tsp_debug_err(true, &data->client->dev, "%s\n", __func__);
 		mxt_report_input_data(data);
 	}
 }
@@ -685,35 +753,9 @@ static void mxt_release_all_finger(struct mxt_data *data)
 #if TSP_HOVER_WORKAROUND
 static void mxt_current_calibration(struct mxt_data *data)
 {
-	dev_info(&data->client->dev, "%s\n", __func__);
+	tsp_debug_info(true, &data->client->dev, "%s\n", __func__);
 
 	mxt_write_object(data, MXT_SPT_SELFCAPHOVERCTECONFIG_T102, 1, 1);
-}
-#endif
-
-#if TSP_CHECK_ATCH
-void mxt_set_T61_object(struct mxt_data *data, u8 id, u8 mode,
-							u8 cmd, u16 ms_period)
-{
-	struct mxt_object *object;
-	int ret = 0;
-	u8 buf[5] = {3, 0, 0, 0, 0};
-
-	object = mxt_get_object(data, MXT_SPT_TIMER_T61);
-
-	buf[1] = cmd;
-	buf[2] = mode;
-	buf[3] = ms_period & 0xFF;
-	buf[4] = (ms_period >> 8) & 0xFF;
-
-	ret = mxt_write_mem(data, object->start_address+5*id, 5, buf);
-
-	if (ret)
-		dev_err(&data->client->dev,
-			"%s write error T%d(%d) address[0x%x]\n",
-			__func__, MXT_SPT_TIMER_T61, id, object->start_address);
-
-	__mxt_debug_msg(data, "T61[%d] Timer Set %d ms\n", id, ms_period);
 }
 #endif
 
@@ -722,7 +764,11 @@ static void mxt_treat_T6_object(struct mxt_data *data,
 {
 	/* Normal mode */
 	if (message->message[0] == 0x00) {
-		dev_info(&data->client->dev, "Normal mode\n");
+		tsp_debug_info(true, &data->client->dev, "Normal mode\n");
+#if TSP_INFORM_CHARGER
+		set_charger_config(data);
+#endif
+
 #if TSP_HOVER_WORKAROUND
 /* TODO HOVER : Below commands should be removed.
 */
@@ -735,33 +781,25 @@ static void mxt_treat_T6_object(struct mxt_data *data,
 	}
 	/* I2C checksum error */
 	if (message->message[0] & 0x04)
-		dev_err(&data->client->dev, "I2C checksum error\n");
+		tsp_debug_err(true, &data->client->dev, "I2C checksum error\n");
 	/* Config error */
 	if (message->message[0] & 0x08)
-		dev_err(&data->client->dev, "Config error\n");
+		tsp_debug_err(true, &data->client->dev, "Config error\n");
 	/* Calibration */
 	if (message->message[0] & 0x10) {
-		dev_info(&data->client->dev, "Calibration is on going !!\n");
-#if TSP_CHECK_ATCH
-		mxt_atch_check_calibration(data);
-		data->atch.cal_is_ongoing = 1;
-	} else {
-		data->atch.cal_is_ongoing = 0;
-#endif
+		tsp_debug_info(true, &data->client->dev, "Calibration is on going !!\n");
 	}
-
 	/* Signal error */
 	if (message->message[0] & 0x20)
-		dev_err(&data->client->dev, "Signal error\n");
+		tsp_debug_err(true, &data->client->dev, "Signal error\n");
 	/* Overflow */
 	if (message->message[0] & 0x40)
-		dev_err(&data->client->dev, "Overflow detected\n");
+		tsp_debug_err(true, &data->client->dev, "Overflow detected\n");
 	/* Reset */
 	if (message->message[0] & 0x80) {
-		dev_info(&data->client->dev, "Reset is ongoing\n");
+		tsp_debug_info(true, &data->client->dev, "Reset is ongoing\n");
 #if TSP_INFORM_CHARGER
-		if (data->charging_mode)
-			set_charger_config(data);
+		data->chargin_status = 0xff;
 #endif
 #if TSP_HOVER_WORKAROUND
 /* TODO HOVER : Below commands should be removed.
@@ -778,7 +816,7 @@ static void mxt_treat_T6_object(struct mxt_data *data,
 				MXT_SPT_TOUCHSCREENHOVER_T101, 0, &value);
 
 			if (error) {
-				dev_err(&data->client->dev, "Error read hover enable status[%d]\n"
+				tsp_debug_err(true, &data->client->dev, "Error read hover enable status[%d]\n"
 					, error);
 			} else {
 				if (value)
@@ -786,56 +824,71 @@ static void mxt_treat_T6_object(struct mxt_data *data,
 			}
 		}
 #endif
-#if TSP_CHECK_ATCH
-		mxt_atch_check_calibration(data);
-#endif
 	}
 }
 
 #if ENABLE_TOUCH_KEY
 static void mxt_release_all_keys(struct mxt_data *data)
 {
-	int i = 0;
+	int i = 0, code = 0;
+
 	if (data->tsp_keystatus != TOUCH_KEY_NULL) {
-
-
 		if (data->report_dummy_key) {
 			for (i = 0 ; i < data->pdata->num_touchkey ; i++) {
 				if (data->tsp_keystatus & data->pdata->touchkey[i].value) {
-
 				/* report all touch-key event */
 					input_report_key(data->input_dev,
 						data->pdata->touchkey[i].keycode, KEY_RELEASE);
-					dev_info(&data->client->dev, "[TSP_KEY] %s R!\n", data->pdata->touchkey[i].name);
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] %s R!\n", data->pdata->touchkey[i].name);
 				}
 			}
 
 		} else {
 			/* menu key check*/
 			if (data->tsp_keystatus & TOUCH_KEY_MENU) {
-				if(data->ignore_menu_key) {
-					dev_info(&data->client->dev, "[TSP_KEY] Ignore menu R! by dummy key\n");
-				} else {
-					input_report_key(data->input_dev, KEY_MENU, KEY_RELEASE);
-					dev_info(&data->client->dev, "[TSP_KEY] menu R!\n");
-				}
+				if(data->ignore_menu_key)
+					tsp_debug_info(true, &data->client->dev,
+					"[TSP_KEY] Ignore menu R! by dummy key\n");
+				else if (data->ignore_menu_key_by_back)
+					tsp_debug_info(true, &data->client->dev,
+					"[TSP_KEY] Ignore menu R! by back key\n");
+				else
+					code = KEY_RECENT;
 			}
 
 			/* back key check*/
 			if (data->tsp_keystatus & TOUCH_KEY_BACK) {
-				if (data->ignore_back_key) {
-					dev_info(&data->client->dev, "[TSP_KEY] Ignore back R! by dummy key\n");
-				} else {
-					input_report_key(data->input_dev, KEY_BACK, KEY_RELEASE);
-					dev_info(&data->client->dev, "[TSP_KEY] back R!\n");
-				}
+				if (data->ignore_back_key)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore back R! by dummy key\n");
+				else if (data->ignore_back_key_by_menu)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore back R! by menu key\n");
+				else
+					code = KEY_BACK;
 			}
 		}
 
+		input_report_key(data->input_dev, code, KEY_RELEASE);
+		tsp_debug_info(true, &data->client->dev,
+			"[TSP_KEY] %d R!\n", code);
 		input_sync(data->input_dev);
+
+#if TOUCHKEY_BOOSTER
+		touchkey_set_dvfs_lock(data, TOUCHKEY_BOOSTER_OFF);
+#endif
+
+#ifdef CONFIG_INPUT_BOOSTER
+		INPUT_BOOSTER_SEND_EVENT(code,
+			BOOSTER_MODE_OFF);
+#endif
+
 		data->tsp_keystatus = TOUCH_KEY_NULL;
 		data->ignore_menu_key = false;
 		data->ignore_back_key = false;
+		data->ignore_back_key_by_menu = false;
+		data->ignore_menu_key_by_back = false;
 	}
 }
 
@@ -845,60 +898,71 @@ static void mxt_treat_T15_object(struct mxt_data *data,
 	struct input_dev *input = data->input_dev;
 	u8 input_status = message->message[MXT_MSG_T15_STATUS] & MXT_MSGB_T15_DETECT;
 	u8 input_message = message->message[MXT_MSG_T15_KEYSTATE];
-	int i;
+	int i = 0, code = 0;
 	u8 change_state = input_message ^ data->tsp_keystatus;
-	u8 key_state;
+	u8 key_state = 0;
 
 	/* single key configuration*/
 	if (input_status) { /* press */
-
 		if (data->report_dummy_key) {
 			for (i = 0 ; i < data->pdata->num_touchkey ; i++) {
-				if (change_state & data->pdata->touchkey[i].value){
+				if (change_state & data->pdata->touchkey[i].value) {
 					key_state = input_message & data->pdata->touchkey[i].value;
-					input_report_key(data->input_dev, data->pdata->touchkey[i].keycode, key_state != 0 ? KEY_PRESS : KEY_RELEASE);
+					input_report_key(data->input_dev, data->pdata->touchkey[i].keycode,
+						key_state != 0 ? KEY_PRESS : KEY_RELEASE);
 					input_sync(data->input_dev);
-					dev_info(&data->client->dev, "[TSP_KEY] %s %s\n", data->pdata->touchkey[i].name , key_state != 0 ? "P" : "R");
+					tsp_debug_info(true, &data->client->dev, "[TSP_KEY] %s %s\n",
+						data->pdata->touchkey[i].name , key_state != 0 ? "P" : "R");
 				}
 			}
 			input_sync(data->input_dev);
-
 		} else {
-
 			/* menu key check*/
 			if (change_state & TOUCH_KEY_MENU) {
 				key_state = input_message & TOUCH_KEY_MENU;
 
-				if(data->ignore_menu_key) {
-					dev_info(&data->client->dev, "[TSP_KEY] Ignore menu %s by dummy key\n", key_state != 0 ? "P" : "R");
-				} else {
-					input_report_key(data->input_dev, KEY_MENU, key_state != 0 ? KEY_PRESS : KEY_RELEASE);
-					dev_info(&data->client->dev, "[TSP_KEY] menu %s\n", key_state != 0 ? "P" : "R");
+				if(data->ignore_menu_key)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore menu %s by dummy key\n", key_state != 0 ? "P" : "R");
+				else if (data->ignore_menu_key_by_back)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore menu %s by back key\n", key_state != 0 ? "P" : "R");
+				else {
+					code = KEY_RECENT;
+					if (key_state != 0)
+						data->ignore_back_key_by_menu = true;
+					else
+						data->ignore_back_key_by_menu = false;
 				}
 			}
 
 			/* back key check*/
 			if (change_state & TOUCH_KEY_BACK) {
 				key_state = input_message & TOUCH_KEY_BACK;
-
-				if (data->ignore_back_key) {
-					dev_info(&data->client->dev, "[TSP_KEY] Ignore back %s by dummy key\n", key_state != 0 ? "P" : "R");
-				} else {
-					input_report_key(data->input_dev, KEY_BACK, key_state != 0 ? KEY_PRESS : KEY_RELEASE);
-					dev_info(&data->client->dev, "[TSP_KEY] back %s\n" , key_state != 0 ? "P" : "R");
+				if (data->ignore_back_key)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore back %s by dummy key\n", key_state != 0 ? "P" : "R");
+				else if (data->ignore_back_key_by_menu)
+					tsp_debug_info(true, &data->client->dev,
+						"[TSP_KEY] Ignore menu %s by menu key\n", key_state != 0 ? "P" : "R");
+				else {
+					code = KEY_BACK;
+					if (key_state != 0)
+						data->ignore_menu_key_by_back = true;
+					else
+						data->ignore_menu_key_by_back = false;
 				}
 			}
 
 			/* dummy menu key check*/
 			if (change_state & TOUCH_KEY_D_MENU) {
 				key_state = input_message & TOUCH_KEY_D_MENU;
-
-				if((key_state != 0) && !data->ignore_menu_key && !(input_message & TOUCH_KEY_MENU)) {
+				if ((key_state != 0) && !data->ignore_menu_key && !(input_message & TOUCH_KEY_MENU)) {
 					data->ignore_menu_key = true;
-					dev_info(&data->client->dev, "[TSP_KEY] ignore_menu_key Enable\n");
+					tsp_debug_info(true, &data->client->dev, "[TSP_KEY] ignore_menu_key Enable\n");
 				} else if (!key_state && data->ignore_menu_key && !(input_message & TOUCH_KEY_MENU)) {
 					data->ignore_menu_key = false;
-					dev_info(&data->client->dev, "[TSP_KEY] ignore_menu_key Disable\n");
+					tsp_debug_info(true, &data->client->dev, "[TSP_KEY] ignore_menu_key Disable\n");
 				}
 			}
 
@@ -906,20 +970,31 @@ static void mxt_treat_T15_object(struct mxt_data *data,
 			if (change_state & TOUCH_KEY_D_BACK) {
 				key_state = input_message & TOUCH_KEY_D_BACK;
 
-				if((key_state != 0) && !data->ignore_back_key && !(input_message & TOUCH_KEY_BACK)) {
+				if ((key_state != 0) && !data->ignore_back_key && !(input_message & TOUCH_KEY_BACK)) {
 					data->ignore_back_key = true;
-					dev_info(&data->client->dev, "[TSP_KEY] ignore_back_key Enable\n");
+					tsp_debug_info(true, &data->client->dev, "[TSP_KEY] ignore_back_key Enable\n");
 				} else if (!key_state && data->ignore_back_key && !(input_message & TOUCH_KEY_BACK)) {
 					data->ignore_back_key = false;
-					dev_info(&data->client->dev, "[TSP_KEY] ignore_back_key Disable\n");
+					tsp_debug_info(true, &data->client->dev, "[TSP_KEY] ignore_back_key Disable\n");
 				}
 			}
 
-			input_sync(data->input_dev);
+			if (code) {
+				input_report_key(data->input_dev, code, !!key_state);
+				input_sync(data->input_dev);
+				tsp_debug_info(true, &data->client->dev,
+					"[TSP_KEY] %d %s\n", code, !!key_state ? "P" : "R");
+#if TOUCHKEY_BOOSTER
+				touchkey_set_dvfs_lock(data, !!key_state);
+#endif
+
+#ifdef CONFIG_INPUT_BOOSTER
+				INPUT_BOOSTER_SEND_EVENT(code, !!key_state);
+#endif
+			}
 		}
-	} else {
+	} else
 		mxt_release_all_keys(data);
-	}
 
 	data->tsp_keystatus = input_message;
 
@@ -937,34 +1012,38 @@ static void mxt_treat_T9_object(struct mxt_data *data,
 
 	/* If not a touch event, return */
 	if (id >= MXT_MAX_FINGER) {
-		dev_err(&data->client->dev, "MAX_FINGER exceeded!\n");
+		tsp_debug_err(true, &data->client->dev, "MAX_FINGER exceeded!\n");
 		return;
 	}
+
+	if (data->finger_mask & (1U << id))
+		mxt_report_input_data(data);
 
 	if (msg[0] & MXT_RELEASE_MSG_MASK) {
 		data->fingers[id].z = 0;
 		data->fingers[id].w = msg[4];
 		data->fingers[id].state = MXT_STATE_RELEASE;
+		mxt_report_input_data(data); // 0819
 	} else if ((msg[0] & MXT_DETECT_MSG_MASK)
 		&& (msg[0] & (MXT_PRESS_MSG_MASK | MXT_MOVE_MSG_MASK))) {
 		data->fingers[id].x = (msg[1] << 4) | (msg[3] >> 4);
 		data->fingers[id].y = (msg[2] << 4) | (msg[3] & 0xF);
-		data->fingers[id].w = msg[4];
+        if (msg[4] != 0) {
+            if (data->charging_mode)
+                data->fingers[id].w = msg[4];
+            else
+                data->fingers[id].w = msg[4] + 4;
+        } else
+            data->fingers[id].w = 1;    //Passive stylus
 		data->fingers[id].z = msg[5];
 #if TSP_USE_SHAPETOUCH
 		data->fingers[id].component = msg[6];
-#endif
-#if TSP_CHECK_ATCH
-		data->atch.t9_size = msg[4];
-		data->atch.t9_amp = msg[5];
 #endif
 
 		if (data->pdata->max_x < 1024)
 			data->fingers[id].x = data->fingers[id].x >> 2;
 		if (data->pdata->max_y < 1024)
 			data->fingers[id].y = data->fingers[id].y >> 2;
-
-		data->finger_mask |= 1U << id;
 
 		if (msg[0] & MXT_PRESS_MSG_MASK) {
 			data->fingers[id].state = MXT_STATE_PRESS;
@@ -973,15 +1052,13 @@ static void mxt_treat_T9_object(struct mxt_data *data,
 			data->fingers[id].mcount += 1;
 		}
 
-#if TSP_BOOSTER
-		mxt_set_dvfs_on(data, true);
-#endif
 #if TSP_USE_PALM_FLAG
-		if(msg[0] & MXT_SUPPRESS_MSG_MASK){ // 0x92(Detect|Move|Suppress)
+		if (msg[0] & MXT_SUPPRESS_MSG_MASK) {
+			if (data->palm == 0)
+				tsp_debug_info(true, &data->client->dev, "%s : palm detect!\n", __func__);
 			data->palm = 1;
-		} else {
+		} else
 			data->palm = 0;
-		}
 #endif
 	} else if ((msg[0] & MXT_SUPPRESS_MSG_MASK)
 		&& (data->fingers[id].state != MXT_STATE_INACTIVE)) {
@@ -989,291 +1066,48 @@ static void mxt_treat_T9_object(struct mxt_data *data,
 				data->fingers[id].z = 0;
 				data->fingers[id].w = msg[4];
 				data->fingers[id].state = MXT_STATE_RELEASE;
-			dev_info(&data->client->dev, "%s: Only Suppress w/o Detect\n",
-				__func__);
+#if TSP_USE_PALM_FLAG //0910
+				data->palm = 0;
+#endif
+				mxt_report_input_data(data); // 0904
+				tsp_debug_info(true, &data->client->dev,
+							"%s: Only Suppress w/o Detect\n", __func__);
 			}
+
 	} else {
 		/* ignore changed amplitude and vector messsage */
 		if (!((msg[0] & MXT_DETECT_MSG_MASK)
 				&& (msg[0] & MXT_AMPLITUDE_MSG_MASK
 				 || msg[0] & MXT_VECTOR_MSG_MASK)))
-			dev_err(&data->client->dev, "Unknown state %#02x %#02x\n",
+			tsp_debug_err(true, &data->client->dev, "Unknown state %#02x %#02x\n",
 				msg[0], msg[1]);
 	}
-
-	mxt_report_input_data(data);
-
+	data->finger_mask |= 1U << id;
 }
 
 static void mxt_treat_T42_object(struct mxt_data *data,
 		struct mxt_message *message)
 {
-	dev_info(&data->client->dev, "%s\n", __func__);
+	tsp_debug_info(true, &data->client->dev, "%s\n", __func__);
 
 	if (message->message[0] & 0x01) {
 		/* Palm Press */
-		dev_info(&data->client->dev, "palm touch detected\n");
+		tsp_debug_info(true, &data->client->dev, "palm touch detected\n");
 	} else {
 		/* Palm release */
-		dev_info(&data->client->dev, "palm touch released\n");
+		tsp_debug_info(true, &data->client->dev, "palm touch released\n");
 	}
 }
-
-#if TSP_CHECK_ATCH
-void mxt_atch_init(struct mxt_data *data)
-{
-	struct mxt_object *obj;
-	u8 buf[35];
-	u8 offset;
-	int error;
-	/*  Init flags */
-	data->atch.enable = 0;
-	data->atch.coin = 0;
-	data->atch.calgood = 0;
-	data->atch.timer = 0;
-
-	obj = mxt_get_object(data, MXT_SPT_DYNAMICCONFIGURATIONCONTAINER_T71);
-	error = mxt_read_mem(data, obj->start_address, 33, buf);
-
-	if (error)
-		dev_err(&data->client->dev, "Error to read T71 Container\n");
-	else if (!error && buf[0] == 255) {
-		dev_info(&data->client->dev, "ATCH: Workaround Enabled");
-		offset = buf[1];
-
-		data->atch.check_condition_1  = buf[2+offset];	 /*5 */
-		data->atch.check_condition_2  = buf[3+offset];	 /*1 */
-		data->atch.check_condition_3  = buf[4+offset];	 /*44 */
-		data->atch.check_condition_4  = buf[5+offset];	 /*0 */
-		data->atch.check_condition_5  = buf[6+offset];	 /*8 */
-		data->atch.check_condition_6  = buf[7+offset];	 /*35 */
-		data->atch.check_condition_7  = buf[8+offset];	 /*40 */
-		data->atch.check_condition_8  = buf[9+offset];	 /*8 */
-		data->atch.check_condition_9  = buf[10+offset];	 /*25 */
-		data->atch.check_condition_10 = buf[11+offset];  /*30 */
-		data->atch.check_condition_11 = buf[12+offset];  /*30 */
-		data->atch.check_condition_12 = buf[13+offset];  /*7 */
-		data->atch.check_condition_13 = buf[14+offset];  /*16 */
-		data->atch.check_condition_14 = buf[15+offset];  /*25 */
-		data->atch.check_condition_15 = buf[16+offset];  /*20 */
-		data->atch.check_condition_16 = buf[17+offset];  /*5 */
-		data->atch.check_condition_17 = buf[18+offset];  /*90 */
-		data->atch.check_condition_18 = buf[19+offset];  /*3 */
-		data->atch.check_condition_19 = buf[20+offset];  /*6 */
-		data->atch.check_condition_20 = buf[21+offset];  /*2 */
-		data->atch.check_condition_21 = buf[22+offset];  /*20 */
-		data->atch.check_condition_22 = buf[23+offset];  /*15 */
-		data->atch.check_condition_23 = buf[24+offset];  /*20 */
-		data->atch.check_condition_24 = buf[25+offset];  /*35 */
-		data->atch.check_condition_25 = buf[26+offset];  /*60 */
-		data->atch.check_condition_26 = buf[27+offset];  /*0 */
-		data->atch.check_condition_27 = buf[28+offset];  /*5 */
-		data->atch.check_condition_28 = buf[29+offset];  /*16 */
-		data->atch.check_condition_29 = buf[30+offset];  /*30 */
-		data->atch.check_condition_30 = buf[31+offset];  /*30 */
-		data->atch.check_condition_31 = buf[32+offset];  /*7 */
-
-		data->atch.check_condition2_1 = ((data->atch.check_condition_2 << 8) | data->atch.check_condition_3);//20130618
-		data->atch.enable = 1;
-		data->atch.timer_id = 0;
-		data->atch.coin_time = 1;
-		data->atch.calgood_time = 1;
-		data->atch.prev_chargin_status = 0xff;
-	}
-}
-
-static void mxt_atch_check_calibration(struct mxt_data *data)
-{
-	if (data->atch.enable) {
-		data->atch.timer = 0;
-		data->atch.coin = 1;
-		data->atch.calgood = 0;
-		data->atch.abnormal_enable = 0;
-		data->atch.bigpalm_enable = 0;
-	}
-}
-
-static int mxt_command_calibration(struct mxt_data *data)
-{
-	return  mxt_write_object(data, MXT_GEN_COMMANDPROCESSOR_T6,
-						MXT_COMMAND_CALIBRATE, 1);
-}
-
-static void mxt_check_command_calibration(struct mxt_data *data)
-{
-	if (data->atch.cal_is_ongoing == 0) {
-		mxt_command_calibration(data);
-	}
-}
-#endif
 
 static void mxt_treat_T57_object(struct mxt_data *data,
 		struct mxt_message *message)
 {
-#if TSP_CHECK_ATCH
-	u8 *msg = message->message;
-	u16 sum_size = (u16)(msg[0] | (msg[1] << 8));
-	u16 tch_area = (u16)(msg[2] | (msg[3] << 8));
-	u16 atch_area = (u16)(msg[4] | (msg[5] << 8));
-
-	u8 charging_mode = data->charging_mode;
-	u8 touch_size = data->atch.t9_size;
-	u8 touch_amp = data->atch.t9_amp;
-	u8 touch_cnt = 0;
-	int i;
-
-	data->atch.touch_cnt = 0;
-	for (i = 0; i < MXT_MAX_FINGER; i++) {
-		if ((data->fingers[i].state != MXT_STATE_INACTIVE) &&
-			(data->fingers[i].state != MXT_STATE_RELEASE))
-			data->atch.touch_cnt++;
-	}
-	touch_cnt = data->atch.touch_cnt;
-#endif
-
 #if TSP_USE_SHAPETOUCH
 	data->sumsize = message->message[0] + (message->message[1] << 8);
 #endif	/* TSP_USE_SHAPETOUCH */
-
-#if TSP_CHECK_ATCH
-	if (data->atch.enable==0) {
-		return;
-	}
-
-	if (data->atch.coin) { /* 1st Stage Check */
-		__mxt_debug_msg(data, "ATCH: COIN TCHAREA=%d ATCHAREA=%d SUM=%d\n",
-				tch_area, atch_area, sum_size);
-		if (touch_cnt) {
-			if (data->atch.timer == 0) {
-				mxt_set_T61_object(data, data->atch.timer_id,
-						MXT_T61_TIMER_ONESHOT, MXT_T61_TIMER_CMD_START,
-						data->atch.coin_time*1000);
-				data->atch.timer = 1;
-			}
-			if ((atch_area > data->atch.check_condition_1) && (sum_size < data->atch.check_condition2_1)) {
-				if ((atch_area - tch_area) > data->atch.check_condition_4) {
-					__mxt_debug_msg(data,
-							"ATCH: CASE 1-1\n");
-					mxt_check_command_calibration(data);
-				}
-			}
-		} else if (atch_area) { /* Only Anti-touch */
-			__mxt_debug_msg(data, "ATCH: CASE 1-2\n");
-			mxt_check_command_calibration(data);
-		}
-	}
-
-	if (data->atch.calgood) { /* 2nd Stage Check */
-		__mxt_debug_msg(data, "ATCH: CALGOOD TCHAREA=%d ATCHAREA=%d SUM=%d\n",
-				tch_area, atch_area, sum_size);
-		if (tch_area) {
-			if (((atch_area - tch_area) > data->atch.check_condition_5) && (tch_area < data->atch.check_condition_6)) {
-				__mxt_debug_msg(data, "ATCH: CASE 2-1\n");
-				mxt_check_command_calibration(data);
-			}
-			if (((tch_area - atch_area) > data->atch.check_condition_7) && (atch_area > data->atch.check_condition_8)) {
-				__mxt_debug_msg(data, "ATCH: CASE 2-2\n");
-				mxt_check_command_calibration(data);
-			}
-			if (charging_mode == 0) {
-				if (touch_size < data->atch.check_condition_9 && touch_amp > data->atch.check_condition_10 && sum_size > data->atch.check_condition_11 && touch_cnt < data->atch.check_condition_12) {
-					__mxt_debug_msg(data,
-							"ATCH: CASE 2-3\n");
-					mxt_check_command_calibration(data);
-				}
-				if (touch_size < data->atch.check_condition_13 && touch_amp > data->atch.check_condition_14 && sum_size > data->atch.check_condition_15 && touch_cnt < data->atch.check_condition_16) {
-					__mxt_debug_msg(data,
-							"ATCH: CASE 2-4\n");
-					mxt_check_command_calibration(data);
-				}
-			}
-		} else if (atch_area) { /* Only Anti-touch */
-			__mxt_debug_msg(data, "ATCH: CASE 2-5\n");
-			mxt_check_command_calibration(data);
-		}
-	}
-
-	if (data->atch.abnormal_enable && touch_cnt) {
-		if (sum_size-tch_area > data->atch.check_condition_17 && touch_cnt < data->atch.check_condition_18) {
-			__mxt_debug_msg(data, "Abnormal Case 1\n");
-			mxt_check_command_calibration(data);
-		}
-		if (touch_cnt > data->atch.check_condition_19 && sum_size < (touch_cnt * data->atch.check_condition_20) && sum_size < data->atch.check_condition_21) {
-			__mxt_debug_msg(data, "Abnormal Case 2\n");
-			mxt_check_command_calibration(data);
-		}
-		if (data->atch.bigpalm_enable) {
-			if ((sum_size - tch_area) > data->atch.check_condition_22) {
-				__mxt_debug_msg(data, "BigPalm Case 1\n");
-				mxt_check_command_calibration(data);
-			}
-			if (touch_size >= data->atch.check_condition_23 && touch_amp > data->atch.check_condition_24 && atch_area > data->atch.check_condition_25) {
-				__mxt_debug_msg(data, "BigPalm Case 2\n");
-				mxt_check_command_calibration(data);
-			}
-			if (sum_size == tch_area && atch_area == data->atch.check_condition_26 && touch_cnt > data->atch.check_condition_27) {
-				__mxt_debug_msg(data, "BigPalm Case 3\n");
-				mxt_check_command_calibration(data);
-			}
-			if (charging_mode == 0){
-				if (touch_size < data->atch.check_condition_28 && touch_amp > data->atch.check_condition_29 && sum_size > data->atch.check_condition_30 && touch_cnt < data->atch.check_condition_31) {
-					__mxt_debug_msg(data, "BigPalm Case 4\n");
-					mxt_check_command_calibration(data);
-				}
-			}
-		}
-	}
-#endif
 }
 
-static void mxt_treat_T61_object(struct mxt_data *data,
-						struct mxt_message *message)
-{
-	int id;
-	u8 *msg = message->message;
-
-	id = data->reportids[message->reportid].index;
-
-#if TSP_CHECK_ATCH
-	if ((id != data->atch.timer_id) || ((msg[0] & 0xa0) != 0xa0))
-		return;
-
-	data->atch.timer = 0;
-	if (data->atch.bigpalm_enable) {
-		dev_err(&data->client->dev, "ATCH: BigPalm Case Disabled\n");
-		data->atch.bigpalm_enable = 0;
-		mxt_write_object(data, MXT_GEN_ACQUISITIONCONFIG_T8, 4, 100);
-		mxt_write_object(data, MXT_GEN_POWERCONFIG_T7, 3, 3);
-	}
-	if (data->atch.calgood) {
-		dev_err(&data->client->dev, "ATCH: Calgood Timer elapsed\n");
-		data->atch.calgood = 0;
-
-//		mxt_write_object(data, MXT_GEN_ACQUISITIONCONFIG_T8, 4, 100);
-		mxt_write_object(data, MXT_GEN_ACQUISITIONCONFIG_T8, 8, 128);
-		mxt_write_object(data, MXT_GEN_ACQUISITIONCONFIG_T8, 9, 100);
-
-		mxt_set_T61_object(data, data->atch.timer_id,
-							MXT_T61_TIMER_ONESHOT,
-							MXT_T61_TIMER_CMD_START,
-							3 * 1000);
-		dev_err(&data->client->dev, "ATCH: Abnormal Case enabled\n");
-		data->atch.abnormal_enable = 1;
-		data->atch.bigpalm_enable = 1;
-	}
-	if (data->atch.coin) {
-		dev_err(&data->client->dev, "ATCH: Coin Timer elapsed\n");
-		data->atch.coin = 0;
-
-		mxt_set_T61_object(data, data->atch.timer_id,
-						MXT_T61_TIMER_ONESHOT,
-						MXT_T61_TIMER_CMD_START,
-						data->atch.calgood_time * 1000);
-		data->atch.calgood = 1;
-	}
-#endif
-}
-
+#if 0
 static void mxt_treat_T100_object(struct mxt_data *data,
 		struct mxt_message *message)
 {
@@ -1281,7 +1115,7 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 	u8 *msg = message->message;
 	u8 touch_type = 0, touch_event = 0, touch_detect = 0;
 
-	dev_info(&data->client->dev, "%s\n", __func__);
+	tsp_debug_info(true, &data->client->dev, "%s\n", __func__);
 
 	index = data->reportids[message->reportid].index;
 
@@ -1291,7 +1125,7 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 			/* TODO: Need to be implemeted after fixed protocol
 			 * This messages will indicate TCHAREA, ATCHAREA
 			 */
-			dev_dbg(&data->client->dev, "SCRSTATUS:[%02X] %02X %04X %04X %04X\n",
+			tsp_debug_dbg(false, &data->client->dev, "SCRSTATUS:[%02X] %02X %04X %04X %04X\n",
 				 msg[0], msg[1], (msg[3] << 8) | msg[2],
 				 (msg[5] << 8) | msg[4],
 				 (msg[7] << 8) | msg[6]);
@@ -1307,7 +1141,7 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 	touch_type = (msg[0] & 0x70) >> 4;
 	touch_event = msg[0] & 0x0F;
 
-	dev_dbg(&data->client->dev, "TCHSTATUS [%d] : DETECT[%d] TYPE[%d] EVENT[%d] %d,%d,%d,%d,%d\n",
+	tsp_debug_dbg(false, &data->client->dev, "TCHSTATUS [%d] : DETECT[%d] TYPE[%d] EVENT[%d] %d,%d,%d,%d,%d\n",
 		id, touch_detect, touch_type, touch_event,
 		msg[1] | (msg[2] << 8),	msg[3] | (msg[4] << 8),
 		msg[5], msg[6], msg[7]);
@@ -1329,7 +1163,7 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 
 				mxt_report_input_data(data);
 			} else {
-				dev_err(&data->client->dev, "Untreated Undetectd touch : type[%d], event[%d]\n",
+				tsp_debug_err(true, &data->client->dev, "Untreated Undetectd touch : type[%d], event[%d]\n",
 					touch_type, touch_event);
 			}
 			break;
@@ -1371,7 +1205,7 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 
 			mxt_report_input_data(data);
 		} else {
-			dev_err(&data->client->dev, "Untreated Detectd touch : type[%d], event[%d]\n",
+			tsp_debug_err(true, &data->client->dev, "Untreated Detectd touch : type[%d], event[%d]\n",
 				touch_type, touch_event);
 		}
 		break;
@@ -1379,80 +1213,87 @@ static void mxt_treat_T100_object(struct mxt_data *data,
 		break;
 	}
 }
+#endif
 
 static irqreturn_t mxt_irq_thread(int irq, void *ptr)
 {
 	struct mxt_data *data = ptr;
 	struct mxt_message message;
 	struct device *dev = &data->client->dev;
-	u8 reportid, type;
+	u8 reportid = 0, type = 0;
+	int retry = 3;
 
 	do {
 		if (mxt_read_message(data, &message)) {
-			dev_err(dev, "Failed to read message\n");
-			goto end;
-		}
-
+			tsp_debug_err(true, dev, "Failed to read message\n");
+			if (0 == retry)
+				goto end;
+			--retry;
+		} else {
 #if TSP_USE_ATMELDBG
-		if (data->atmeldbg.display_log) {
-			print_hex_dump(KERN_INFO, "MXT MSG:",
-				DUMP_PREFIX_NONE, 16, 1,
-				&message,
-				sizeof(struct mxt_message), false);
-		}
+			if (data->atmeldbg.display_log) {
+				print_hex_dump(KERN_INFO, "MXT MSG:",
+					DUMP_PREFIX_NONE, 16, 1,
+					&message,
+					sizeof(struct mxt_message), false);
+			}
 #endif
-		reportid = message.reportid;
+			reportid = message.reportid;
 
-		if (reportid > data->max_reportid)
-			goto end;
+			if (reportid > data->max_reportid)
+				goto end;
 
-		type = data->reportids[reportid].type;
+			type = data->reportids[reportid].type;
 
-		switch (type) {
-		case MXT_RESERVED_T0:
-			goto end;
-			break;
-		case MXT_GEN_COMMANDPROCESSOR_T6:
-			mxt_treat_T6_object(data, &message);
-			break;
-		case MXT_TOUCH_MULTITOUCHSCREEN_T9:
-			mxt_treat_T9_object(data, &message);
-			break;
+			switch (type) {
+			case MXT_RESERVED_T0:
+				goto end;
+				break;
+			case MXT_GEN_COMMANDPROCESSOR_T6:
+				mxt_treat_T6_object(data, &message);
+				break;
+			case MXT_TOUCH_MULTITOUCHSCREEN_T9:
+				mxt_treat_T9_object(data, &message);
+				break;
 #if ENABLE_TOUCH_KEY
-		case MXT_TOUCH_KEYARRAY_T15:
-			mxt_treat_T15_object(data, &message);
-			break;
+			case MXT_TOUCH_KEYARRAY_T15:
+				mxt_treat_T15_object(data, &message);
+				break;
 #endif
-		case MXT_SPT_SELFTEST_T25:
-			dev_err(dev, "Self test fail [0x%x 0x%x 0x%x 0x%x]\n",
-				message.message[0], message.message[1],
-				message.message[2], message.message[3]);
-			break;
-		case MXT_PROCI_TOUCHSUPPRESSION_T42:
-			mxt_treat_T42_object(data, &message);
-			break;
-		case MXT_PROCI_EXTRATOUCHSCREENDATA_T57:
-			mxt_treat_T57_object(data, &message);
-			break;
-		case MXT_SPT_TIMER_T61:
-			mxt_treat_T61_object(data, &message);
-			break;
-		case MXT_PROCG_NOISESUPPRESSION_T62:
-			break;
-		case MXT_TOUCH_MULTITOUCHSCREEN_T100:
-			mxt_treat_T100_object(data, &message);
-			break;
-
-		default:
-			dev_dbg(dev, "Untreated Object type[%d]\tmessage[0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x]\n",
-				type, message.message[0],
-				message.message[1], message.message[2],
-				message.message[3], message.message[4],
-				message.message[5], message.message[6]);
-			break;
+			case MXT_SPT_SELFTEST_T25:
+				tsp_debug_err(true, dev, "Self test fail [0x%x 0x%x 0x%x 0x%x]\n",
+					message.message[0], message.message[1],
+					message.message[2], message.message[3]);
+				break;
+			case MXT_PROCI_TOUCHSUPPRESSION_T42:
+				mxt_treat_T42_object(data, &message);
+				break;
+			case MXT_PROCI_EXTRATOUCHSCREENDATA_T57:
+				mxt_treat_T57_object(data, &message);
+				break;
+			case MXT_PROCG_NOISESUPPRESSION_T62:
+				break;
+#if 0
+			case MXT_TOUCH_MULTITOUCHSCREEN_T100:
+				mxt_treat_T100_object(data, &message);
+				break;
+#endif
+			default:
+				tsp_debug_dbg(false, dev, "Untreated Object type[%d]\tmessage[0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x]\n",
+					type, message.message[0],
+					message.message[1], message.message[2],
+					message.message[3], message.message[4],
+					message.message[5], message.message[6]);
+				break;
+			}
+#if TSP_PATCH
+			mxt_patch_message(data, &message);
+#endif
 		}
 	} while (!data->pdata->read_chg());
 
+	if (data->finger_mask)
+		mxt_report_input_data(data);
 end:
 	return IRQ_HANDLED;
 }
@@ -1463,14 +1304,14 @@ static int mxt_get_bootloader_version(struct i2c_client *client, u8 val)
 
 	if (val & MXT_BOOT_EXTENDED_ID) {
 		if (i2c_master_recv(client, buf, sizeof(buf)) != sizeof(buf)) {
-			dev_err(&client->dev, "%s: i2c recv failed\n",
+			tsp_debug_err(true, &client->dev, "%s: i2c recv failed\n",
 				 __func__);
 			return -EIO;
 		}
-		dev_info(&client->dev, "Bootloader ID:%d Version:%d",
+		tsp_debug_info(true, &client->dev, "Bootloader ID:%d Version:%d",
 			 buf[1], buf[2]);
 	} else {
-		dev_info(&client->dev, "Bootloader ID:%d",
+		tsp_debug_info(true, &client->dev, "Bootloader ID:%d",
 			 val & MXT_BOOT_ID_MASK);
 	}
 	return 0;
@@ -1483,7 +1324,7 @@ static int mxt_check_bootloader(struct i2c_client *client,
 
 recheck:
 	if (i2c_master_recv(client, &val, 1) != 1) {
-		dev_err(&client->dev, "%s: i2c recv failed\n", __func__);
+		tsp_debug_err(true, &client->dev, "%s: i2c recv failed\n", __func__);
 		return -EIO;
 	}
 
@@ -1501,7 +1342,7 @@ recheck:
 		if (val == MXT_FRAME_CRC_CHECK)
 			goto recheck;
 		if (val == MXT_FRAME_CRC_FAIL) {
-			dev_err(&client->dev, "Bootloader CRC fail\n");
+			tsp_debug_err(true, &client->dev, "Bootloader CRC fail\n");
 			return -EINVAL;
 		}
 		break;
@@ -1510,7 +1351,7 @@ recheck:
 	}
 
 	if (val != state) {
-		dev_err(&client->dev,
+		tsp_debug_err(true, &client->dev,
 			 "Invalid bootloader mode state 0x%X\n", val);
 		return -EINVAL;
 	}
@@ -1523,7 +1364,7 @@ static int mxt_unlock_bootloader(struct i2c_client *client)
 	u8 buf[2] = {MXT_UNLOCK_CMD_LSB, MXT_UNLOCK_CMD_MSB};
 
 	if (i2c_master_send(client, buf, 2) != 2) {
-		dev_err(&client->dev, "%s: i2c send failed\n", __func__);
+		tsp_debug_err(true, &client->dev, "%s: i2c send failed\n", __func__);
 
 		return -EIO;
 	}
@@ -1536,17 +1377,17 @@ static int mxt_probe_bootloader(struct i2c_client *client)
 	u8 val;
 
 	if (i2c_master_recv(client, &val, 1) != 1) {
-		dev_err(&client->dev, "%s: i2c recv failed\n", __func__);
+		tsp_debug_err(true, &client->dev, "%s: i2c recv failed\n", __func__);
 		return -EIO;
 	}
 
 	if (val & (~MXT_BOOT_STATUS_MASK)) {
 		if (val & MXT_APP_CRC_FAIL)
-			dev_err(&client->dev, "Application CRC failure\n");
+			tsp_debug_err(true, &client->dev, "Application CRC failure\n");
 		else
-			dev_err(&client->dev, "Device in bootloader mode\n");
+			tsp_debug_err(true, &client->dev, "Device in bootloader mode\n");
 	} else {
-		dev_err(&client->dev, "%s: Unknow status\n", __func__);
+		tsp_debug_err(true, &client->dev, "%s: Unknow status\n", __func__);
 		return -EIO;
 	}
 	return 0;
@@ -1556,7 +1397,7 @@ static int mxt_fw_write(struct i2c_client *client,
 				const u8 *frame_data, unsigned int frame_size)
 {
 	if (i2c_master_send(client, frame_data, frame_size) != frame_size) {
-		dev_err(&client->dev, "%s: i2c send failed\n", __func__);
+		tsp_debug_err(true, &client->dev, "%s: i2c send failed\n", __func__);
 		return -EIO;
 	}
 
@@ -1570,7 +1411,7 @@ int mxt_verify_fw(struct mxt_fw_info *fw_info, const struct firmware *fw)
 	struct mxt_fw_image *fw_img;
 
 	if (!fw) {
-		dev_err(dev, "could not find firmware file\n");
+		tsp_debug_err(true, dev, "could not find firmware file\n");
 		return -ENOENT;
 	}
 
@@ -1578,7 +1419,7 @@ int mxt_verify_fw(struct mxt_fw_info *fw_info, const struct firmware *fw)
 
 	if (le32_to_cpu(fw_img->magic_code) != MXT_FW_MAGIC) {
 		/* In case, firmware file only consist of firmware */
-		dev_dbg(dev, "Firmware file only consist of raw firmware\n");
+		tsp_debug_dbg(false, dev, "Firmware file only consist of raw firmware\n");
 		fw_info->fw_len = fw->size;
 		fw_info->fw_raw_data = fw->data;
 	} else {
@@ -1586,7 +1427,7 @@ int mxt_verify_fw(struct mxt_fw_info *fw_info, const struct firmware *fw)
 		 * In case, firmware file consist of header,
 		 * configuration, firmware.
 		 */
-		dev_info(dev, "Firmware file consist of header, configuration, firmware\n");
+		tsp_debug_info(true, dev, "Firmware file consist of header, configuration, firmware\n");
 		fw_info->fw_ver = fw_img->fw_ver;
 		fw_info->build_ver = fw_img->build_ver;
 		fw_info->hdr_len = le32_to_cpu(fw_img->hdr_len);
@@ -1598,18 +1439,38 @@ int mxt_verify_fw(struct mxt_fw_info *fw_info, const struct firmware *fw)
 		if (fw_info->hdr_len != sizeof(struct mxt_fw_image)
 			|| fw_info->hdr_len + fw_info->cfg_len
 				+ fw_info->fw_len != fw->size) {
-			dev_err(dev, "Firmware file is invaild !!hdr size[%d] cfg,fw size[%d,%d] filesize[%d]\n",
-				fw_info->hdr_len, fw_info->cfg_len,
-				fw_info->fw_len, fw->size);
-			return -EINVAL;
+#if TSP_PATCH
+			struct patch_header* ppheader;
+			u32 ppos = fw_info->hdr_len + fw_info->cfg_len + fw_info->fw_len;
+			ppheader = (struct patch_header*)(fw->data + ppos);
+			if(ppheader->magic == MXT_PATCH_MAGIC){
+				tsp_debug_info(true, dev, "Firmware file has patch size: %d\n", ppheader->size);
+				if(ppheader->size){
+					u8* patch=NULL;
+					if(!data->patch.patch){
+						kfree(data->patch.patch);
+					}
+					patch = kzalloc(ppheader->size, GFP_KERNEL);
+					memcpy(patch, (u8*)ppheader, ppheader->size);
+					data->patch.patch = patch;
+				}
+			}
+			else
+#endif
+			{
+			    tsp_debug_err(true, dev, "Firmware file is invaild !!hdr size[%d] cfg,fw size[%d,%d] filesize[%d]\n",
+				    fw_info->hdr_len, fw_info->cfg_len,
+				    fw_info->fw_len, fw->size);
+			    return -EINVAL;
+			}
 		}
 
 		if (!fw_info->cfg_len) {
-			dev_err(dev, "Firmware file dose not include configuration data\n");
+			tsp_debug_err(true, dev, "Firmware file dose not include configuration data\n");
 			return -EINVAL;
 		}
 		if (!fw_info->fw_len) {
-			dev_err(dev, "Firmware file dose not include raw firmware data\n");
+			tsp_debug_err(true, dev, "Firmware file dose not include raw firmware data\n");
 			return -EINVAL;
 		}
 
@@ -1639,7 +1500,7 @@ static int mxt_wait_for_chg(struct mxt_data *data, u16 time)
 			&& timeout_counter++ <= 20) {
 
 			msleep(MXT_RESET_INTEVAL_TIME);
-			dev_err(&data->client->dev, "Spend %d time waiting for chg_high\n",
+			tsp_debug_err(true, &data->client->dev, "Spend %d time waiting for chg_high\n",
 				(MXT_RESET_INTEVAL_TIME * timeout_counter)
 				 + time);
 		}
@@ -1657,7 +1518,7 @@ static int mxt_command_reset(struct mxt_data *data, u8 value)
 
 	error = mxt_wait_for_chg(data, MXT_SW_RESET_TIME);
 	if (error)
-		dev_err(&data->client->dev, "Not respond after reset command[%d]\n",
+		tsp_debug_err(true, &data->client->dev, "Not respond after reset command[%d]\n",
 			value);
 
 	return error;
@@ -1685,7 +1546,7 @@ static int mxt_flash_fw(struct mxt_fw_info *fw_info)
 	int ret;
 
 	if (!fw_data) {
-		dev_err(dev, "firmware data is Null\n");
+		tsp_debug_err(true, dev, "firmware data is Null\n");
 		return -ENOMEM;
 	}
 
@@ -1696,7 +1557,7 @@ static int mxt_flash_fw(struct mxt_fw_info *fw_info)
 		if (ret)
 			goto out;
 	} else {
-		dev_info(dev, "Unlocking bootloader\n");
+		tsp_debug_info(true, dev, "Unlocking bootloader\n");
 		/* Unlock bootloader */
 		mxt_unlock_bootloader(client);
 	}
@@ -1704,7 +1565,7 @@ static int mxt_flash_fw(struct mxt_fw_info *fw_info)
 		ret = mxt_check_bootloader(client,
 					MXT_WAITING_FRAME_DATA);
 		if (ret) {
-			dev_err(dev, "Fail updating firmware. wating_frame_data err\n");
+			tsp_debug_err(true, dev, "Fail updating firmware. wating_frame_data err\n");
 			goto out;
 		}
 
@@ -1723,13 +1584,13 @@ static int mxt_flash_fw(struct mxt_fw_info *fw_info)
 		ret = mxt_check_bootloader(client,
 						MXT_FRAME_CRC_PASS);
 		if (ret) {
-			dev_err(dev, "Fail updating firmware. frame_crc err\n");
+			tsp_debug_err(true, dev, "Fail updating firmware. frame_crc err\n");
 			goto out;
 		}
 
 		pos += frame_size;
 
-		dev_dbg(dev, "Updated %d bytes / %zd bytes\n",
+		tsp_debug_dbg(false, dev, "Updated %d bytes / %zd bytes\n",
 				pos, fw_size);
 
 		msleep(20);
@@ -1737,11 +1598,11 @@ static int mxt_flash_fw(struct mxt_fw_info *fw_info)
 
 	ret = mxt_wait_for_chg(data, MXT_SW_RESET_TIME);
 	if (ret) {
-		dev_err(dev, "Not respond after F/W  finish reset\n");
+		tsp_debug_err(true, dev, "Not respond after F/W  finish reset\n");
 		goto out;
 	}
 
-	dev_info(dev, "success updating firmware\n");
+	tsp_debug_info(true, dev, "success updating firmware\n");
 out:
 	return ret;
 }
@@ -1753,7 +1614,7 @@ static void mxt_handle_T62_object(struct mxt_data *data)
 
 	ret = mxt_read_object(data, MXT_PROCG_NOISESUPPRESSION_T62, 0, &value);
 	if (ret) {
-		dev_err(&data->client->dev, "%s: failed to read T62 object.\n",
+		tsp_debug_err(true, &data->client->dev, "%s: failed to read T62 object.\n",
 				__func__);
 		return;
 	}
@@ -1763,10 +1624,10 @@ static void mxt_handle_T62_object(struct mxt_data *data)
 	ret = mxt_write_object(data, MXT_PROCG_NOISESUPPRESSION_T62,
 						0, value);
 	if (ret)
-		dev_err(&data->client->dev, "%s: failed to write T62 object.\n",
+		tsp_debug_err(true, &data->client->dev, "%s: failed to write T62 object.\n",
 				__func__);
 	else
-		dev_err(&data->client->dev, "%s: Setting T62 report disable.\n",
+		tsp_debug_err(true, &data->client->dev, "%s: Setting T62 report disable.\n",
 				__func__);
 }
 static void mxt_handle_init_data(struct mxt_data *data)
@@ -1793,10 +1654,10 @@ static int mxt_read_id_info(struct mxt_data *data)
 	/* Read IC information */
 	ret = mxt_read_mem(data, 0, MXT_INFOMATION_BLOCK_SIZE, id);
 	if (ret) {
-		dev_err(&data->client->dev, "Read fail. IC information\n");
+		tsp_debug_err(true, &data->client->dev, "Read fail. IC information\n");
 		goto out;
 	} else {
-		dev_info(&data->client->dev,
+		tsp_debug_info(true, &data->client->dev,
 			"family: 0x%x variant: 0x%x version: 0x%x"
 			" build: 0x%x matrix X,Y size:  %d,%d"
 			" number of obect: %d\n"
@@ -1840,7 +1701,7 @@ static int mxt_get_object_table(struct mxt_data *data)
 		object->instances = buf[4] + 1;
 		object->num_report_ids = buf[5];
 
-		dev_dbg(&data->client->dev,
+		tsp_debug_dbg(false, &data->client->dev,
 			"Object:T%d\t\t\t Address:0x%x\tSize:%d\tInstance:%d\tReport Id's:%d\n",
 			object->type, object->start_address, object->size,
 			object->instances, object->num_report_ids);
@@ -1853,7 +1714,7 @@ static int mxt_get_object_table(struct mxt_data *data)
 
 	/* Store maximum reportid */
 	data->max_reportid = reportid;
-	dev_dbg(&data->client->dev, "maXTouch: %d report ID\n",
+	tsp_debug_dbg(false, &data->client->dev, "maXTouch: %d report ID\n",
 			data->max_reportid);
 
 	return 0;
@@ -1874,7 +1735,7 @@ static void mxt_make_reportid_table(struct mxt_data *data)
 			reportids[id].type = objects[i].type;
 			reportids[id].index = j;
 
-			dev_dbg(&data->client->dev, "Report_id[%d]:\tT%d\tIndex[%d]\n",
+			tsp_debug_dbg(false, &data->client->dev, "Report_id[%d]:\tT%d\tIndex[%d]\n",
 				id, reportids[id].type, reportids[id].index);
 		}
 	}
@@ -1895,7 +1756,7 @@ static int mxt_initialize(struct mxt_data *data)
 				sizeof(struct mxt_object),
 				GFP_KERNEL);
 	if (!data->objects) {
-		dev_err(&client->dev, "Failed to allocate memory\n");
+		tsp_debug_err(true, &client->dev, "Failed to allocate memory\n");
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -1909,7 +1770,7 @@ static int mxt_initialize(struct mxt_data *data)
 			sizeof(struct mxt_reportid),
 			GFP_KERNEL);
 	if (!data->reportids) {
-		dev_err(&client->dev, "Failed to allocate memory\n");
+		tsp_debug_err(true, &client->dev, "Failed to allocate memory\n");
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -1927,7 +1788,7 @@ static int mxt_initialize(struct mxt_data *data)
 		goto out;
 
 	if (read_info_crc != calc_info_crc) {
-		dev_err(&data->client->dev, "Infomation CRC error :[CRC 0x%06X!=0x%06X]\n",
+		tsp_debug_err(true, &data->client->dev, "Infomation CRC error :[CRC 0x%06X!=0x%06X]\n",
 				read_info_crc, calc_info_crc);
 		ret = -EFAULT;
 		goto out;
@@ -1947,14 +1808,14 @@ static int  mxt_rest_initialize(struct mxt_fw_info *fw_info)
 	/* Restore memory and stop event handing */
 	ret = mxt_command_backup(data, MXT_DISALEEVT_VALUE);
 	if (ret) {
-		dev_err(dev, "Failed Restore NV and stop event\n");
+		tsp_debug_err(true, dev, "Failed Restore NV and stop event\n");
 		goto out;
 	}
 
 	/* Write config */
 	ret = mxt_write_config(fw_info);
 	if (ret) {
-		dev_err(dev, "Failed to write config from file\n");
+		tsp_debug_err(true, dev, "Failed to write config from file\n");
 		goto out;
 	}
 
@@ -1964,7 +1825,7 @@ static int  mxt_rest_initialize(struct mxt_fw_info *fw_info)
 	/* Backup to memory */
 	ret = mxt_command_backup(data, MXT_BACKUP_VALUE);
 	if (ret) {
-		dev_err(dev, "Failed backup NV data\n");
+		tsp_debug_err(true, dev, "Failed backup NV data\n");
 		goto out;
 	}
 
@@ -1974,6 +1835,12 @@ static int  mxt_rest_initialize(struct mxt_fw_info *fw_info)
 		dev_err(dev, "Failed Reset IC\n");
 		goto out;
 	}
+
+#if TSP_PATCH
+	if(data->patch.patch)
+		ret = mxt_patch_init(data, data->patch.patch);
+#endif
+
 out:
 	return ret;
 }
@@ -1998,13 +1865,13 @@ static int mxt_power_on(struct mxt_data *data)
 
 	error = data->pdata->power_on();
 	if (error) {
-		dev_err(&data->client->dev, "Failed to power on\n");
+		tsp_debug_err(true, &data->client->dev, "Failed to power on\n");
 		goto out;
 	}
 
 	error = mxt_wait_for_chg(data, MXT_HW_RESET_TIME);
 	if (error)
-		dev_err(&data->client->dev, "Not respond after H/W reset\n");
+		tsp_debug_err(true, &data->client->dev, "Not respond after H/W reset\n");
 
 	data->mxt_enabled = true;
 
@@ -2027,7 +1894,7 @@ static int mxt_power_off(struct mxt_data *data)
 
 	error = data->pdata->power_off();
 	if (error) {
-		dev_err(&data->client->dev, "Failed to power off\n");
+		tsp_debug_err(true, &data->client->dev, "Failed to power off\n");
 		goto out;
 	}
 
@@ -2043,14 +1910,14 @@ static int mxt_start(struct mxt_data *data)
 	int error = 0;
 
 	if (data->mxt_enabled) {
-		dev_err(&data->client->dev,
+		tsp_debug_err(true, &data->client->dev,
 			"%s. but touch already on\n", __func__);
 		return error;
 	}
 
 	error = mxt_power_on(data);
 	if (error)
-		dev_err(&data->client->dev, "Fail to start touch\n");
+		tsp_debug_err(true, &data->client->dev, "Fail to start touch\n");
 	else
 		enable_irq(data->client->irq);
 
@@ -2063,7 +1930,7 @@ static int mxt_stop(struct mxt_data *data)
 	int error = 0;
 
 	if (!data->mxt_enabled) {
-		dev_err(&data->client->dev,
+		tsp_debug_err(true, &data->client->dev,
 			"%s. but touch already off\n", __func__);
 		return error;
 	}
@@ -2071,16 +1938,24 @@ static int mxt_stop(struct mxt_data *data)
 
 	error = mxt_power_off(data);
 	if (error) {
-		dev_err(&data->client->dev, "Fail to stop touch\n");
+		tsp_debug_err(true, &data->client->dev, "Fail to stop touch\n");
 		goto err_power_off;
 	}
 	mxt_release_all_finger(data);
-	
+
 #if ENABLE_TOUCH_KEY
 	mxt_release_all_keys(data);
+	data->pdata->led_power_off();
 #endif
-#if TSP_BOOSTER
-	mxt_set_dvfs_on(data, false);
+
+#ifdef CONFIG_INPUT_BOOSTER
+	INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH, BOOSTER_MODE_FORCE_OFF);
+#elif TSP_BOOSTER
+	mxt_set_dvfs_lock(data, TSP_BOOSTER_FORCE_OFF, false);
+#endif
+
+#if TOUCHKEY_BOOSTER
+	touchkey_set_dvfs_lock(data, TOUCHKEY_BOOSTER_FORCE_OFF);
 #endif
 	return 0;
 
@@ -2098,13 +1973,13 @@ static int mxt_input_open(struct input_dev *dev)
 			msecs_to_jiffies(90 * MSEC_PER_SEC));
 
 	if (ret < 0) {
-		dev_err(&data->client->dev,
+		tsp_debug_err(true, &data->client->dev,
 			"error while waiting for device to init (%d)\n", ret);
 		ret = -ENXIO;
 		goto err_open;
 	}
 	if (ret == 0) {
-		dev_err(&data->client->dev,
+		tsp_debug_err(true, &data->client->dev,
 			"timedout while waiting for device to init\n");
 		ret = -ENXIO;
 		goto err_open;
@@ -2114,7 +1989,7 @@ static int mxt_input_open(struct input_dev *dev)
 	if (ret)
 		goto err_open;
 
-	dev_info(&data->client->dev, "%s\n", __func__);
+	tsp_debug_info(true, &data->client->dev, "%s\n", __func__);
 
 	return 0;
 
@@ -2128,7 +2003,7 @@ static void mxt_input_close(struct input_dev *dev)
 
 	mxt_stop(data);
 
-	dev_info(&data->client->dev, "%s\n", __func__);
+	tsp_debug_info(true, &data->client->dev, "%s\n", __func__);
 }
 
 static int mxt_make_highchg(struct mxt_data *data)
@@ -2146,7 +2021,7 @@ static int mxt_make_highchg(struct mxt_data *data)
 	} while (message.reportid != 0xff && --count);
 
 	if (!count) {
-		dev_err(dev, "CHG pin isn't cleared\n");
+		tsp_debug_err(true, dev, "CHG pin isn't cleared\n");
 		return -EBUSY;
 	}
 
@@ -2162,36 +2037,44 @@ static int mxt_touch_finish_init(struct mxt_data *data)
 		data->pdata->irqflags, client->dev.driver->name, data);
 
 	if (error) {
-		dev_err(&client->dev, "Failed to register interrupt\n");
+		tsp_debug_err(true, &client->dev, "Failed to register interrupt\n");
 		goto err_req_irq;
 	}
-
-	error = mxt_make_highchg(data);
-	if (error) {
-		dev_err(&client->dev, "Failed to clear CHG pin\n");
-		goto err_req_irq;
-	}
-
-#if TSP_BOOSTER
-	error = mxt_init_dvfs(data);
-	if (error < 0) {
-		dev_err(&client->dev, "Fail get dvfs level for touch booster\n");
-		goto err_req_irq;
-	}
-#endif
-
-#if TSP_CHECK_ATCH
-	mxt_atch_init(data);
-#endif
-	dev_info(&client->dev,  "Mxt touch controller initialized\n");
 
 	/*
 	* to prevent unnecessary report of touch event
 	* it will be enabled in open function
 	*/
-#if !defined(CONFIG_N1A)
 	mxt_stop(data);
+#if 0
+	error = mxt_make_highchg(data);
+	if (error) {
+		tsp_debug_err(true, &client->dev, "Failed to clear CHG pin\n");
+		goto err_req_irq;
+	}
 #endif
+
+#if TSP_BOOSTER
+	data->booster.boost_level = TSP_BOOSTER_LEVEL2;
+	error = mxt_init_dvfs(data);
+	if (error < 0) {
+		tsp_debug_err(true, &client->dev, "Fail get dvfs level for touch booster\n");
+		goto err_req_irq;
+	}
+	data->booster.boost_level = TSP_BOOSTER_LEVEL2;
+#endif
+
+#if TOUCHKEY_BOOSTER
+	data->tsk_booster.boost_level = TOUCHKEY_BOOSTER_LEVEL2;
+	error = touchkey_init_dvfs(data);
+	if (error < 0) {
+		tsp_debug_err(true, &client->dev, "Fail get dvfs level for touch booster\n");
+		goto err_req_irq;
+	}
+	data->tsk_booster.boost_level = TOUCHKEY_BOOSTER_LEVEL2;
+#endif
+
+	tsp_debug_info(true, &client->dev,  "Mxt touch controller initialized\n");
 
 	/* for blocking to be excuted open function untile finishing ts init */
 	complete_all(&data->init_done);
@@ -2209,13 +2092,13 @@ static int mxt_touch_rest_init(struct mxt_fw_info *fw_info)
 
 	error = mxt_initialize(data);
 	if (error) {
-		dev_err(dev, "Failed to initialize\n");
+		tsp_debug_err(true, dev, "Failed to initialize\n");
 		goto err_free_mem;
 	}
 
 	error = mxt_rest_initialize(fw_info);
 	if (error) {
-		dev_err(dev, "Failed to rest initialize\n");
+		tsp_debug_err(true, dev, "Failed to rest initialize\n");
 		goto err_free_mem;
 	}
 
@@ -2242,7 +2125,7 @@ static int mxt_enter_bootloader(struct mxt_data *data)
 				     sizeof(struct mxt_object),
 				     GFP_KERNEL);
 	if (!data->objects) {
-		dev_err(dev, "%s Failed to allocate memory\n",
+		tsp_debug_err(true, dev, "%s Failed to allocate memory\n",
 			__func__);
 		error = -ENOMEM;
 		goto out;
@@ -2278,37 +2161,37 @@ static int mxt_flash_fw_on_probe(struct mxt_fw_info *fw_info)
 		/* need to check IC is in boot mode */
 		error = mxt_probe_bootloader(data->client_boot);
 		if (error) {
-			dev_err(dev, "Failed to verify bootloader's status\n");
+			tsp_debug_err(true, dev, "Failed to verify bootloader's status\n");
 			goto out;
 		}
 
-		dev_info(dev, "Updating firmware from boot-mode\n");
+		tsp_debug_info(true, dev, "Updating firmware from boot-mode\n");
 		goto load_fw;
 	}
 
 	/* compare the version to verify necessity of firmware updating */
 	if (data->info.version == fw_info->fw_ver
 			&& data->info.build == fw_info->build_ver) {
-		dev_dbg(dev, "Firmware version is same with in IC\n");
+		tsp_debug_dbg(false, dev, "Firmware version is same with in IC\n");
 		goto out;
 	}
 
-	dev_info(dev, "Updating firmware from app-mode : IC:0x%x,0x%x =! FW:0x%x,0x%x\n",
+	tsp_debug_info(true, dev, "Updating firmware from app-mode : IC:0x%x,0x%x =! FW:0x%x,0x%x\n",
 			data->info.version, data->info.build,
 			fw_info->fw_ver, fw_info->build_ver);
 
 	error = mxt_enter_bootloader(data);
 	if (error) {
-		dev_err(dev, "Failed updating firmware\n");
+		tsp_debug_err(true, dev, "Failed updating firmware\n");
 		goto out;
 	}
 
 load_fw:
 	error = mxt_flash_fw(fw_info);
 	if (error)
-		dev_err(dev, "Failed updating firmware\n");
+		tsp_debug_err(true, dev, "Failed updating firmware\n");
 	else
-		dev_info(dev, "succeeded updating firmware\n");
+		tsp_debug_info(true, dev, "succeeded updating firmware\n");
 out:
 	return error;
 }
@@ -2371,11 +2254,11 @@ static int __devinit mxt_touch_init(struct mxt_data *data, bool nowait)
 		snprintf(fw_path, MXT_MAX_FW_PATH, "%s%s",
 			MXT_FIRMWARE_INKERNEL_PATH, firmware_name);
 
-		dev_err(&client->dev, "%s\n", fw_path);
+		tsp_debug_err(true, &client->dev, "%s\n", fw_path);
 
 		ret = request_firmware(&fw, fw_path, &client->dev);
 		if (ret) {
-			dev_err(&client->dev,
+			tsp_debug_err(true, &client->dev,
 				"error requesting built-in firmware\n");
 			goto out;
 		}
@@ -2385,7 +2268,7 @@ static int __devinit mxt_touch_init(struct mxt_data *data, bool nowait)
 				      &client->dev, GFP_KERNEL,
 				      data, mxt_request_firmware_work);
 		if (ret)
-			dev_err(&client->dev,
+			tsp_debug_err(true, &client->dev,
 				"cannot schedule firmware update (%d)\n", ret);
 	}
 
@@ -2427,10 +2310,12 @@ static int mxt_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
+	struct input_dev *input_dev = data->input_dev;
 
 	mutex_lock(&data->input_dev->mutex);
 
-	mxt_stop(data);
+	if (input_dev->users)
+		mxt_stop(data);
 
 	mutex_unlock(&data->input_dev->mutex);
 	return 0;
@@ -2440,15 +2325,29 @@ static int mxt_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
+	struct input_dev *input_dev = data->input_dev;
 
 	mutex_lock(&data->input_dev->mutex);
 
-	mxt_start(data);
+	if (input_dev->users)
+		mxt_start(data);
 
 	mutex_unlock(&data->input_dev->mutex);
 	return 0;
 }
 #endif
+
+static void mxt_shutdown(struct i2c_client *client)
+{
+	struct mxt_data *data = i2c_get_clientdata(client);
+
+	tsp_debug_info(true, &client->dev, "%s called!\n", __func__);
+
+	mxt_stop(data);
+#if ENABLE_TOUCH_KEY
+	data->pdata->led_power_off();
+#endif
+}
 
 /* Added for samsung dependent codes such as Factory test,
  * Touch booster, Related debug sysfs.
@@ -2465,20 +2364,20 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	int error = 0, i = 0;
 
 	if (!pdata) {
-		dev_err(&client->dev, "Platform data is not proper\n");
+		tsp_debug_err(true, &client->dev, "Platform data is not proper\n");
 		return -EINVAL;
 	}
 
 	data = kzalloc(sizeof(struct mxt_data), GFP_KERNEL);
 	if (!data) {
-		dev_err(&client->dev, "Failed to allocate memory\n");
+		tsp_debug_err(true, &client->dev, "Failed to allocate memory\n");
 		return -ENOMEM;
 	}
 
 	input_dev = input_allocate_device();
 	if (!input_dev) {
 		error = -ENOMEM;
-		dev_err(&client->dev, "Input device allocation failed\n");
+		tsp_debug_err(true, &client->dev, "Input device allocation failed\n");
 		goto err_allocate_input_device;
 	}
 
@@ -2497,7 +2396,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	set_bit(EV_KEY, input_dev->evbit);
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 	set_bit(BTN_TOUCH, input_dev->keybit);
-	set_bit(BTN_TOOL_FINGER, input_dev->keybit);
 
 #if ENABLE_TOUCH_KEY
 	for (i = 0 ; i < data->pdata->num_touchkey ; i++)
@@ -2508,7 +2406,6 @@ static int __devinit mxt_probe(struct i2c_client *client,
 
 	data->report_dummy_key = false; /*Disable dummy key!*/
 #endif
-
 
 	input_mt_init_slots(input_dev, MXT_MAX_FINGER);
 
@@ -2544,7 +2441,7 @@ static int __devinit mxt_probe(struct i2c_client *client,
 	}
 	data->client_boot = i2c_new_dummy(client->adapter, boot_address);
 	if (!data->client_boot) {
-		dev_err(&client->dev, "Fail to register sub client[0x%x]\n",
+		tsp_debug_err(true, &client->dev, "Fail to register sub client[0x%x]\n",
 			 boot_address);
 		error = -ENODEV;
 		goto err_create_sub_client;
@@ -2557,19 +2454,19 @@ static int __devinit mxt_probe(struct i2c_client *client,
 
 	error = mxt_sysfs_init(client);
 	if (error < 0) {
-		dev_err(&client->dev, "Failed to create sysfs\n");
+		tsp_debug_err(true, &client->dev, "Failed to create sysfs\n");
 		goto err_sysfs_init;
 	}
 
 	error = mxt_power_on(data);
 	if (error) {
-		dev_err(&client->dev, "Failed to power_on\n");
+		tsp_debug_err(true, &client->dev, "Failed to power_on\n");
 		goto err_power_on;
 	}
 
 	error = mxt_touch_init(data, MXT_FIRMWARE_UPDATE_TYPE);
 	if (error) {
-		dev_err(&client->dev, "Failed to init driver\n");
+		tsp_debug_err(true, &client->dev, "Failed to init driver\n");
 		goto err_touch_init;
 	}
 
@@ -2633,6 +2530,7 @@ static struct i2c_driver mxt_i2c_driver = {
 	.id_table = mxt_idtable,
 	.probe = mxt_probe,
 	.remove = __devexit_p(mxt_remove),
+	.shutdown = mxt_shutdown,
 	.driver = {
 		.owner	= THIS_MODULE,
 		.name	= MXT_DEV_NAME,

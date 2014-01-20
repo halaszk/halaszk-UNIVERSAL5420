@@ -39,12 +39,13 @@
 #include <linux/err.h>
 #include <mach/gpio-exynos.h>
 
-#if defined(CONFIG_V1A)
-#define USING_SPI_AND_I2C_IN_SAME_LINE
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
+#if defined(CONFIG_CHAGALL_LTE)
+#include "ice4_fpga_ch.h"
+#else
 #include "ice4_fpga_v1a.h"
-#elif defined(CONFIG_N1A)
-#define USING_SPI_AND_I2C_IN_SAME_LINE
-#include "ice4_fpga_n1a.h"
+#endif
+#include <linux/i2c-gpio.h>
 #else
 #include "ice4_fpga.h"
 #endif
@@ -157,7 +158,7 @@ static int barcode_fpga_fimrware_update_start(unsigned char *data)
 	gpio_request_one(GPIO_FPGA_SPI_SI, GPIOF_OUT_INIT_LOW, "FPGA_SPI_SI");
 	gpio_request_one(GPIO_FPGA_SPI_EN, GPIOF_OUT_INIT_LOW, "FPGA_SPI_EN");
 	gpio_request_one(GPIO_FPGA_CRESET_B, GPIOF_OUT_INIT_HIGH, "FPGA_CRESET_B");
-#if !defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if !defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 	gpio_request_one(GPIO_FPGA_RST_N, GPIOF_OUT_INIT_LOW, "FPGA_RST_N");
 #endif
 
@@ -180,7 +181,7 @@ static int barcode_fpga_fimrware_update_start(unsigned char *data)
 		}
 	}
 	if (check_fpga_cdone()) {
-#if defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 		gpio_set_value(GPIO_FPGA_SPI_EN, GPIO_LEVEL_HIGH);
 #else
 		gpio_set_value(GPIO_FPGA_RST_N, GPIO_LEVEL_HIGH);
@@ -198,7 +199,20 @@ static int barcode_fpga_fimrware_update_start(unsigned char *data)
 
 void barcode_fpga_firmware_update(void)
 {
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
+	gpio_free(GPIO_FPGA_SPI_CLK);
+	gpio_free(GPIO_FPGA_SPI_SI);
+
 	barcode_fpga_fimrware_update_start(spiword);
+
+	gpio_free(GPIO_FPGA_SPI_CLK);
+	gpio_free(GPIO_FPGA_SPI_SI);
+
+	gpio_request(GPIO_FPGA_SPI_SI, "sda");
+	gpio_request(GPIO_FPGA_SPI_CLK, "scl");
+#else
+	barcode_fpga_fimrware_update_start(spiword);
+#endif
 }
 
 static ssize_t barcode_emul_store(struct device *dev, struct device_attribute *attr,
@@ -522,7 +536,7 @@ static void print_fpga_gpio_status(void)
 		printk(KERN_ERR "%s : firmware is loaded\n", __func__);
 
 	printk(KERN_ERR "%s : CDONE    : %d\n", __func__, gpio_get_value(GPIO_FPGA_CDONE));
-#if defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 	printk(KERN_ERR "%s : RST_N    : %d\n", __func__, gpio_get_value(GPIO_FPGA_SPI_EN));
 #else
 	printk(KERN_ERR "%s : RST_N    : %d\n", __func__, gpio_get_value(GPIO_FPGA_RST_N));
@@ -914,8 +928,18 @@ static int __devinit barcode_emul_probe(struct i2c_client *client,
 	if (sysfs_create_group(&barcode_emul_dev->kobj, &sec_ir_attr_group) < 0)
 		pr_err("Failed to create sysfs group for samsung ir!\n");
 #endif
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
+	barcode_init_wq = create_singlethread_workqueue("barcode_init");
+	if (!barcode_init_wq) {
+		pr_err("fail to create wq\n");
+		goto err_create_wq;
+	}
+	queue_work(barcode_init_wq, &barcode_init_work);
+
 	pr_err("probe complete %s\n", __func__);
 
+err_create_wq:
+#endif
 alloc_fail:
 	return 0;
 }
@@ -932,7 +956,7 @@ static int __devexit barcode_emul_remove(struct i2c_client *client)
 #ifdef CONFIG_PM
 static int barcode_emul_suspend(struct device *dev)
 {
-#if defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 	gpio_set_value(GPIO_FPGA_SPI_EN, GPIO_LEVEL_LOW);
 #else
 	gpio_set_value(GPIO_FPGA_RST_N, GPIO_LEVEL_LOW);
@@ -942,7 +966,7 @@ static int barcode_emul_suspend(struct device *dev)
 
 static int barcode_emul_resume(struct device *dev)
 {
-#if defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 	gpio_set_value(GPIO_FPGA_SPI_EN, GPIO_LEVEL_HIGH);
 #else
 	gpio_set_value(GPIO_FPGA_RST_N, GPIO_LEVEL_HIGH);
@@ -979,25 +1003,64 @@ static void barcode_init_workfunc(struct work_struct *work)
 	barcode_fpga_firmware_update();
 }
 
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
+/* I2C22 */
+static struct i2c_gpio_platform_data gpio_i2c_data22 = {
+	.scl_pin = GPIO_FPGA_SPI_CLK,
+	.sda_pin = GPIO_FPGA_SPI_SI,
+	.udelay = 2,
+	.sda_is_open_drain = 0,
+	.scl_is_open_drain = 0,
+	.scl_is_output_only = 0,
+};
+
+struct platform_device s3c_device_i2c22 = {
+	.name = "i2c-gpio",
+	.id = 22,
+	.dev.platform_data = &gpio_i2c_data22,
+};
+
+static struct i2c_board_info i2c_devs22_emul[] __initdata = {
+	{
+		I2C_BOARD_INFO("ice4", (0x6c)),
+	},
+};
+
+static struct platform_device *universal5420_fpga_devices[] __initdata = {
+	&s3c_device_i2c22,
+};
+#endif
+
 static int __init barcode_emul_init(void)
 {
-#if !defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if !defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 	barcode_init_wq = create_singlethread_workqueue("barcode_init");
 	if (!barcode_init_wq) {
 		pr_err("fail to create wq\n");
 		goto err_create_wq;
 	}
 	queue_work(barcode_init_wq, &barcode_init_work);
+#else
+
+	i2c_register_board_info(22, i2c_devs22_emul,
+		ARRAY_SIZE(i2c_devs22_emul));
+
+	platform_add_devices(universal5420_fpga_devices,
+		ARRAY_SIZE(universal5420_fpga_devices));
 #endif
 
 	i2c_add_driver(&ice4_i2c_driver);
 
-#if !defined(USING_SPI_AND_I2C_IN_SAME_LINE)
+#if !defined(CONFIG_ICE4_TWO_FUNC_INPUT)
 err_create_wq:
 #endif
 	return 0;
 }
+#if defined(CONFIG_ICE4_TWO_FUNC_INPUT)
+deferred_module_init(barcode_emul_init);
+#else
 late_initcall(barcode_emul_init);
+#endif
 
 static void __exit barcode_emul_exit(void)
 {

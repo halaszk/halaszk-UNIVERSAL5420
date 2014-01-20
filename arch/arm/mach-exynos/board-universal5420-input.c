@@ -21,7 +21,9 @@
 #include <linux/i2c/synaptics_rmi.h>
 #include <linux/interrupt.h>
 #endif
-
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C
+#include <linux/i2c/synaptics_rmi.h>
+#endif
 #include <plat/iic.h>
 #include <mach/hs-iic.h>
 #include <plat/devs.h>
@@ -41,14 +43,15 @@
 #include <linux/wacom_i2c.h>
 #endif
 
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
+#endif
+
 #include "board-universal5420.h"
 #include <mach/sec_debug.h>
 
-struct class *sec_class;
-EXPORT_SYMBOL(sec_class);
 extern unsigned int system_rev;
 
-#if !defined(CONFIG_V1A) && !defined(CONFIG_N1A)
 #define GPIO_TSP_INT		EXYNOS5420_GPX1(6)
 #define GPIO_TSP_SDA		EXYNOS5420_GPB3(0)
 #define GPIO_TSP_SCL		EXYNOS5420_GPB3(1)
@@ -56,7 +59,6 @@ extern unsigned int system_rev;
 #define GPIO_TOUCHKEY_SDA	EXYNOS5420_GPD1(4)
 #define GPIO_TOUCHKEY_SCL	EXYNOS5420_GPD1(5)
 #define GPIO_LEVEL_LOW		0
-#endif
 
 #ifdef CONFIG_SENSORS_HALL
 #define GPIO_HALL_SENSOR_INT	EXYNOS5420_GPX0(1)
@@ -164,28 +166,21 @@ static int touchkey_led_power_on(bool on)
 #ifdef LED_LDO_WITH_REGULATOR
 	struct regulator *regulator;
 
-	if (on) {
-		regulator = regulator_get(NULL, TK_LED_REGULATOR_NAME);
-		if (IS_ERR(regulator)) {
-			printk(KERN_ERR
+	regulator = regulator_get(NULL, TK_LED_REGULATOR_NAME);
+	if (IS_ERR(regulator)) {
+		printk(KERN_ERR
 			"[Touchkey] touchkey_led_power_on : TK_LED regulator_get failed\n");
-			return -EIO;
-		}
+		return -EIO;
+	}
 
+	if (on)
 		regulator_enable(regulator);
-		regulator_put(regulator);
-	} else {
-		regulator = regulator_get(NULL, TK_LED_REGULATOR_NAME);
-		if (IS_ERR(regulator)) {
-			printk(KERN_ERR
-			"[Touchkey] touchkey_led_power_on : TK_LED regulator_get failed\n");
-			return -EIO;
-		}
-
+	else {
 		if (regulator_is_enabled(regulator))
 			regulator_disable(regulator);
-		regulator_put(regulator);
 	}
+
+	regulator_put(regulator);
 #else
 	if (on)
 		gpio_direction_output(GPIO_3_TOUCH_EN, 1);
@@ -228,19 +223,11 @@ static struct i2c_board_info i2c_devs11_emul[] = {
 };
 #endif /*CONFIG_KEYBOARD_CYPRESS_TOUCH*/
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-static void touch_i2c0_cfg_gpio(struct platform_device *dev)
-{
-	s3c_gpio_cfgall_range(GPIO_TSP_SDA_18V, 2,
-				  S3C_GPIO_SFN(2), S3C_GPIO_PULL_NONE);
-};
-#else
 static void touch_i2c0_cfg_gpio(struct platform_device *dev)
 {
 	s3c_gpio_cfgall_range(GPIO_TSP_SDA, 2,
 				  S3C_GPIO_SFN(2), S3C_GPIO_PULL_NONE);
 };
-#endif
 
 static struct s3c2410_platform_i2c touch_i2c0_platdata __initdata = {
 	.bus_num	= 0,
@@ -252,276 +239,6 @@ static struct s3c2410_platform_i2c touch_i2c0_platdata __initdata = {
 };
 
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MXTS
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-/*
-  * Please locate model dependent define at below position
-  * such as bootloader address, app address and firmware name
-  */
-#define MXT_BOOT_ADDRESS	0x26
-#define MXT_APP_ADDRESS		0x4A
-
-#if defined(CONFIG_V1A)
-#define MXT_FIRMWARE_NAME_REVISION	"mXT1664S_v.fw"
-
-/* To display configuration version on *#2663# */
-#define MXT_PROJECT_NAME	"SM-P9XX"
-#elif defined(CONFIG_N1A)
-#define MXT_FIRMWARE_NAME_REVISION	"mXT1664S_n.fw"
-#define MXT_PROJECT_NAME    "SM-P6XX"
-#endif
-
-static struct mxt_callbacks *charger_callbacks;
-
-void tsp_charger_infom(bool en)
-{
-	if (charger_callbacks && charger_callbacks->inform_charger)
-		charger_callbacks->inform_charger(charger_callbacks, en);
-}
-
-static void mxt_register_callback(void *cb)
-{
-	charger_callbacks = cb;
-}
-
-static bool mxt_read_chg(void)
-{
-	return gpio_get_value(GPIO_TOUCH_CHG);
-}
-
-static int mxt_power_on(void)
-{
-	struct regulator *regulator;
-
-	/* enable I2C pullup */
-	regulator = regulator_get(NULL, "tsp_vdd_1.8v");
-	if (IS_ERR(regulator)) {
-		printk(KERN_ERR "[TSP] %s: tsp_vdd_1.8v regulator_get failed\n",
-			__func__);
-		return -EIO;
-	}
-	regulator_enable(regulator);
-	regulator_put(regulator);
-
-	/* enable XVDD */
-	gpio_set_value(GPIO_TOUCH_EN, 1);
-	msleep(3);
-	gpio_set_value(GPIO_TOUCH_EN_1, 1);
-
-	msleep(50);
-
-	usleep_range(1000, 1500);
-	gpio_set_value(GPIO_TOUCH_RESET, 1);
-
-	/* touch interrupt pin */
-	s3c_gpio_cfgpin(GPIO_TOUCH_CHG, S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(GPIO_TOUCH_CHG, S3C_GPIO_PULL_NONE);
-	printk(KERN_ERR "mxt_power_on is finished\n");
-
-	return 0;
-}
-
-static int mxt_power_off(void)
-{
-	struct regulator *regulator;
-
-	gpio_set_value(GPIO_TOUCH_RESET, 0);
-
-	/* disable XVDD */
-	gpio_set_value(GPIO_TOUCH_EN, 0);
-	msleep(3);
-	gpio_set_value(GPIO_TOUCH_EN_1, 0);
-	msleep(3);
-
-	/* disable I2C pullup */
-	regulator = regulator_get(NULL, "tsp_vdd_1.8v");
-	if (IS_ERR(regulator)) {
-		printk(KERN_ERR "[TSP] %s: tsp_vdd_1.8v regulator_get failed\n",
-			__func__);
-		return -EIO;
-	}
-
-	if (regulator_is_enabled(regulator))
-		regulator_disable(regulator);
-	regulator_put(regulator);
-
-	/* touch interrupt pin */
-	s3c_gpio_cfgpin(GPIO_TOUCH_CHG, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_TOUCH_CHG, S3C_GPIO_PULL_NONE);
-	printk(KERN_ERR "mxt_power_off is finished!\n");
-
-	return 0;
-}
-
-#if ENABLE_TOUCH_KEY
-struct mxt_touchkey mxt_touchkeys[] = {
-	{
-		.value = 0x20,
-		.keycode = KEY_DUMMY_MENU,
-		.name = "d_menu",
-		.xnode = 31, /* first x num conut is 0 */
-		.ynode = 51, /* first y num conut is 0 */
-		.deltaobj = 5, /*base on datasheet*/
-	},
-	{
-		.value = 0x10,
-		.keycode = KEY_MENU,
-		.name = "menu",
-		.xnode = 30,
-		.ynode = 51,
-		.deltaobj = 4,
-	},
-	{
-		.value = 0x08,
-		.keycode = KEY_DUMMY_HOME1,
-		.name = "d_home1",
-		.xnode = 29,
-		.ynode = 51,
-		.deltaobj = 3,
-	},
-	{
-		.value = 0x04,
-		.keycode = KEY_DUMMY_HOME2,
-		.name = "d_home2",
-		.xnode = 28,
-		.ynode = 51,
-		.deltaobj = 2,
-	},
-	{
-		.value = 0x02,
-		.keycode = KEY_BACK,
-		.name = "back",
-		.xnode = 27,
-		.ynode = 51,
-		.deltaobj = 1,
-	},
-	{
-		.value = 0x01,
-		.keycode = KEY_DUMMY_BACK,
-		.name = "d_back",
-		.xnode = 26,
-		.ynode = 51,
-		.deltaobj = 0,
-	},
-};
-
-static int mxt_led_power_on(void)
-{
-	struct regulator *regulator;
-
-	if (system_rev == 0) {
-		printk(KERN_ERR "[TSP] system_rev 0.0 is not support key_led on!\n");
-		return 0;
-	}
-
-	regulator = regulator_get(NULL, "key_led_3.3v");
-	if (IS_ERR(regulator)) {
-		printk(KERN_ERR "[TSP] %s: key_led_3.3v regulator_get failed\n",
-			__func__);
-		return -EIO;
-	}
-	regulator_enable(regulator);
-	regulator_put(regulator);
-
-	printk(KERN_ERR "mxt_led_power_on is finished\n");
-	return 0;
-}
-
-static int mxt_led_power_off(void)
-{
-	struct regulator *regulator;
-
-	if (system_rev == 0) {
-		printk(KERN_ERR "[TSP] system_rev 0.0 is not support key_led off!\n");
-		return 0;
-	}
-
-	regulator = regulator_get(NULL, "key_led_3.3v");
-	if (IS_ERR(regulator)) {
-		printk(KERN_ERR "[TSP] %s: key_led_3.3v regulator_get failed\n",
-			__func__);
-		return -EIO;
-	}
-
-	if (regulator_is_enabled(regulator))
-		regulator_disable(regulator);
-	regulator_put(regulator);
-
-	printk(KERN_ERR "mxt_led_power_off is finished\n");
-	return 0;
-}
-#endif
-
-static void mxt_gpio_init(void)
-{
-	/* touch interrupt */
-	gpio_request(GPIO_TOUCH_CHG, "TSP_INT");
-	s3c_gpio_cfgpin(GPIO_TOUCH_CHG, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_TOUCH_CHG, S3C_GPIO_PULL_NONE);
-	s5p_register_gpio_interrupt(GPIO_TOUCH_CHG);
-
-	s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_NONE);
-	s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_NONE);
-
-	gpio_request_one(GPIO_TOUCH_RESET, GPIOF_OUT_INIT_LOW, "atmel_mxt_ts nRESET");
-
-	gpio_request(GPIO_TOUCH_EN, "GPIO_TOUCH_EN");
-	s3c_gpio_cfgpin(GPIO_TOUCH_EN, S3C_GPIO_OUTPUT);
-	s3c_gpio_setpull(GPIO_TOUCH_EN, S3C_GPIO_PULL_NONE);
-
-	gpio_request(GPIO_TOUCH_EN_1, "GPIO_TOUCH_EN_1");
-	s3c_gpio_cfgpin(GPIO_TOUCH_EN_1, S3C_GPIO_OUTPUT);
-	s3c_gpio_setpull(GPIO_TOUCH_EN_1, S3C_GPIO_PULL_NONE);
-
-	s5p_gpio_set_pd_cfg(GPIO_TOUCH_CHG, S5P_GPIO_PD_PREV_STATE);
-	s5p_gpio_set_pd_pull(GPIO_TOUCH_CHG, S5P_GPIO_PD_UPDOWN_DISABLE);
-	s5p_gpio_set_pd_cfg(GPIO_TOUCH_RESET, S5P_GPIO_PD_PREV_STATE);
-	s5p_gpio_set_pd_cfg(GPIO_TOUCH_EN, S5P_GPIO_PD_PREV_STATE);
-	s5p_gpio_set_pd_cfg(GPIO_TOUCH_EN_1, S5P_GPIO_PD_PREV_STATE);
-}
-
-static struct mxt_platform_data mxt_data = {
-	.num_xnode = 32,
-	.num_ynode = 52,
-	.max_x = 4095,
-	.max_y = 4095,
-	.irqflags = IRQF_TRIGGER_LOW | IRQF_ONESHOT,
-	.boot_address = MXT_BOOT_ADDRESS,
-	.project_name = MXT_PROJECT_NAME,
-	.revision = MXT_REVISION_G,
-	.read_chg = mxt_read_chg,
-	.power_on = mxt_power_on,
-	.power_off = mxt_power_off,
-	.register_cb = mxt_register_callback,
-	.firmware_name = MXT_FIRMWARE_NAME_REVISION,
-#if ENABLE_TOUCH_KEY
-	.num_touchkey = ARRAY_SIZE(mxt_touchkeys),
-	.touchkey = mxt_touchkeys,
-	.led_power_on = mxt_led_power_on,
-	.led_power_off = mxt_led_power_off,
-#endif
-};
-
-static struct i2c_board_info mxt_i2c_devs0[] __initdata = {
-	{
-		I2C_BOARD_INFO(MXT_DEV_NAME, MXT_APP_ADDRESS),
-		.platform_data = &mxt_data,
-	}
-};
-
-void __init atmel_tsp_init(void)
-{
-	mxt_gpio_init();
-
-	mxt_i2c_devs0[0].irq = gpio_to_irq(GPIO_TOUCH_CHG);
-
-	s3c_i2c0_set_platdata(&touch_i2c0_platdata);
-	i2c_register_board_info(0, mxt_i2c_devs0, ARRAY_SIZE(mxt_i2c_devs0));
-
-	printk(KERN_ERR "%s touch : %d [%d]\n",
-		 		__func__, mxt_i2c_devs0[0].irq, system_rev);
-}
- 
-#else
 /*
  * Please locate model dependent define at below position
  * such as bootloader address, app address and firmware name
@@ -722,21 +439,9 @@ void __init atmel_tsp_init(void)
 		 __func__, mxt_i2c_devs0[0].irq);
 }
 #endif
-#endif
 
 /*	Synaptics Thin Driver	*/
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI
-#ifdef CONFIG_SEC_TSP_FACTORY
-unsigned int bootmode;
-EXPORT_SYMBOL(bootmode);
-static int __init bootmode_setup(char *str)
-{
-	get_option(&str, &bootmode);
-	return 1;
-}
-__setup("bootmode=", bootmode_setup);
-#endif
-
 /* Below function is added by synaptics requirement. they want observe
  * the LCD's HSYNC signal in there IC. So we enable the Tout1 pad(on DDI)
  * after power up TSP.
@@ -946,11 +651,6 @@ static void synaptics_verify_panel_revision(void)
 	 * So added enable_sync function added in platform data.
 	 */
 	rmi4_platformdata.enable_sync = &synaptics_enable_sync;
-
-#ifdef CONFIG_SEC_TSP_FACTORY
-	rmi4_platformdata.bootmode = bootmode;
-	printk(KERN_ERR "%s: bootmode: %d\n", __func__, bootmode);
-#endif
 	rmi4_platformdata.get_ddi_type = &synaptics_get_ldi_info;
 
 	/* Define the notification method in charger event
@@ -986,6 +686,216 @@ void __init synaptics_tsp_init(void)
 
 	printk(KERN_ERR "%s touch : %d\n",
 		 __func__, synaptics_i2c_devs0[0].irq);
+}
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C
+
+#define PROJECT_V2A_NAME	"SM-P9XX"
+#define FW_IMAGE_NAME_V2 "tsp_synaptics/synaptics_v2.fw"
+#define FW_IMAGE_NAME_V2_G2 "tsp_synaptics/synaptics_v2_g2.fw"
+
+#define DSX_I2C_ADDR 0x20
+#define DSX_ATTN_GPIO GPIO_TOUCH_CHG
+#define DSX_RESET_GPIO GPIO_TOUCH_RESET
+#define DSX_AVDD_GPIO	GPIO_TOUCH_EN
+
+#define NUM_OF_RX	58
+#define NUM_OF_TX	36
+
+static int synaptics_power(bool on)
+{
+	struct regulator *regulator_vdd;
+	struct regulator *regulator_avdd;
+	static bool enabled;
+
+	if (enabled == on)
+		return 0;
+
+	regulator_vdd = regulator_get(NULL, "tsp_vdd_1.8v");
+	if (IS_ERR(regulator_vdd)) {
+		printk(KERN_ERR "[TSP]ts_power_on : tsp_vdd regulator_get failed\n");
+		return PTR_ERR(regulator_vdd);
+	}
+
+	if (on) {
+		gpio_set_value(DSX_AVDD_GPIO, 1);
+
+		regulator_enable(regulator_vdd);
+		regulator_put(regulator_vdd);
+
+		gpio_set_value(DSX_RESET_GPIO, 1);
+
+		s3c_gpio_cfgpin(DSX_ATTN_GPIO, S3C_GPIO_SFN(0xf));
+		s3c_gpio_setpull(DSX_ATTN_GPIO, S3C_GPIO_PULL_NONE);
+	} else {
+		gpio_set_value(DSX_RESET_GPIO, 0);
+
+		/*
+		 * TODO: If there is a case the regulator must be disabled
+		 * (e,g firmware update?), consider regulator_force_disable.
+		 */
+		if (regulator_is_enabled(regulator_vdd))
+			regulator_disable(regulator_vdd);
+		regulator_put(regulator_vdd);
+
+		gpio_set_value(DSX_AVDD_GPIO, 0);
+
+		s3c_gpio_cfgpin(DSX_ATTN_GPIO, S3C_GPIO_INPUT);
+		s3c_gpio_setpull(DSX_ATTN_GPIO, S3C_GPIO_PULL_NONE);
+	}
+
+	enabled = on;
+
+	printk(KERN_ERR "[TSP] %s %s\n", __func__, on ? "on" : "off");
+
+	return 0;
+}
+
+static int synaptics_gpio_setup(unsigned gpio, bool configure)
+{
+	int retval = 0;
+
+	if (configure) {
+		gpio_request(gpio, "TSP_INT");
+		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(0xf));
+		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
+		s5p_register_gpio_interrupt(gpio);
+	} else {
+		pr_warn("%s: No way to deconfigure gpio %d.",
+		       __func__, gpio);
+	}
+
+	return retval;
+}
+
+#ifdef NO_0D_WHILE_2D
+static unsigned char tm1940_cap_button_codes[] = {
+	KEY_DUMMY_MENU,
+	KEY_MENU,
+	KEY_DUMMY_HOME1,
+	KEY_DUMMY_HOME2,
+	KEY_BACK,
+	KEY_DUMMY_BACK,
+};
+
+static unsigned char tm1940_cap_button_codes_rev05[] = {
+	KEY_DUMMY_MENU,
+	KEY_MENU,
+	KEY_BACK,
+	KEY_DUMMY_BACK,
+};
+
+static struct synaptics_rmi_f1a_button_map tm1940_cap_button_map = {
+	.nbuttons = ARRAY_SIZE(tm1940_cap_button_codes),
+	.map = tm1940_cap_button_codes,
+};
+
+static struct synaptics_rmi_f1a_button_map tm1940_cap_button_map_rev05 = {
+	.nbuttons = ARRAY_SIZE(tm1940_cap_button_codes_rev05),
+	.map = tm1940_cap_button_codes_rev05,
+};
+
+static int ts_led_power_on(bool on)
+{
+	struct regulator *regulator;
+
+	if (on) {
+		regulator = regulator_get(NULL, "key_led_3.3v");
+		if (IS_ERR(regulator)) {
+			printk(KERN_ERR "[TSP_KEY] ts_led_power_on : TK_LED regulator_get failed\n");
+			return -EIO;
+		}
+
+		regulator_enable(regulator);
+		regulator_put(regulator);
+	} else {
+		regulator = regulator_get(NULL, "key_led_3.3v");
+		if (IS_ERR(regulator)) {
+			printk(KERN_ERR "[TSP_KEY] ts_led_power_on : TK_LED regulator_get failed\n");
+			return -EIO;
+		}
+
+		if (regulator_is_enabled(regulator))
+			regulator_force_disable(regulator);
+		regulator_put(regulator);
+	}
+
+	printk(KERN_ERR "[TSP_KEY] %s %s\n", __func__, on ? "on" : "off");
+
+	return 0;
+}
+#endif
+
+static struct synaptics_rmi4_platform_data dsx_platformdata = {
+	.sensor_max_x = 2559,
+	.sensor_max_y = 1599,
+	.max_touch_width = 28,
+	.irq_type = IRQF_TRIGGER_LOW | IRQF_ONESHOT,/*IRQF_TRIGGER_FALLING,*/
+	.power = synaptics_power,
+	.gpio = DSX_ATTN_GPIO,
+	.gpio_config = synaptics_gpio_setup,
+#ifdef NO_0D_WHILE_2D
+	.led_power_on = ts_led_power_on,
+	.f1a_button_map = &tm1940_cap_button_map,
+#endif
+	.firmware_name = FW_IMAGE_NAME_V2,
+	.fac_firmware_name = FW_IMAGE_NAME_V2,
+	.project_name = PROJECT_V2A_NAME,
+	.get_ddi_type = NULL,
+	.num_of_rx = NUM_OF_RX,
+	.num_of_tx = NUM_OF_TX,
+};
+
+static struct i2c_board_info synaptics_dsx_i2c_devs0[] = {
+	{
+		I2C_BOARD_INFO("synaptics_dsx_i2c", DSX_I2C_ADDR),
+		.platform_data = &dsx_platformdata,
+	},
+};
+
+static void synaptics_dsx_gpio_init(void)
+{
+	/* touch interrupt */
+	gpio_request(DSX_ATTN_GPIO, "TSP_INT");
+	s3c_gpio_cfgpin(DSX_ATTN_GPIO, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(DSX_ATTN_GPIO, S3C_GPIO_PULL_NONE);
+	s5p_register_gpio_interrupt(DSX_ATTN_GPIO);
+
+	s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_NONE);
+	s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_NONE);
+
+	gpio_request_one(DSX_RESET_GPIO, GPIOF_OUT_INIT_LOW, "synaptics_dsx_i2c nRESET");
+
+	gpio_request(DSX_AVDD_GPIO, "GPIO_TOUCH_EN");
+	s3c_gpio_cfgpin(DSX_AVDD_GPIO, S3C_GPIO_OUTPUT);
+	s3c_gpio_setpull(DSX_AVDD_GPIO, S3C_GPIO_PULL_NONE);
+
+	s5p_gpio_set_pd_cfg(DSX_ATTN_GPIO, S5P_GPIO_PD_PREV_STATE);
+	s5p_gpio_set_pd_pull(DSX_ATTN_GPIO, S5P_GPIO_PD_UPDOWN_DISABLE);
+	s5p_gpio_set_pd_cfg(DSX_RESET_GPIO, S5P_GPIO_PD_PREV_STATE);
+	s5p_gpio_set_pd_cfg(DSX_AVDD_GPIO, S5P_GPIO_PD_PREV_STATE);
+}
+
+void __init synaptics_dsx_tsp_init(void)
+{
+	synaptics_dsx_gpio_init();
+
+	synaptics_dsx_i2c_devs0[0].irq = gpio_to_irq(DSX_ATTN_GPIO);
+
+	if (system_rev >= 4) {
+#ifdef NO_0D_WHILE_2D
+		dsx_platformdata.f1a_button_map = &tm1940_cap_button_map_rev05;
+#endif
+		dsx_platformdata.firmware_name = FW_IMAGE_NAME_V2_G2;
+		dsx_platformdata.fac_firmware_name = FW_IMAGE_NAME_V2_G2;
+	}
+	s3c_i2c0_set_platdata(&touch_i2c0_platdata);
+	i2c_register_board_info(0, synaptics_dsx_i2c_devs0,
+		 ARRAY_SIZE(synaptics_dsx_i2c_devs0));
+
+	printk(KERN_ERR "%s touch : %d\n",
+		 __func__, synaptics_dsx_i2c_devs0[0].irq);
 }
 #endif
 
@@ -1224,72 +1134,7 @@ void __init wacom_init(void)
 #define GPIO_VOLDOWN_BUTTON     EXYNOS5420_GPX0(3)
 #define GPIO_HOMEPAGE_BUTTON     EXYNOS5420_GPX0(5)
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-static void universal5410_gpio_keys_config_setup(u32 system_rev)
-{
-	pr_info("gpio_keys : system_rev %d\n", system_rev);
 
-	if (0x0 == system_rev)
-		s3c_gpio_setpull(GPIO_HOMEPAGE_BUTTON, S3C_GPIO_PULL_UP);
-};
-
-#define GPIO_KEYS(_name, _code, _gpio, _active_low, _iswake)	\
-{									\
-	.desc = _name,					\
-	.code = _code,					\
-	.gpio = _gpio,					\
-	.active_low = _active_low,			\
-	.type = EV_KEY,					\
-	.wakeup = _iswake,				\
-	.debounce_interval = 10,			\
-	.value = 1						\
-}
-
-static struct gpio_keys_button universal5410_button[] = {
-	GPIO_KEYS("KEY_POWER", KEY_POWER,
-		GPIO_POWER_BUTTON, true, true),
-	GPIO_KEYS("KEY_VOLUMEUP", KEY_VOLUMEUP,
-		GPIO_VOLUP_BUTTON, true, false),
-	GPIO_KEYS("KEY_VOLUMEDOWN", KEY_VOLUMEDOWN,
-		GPIO_VOLDOWN_BUTTON, true, false),
-	GPIO_KEYS("KEY_HOME", KEY_HOMEPAGE,
-		GPIO_HOMEPAGE_BUTTON, true, false),
-};
-
-static struct gpio_keys_platform_data universal5410_gpiokeys_platform_data = {
-	universal5410_button,
-	ARRAY_SIZE(universal5410_button),
-#ifdef CONFIG_SENSORS_HALL
-	.gpio_flip_cover = GPIO_HALL_SENSOR_INT,
-#endif
-};
-
-static struct platform_device universal5410_gpio_keys = {
-	.name   = "gpio-keys",
-	.dev    = {
-		.platform_data = &universal5410_gpiokeys_platform_data,
-	},
-};
-
-static struct input_debug_key_state kstate[] = {
-	SET_DEBUG_KEY(KEY_POWER, false),
-	SET_DEBUG_KEY(KEY_VOLUMEUP, false),
-	SET_DEBUG_KEY(KEY_VOLUMEDOWN, true),
-	SET_DEBUG_KEY(KEY_HOMEPAGE, false),
-};
-
-static struct input_debug_pdata input_debug_platform_data = {
-	.nkeys = ARRAY_SIZE(kstate),
-	.key_state = kstate,
-};
-
-static struct platform_device input_debug = {
-	.name	= SEC_DEBUG_NAME,
-	.dev	= {
-		.platform_data = &input_debug_platform_data,
-	},
-};
-#else	/* CONFIG_V1A */
 static void universal5410_gpio_keys_config_setup(u32 system_rev)
 {
 	s3c_gpio_setpull(GPIO_VOLUP_BUTTON, S3C_GPIO_PULL_UP);
@@ -1344,39 +1189,109 @@ static struct platform_device universal5410_gpio_keys = {
 		.platform_data = &universal5410_gpiokeys_platform_data,
 	},
 };
-#endif	/* !defined(CONFIG_V1A) */
+
+#ifdef CONFIG_INPUT_BOOSTER
+static enum booster_device_type get_booster_device(int code)
+{
+	switch (code) {
+	case KEY_HOMEPAGE:
+		return BOOSTER_DEVICE_KEY;
+	break;
+	case KEY_MENU:
+	case KEY_BACK:
+		return BOOSTER_DEVICE_TOUCHKEY;
+	break;
+	case KEY_BOOSTER_TOUCH:
+		return BOOSTER_DEVICE_TOUCH;
+	break;
+	case KEY_BOOSTER_PEN:
+		return BOOSTER_DEVICE_PEN;
+	break;
+	default:
+		return BOOSTER_DEVICE_NOT_DEFINED;
+	break;
+	}
+}
+
+static const struct dvfs_freq key_freq_table[BOOSTER_DEVICE_MAX] = {
+	[BOOSTER_LEVEL1] = BOOSTER_DVFS_FREQ(650000,	400000,	111000),
+};
+
+static const struct dvfs_freq touchkey_freq_table[BOOSTER_DEVICE_MAX] = {
+	[BOOSTER_LEVEL1] = BOOSTER_DVFS_FREQ(1600000,	667000,	333000),
+	[BOOSTER_LEVEL2] = BOOSTER_DVFS_FREQ(650000,	400000,	111000),
+};
+
+static const struct dvfs_freq touch_freq_table[BOOSTER_DEVICE_MAX] = {
+	[BOOSTER_LEVEL1] = BOOSTER_DVFS_FREQ(1600000,	667000,	333000),
+	[BOOSTER_LEVEL2] = BOOSTER_DVFS_FREQ(650000,	400000,	111000),
+	[BOOSTER_LEVEL3] = BOOSTER_DVFS_FREQ(650000,	667000,	333000),
+};
+
+static struct booster_key booster_keys[] = {
+	BOOSTER_KEYS("HOMEPAGE", KEY_HOMEPAGE,
+			BOOSTER_DEFAULT_ON_TIME,
+			BOOSTER_DEFAULT_OFF_TIME,
+			key_freq_table),
+	BOOSTER_KEYS("MENU", KEY_MENU,
+			BOOSTER_DEFAULT_ON_TIME,
+			BOOSTER_DEFAULT_OFF_TIME,
+			touchkey_freq_table),
+	BOOSTER_KEYS("BACK", KEY_BACK,
+			BOOSTER_DEFAULT_ON_TIME,
+			BOOSTER_DEFAULT_OFF_TIME,
+			touchkey_freq_table),
+	BOOSTER_KEYS("TOUCH", KEY_BOOSTER_TOUCH,
+			BOOSTER_DEFAULT_CHG_TIME,
+			BOOSTER_DEFAULT_OFF_TIME,
+			touch_freq_table),
+	BOOSTER_KEYS("PEN", KEY_BOOSTER_PEN,
+			BOOSTER_DEFAULT_CHG_TIME,
+			BOOSTER_DEFAULT_OFF_TIME,
+			touch_freq_table),
+};
+
+/* Caution : keys, nkeys, get_device_type should be defined */
+
+static struct input_booster_platform_data input_booster_pdata = {
+	.keys = booster_keys,
+	.nkeys = ARRAY_SIZE(booster_keys),
+	.get_device_type = get_booster_device,
+};
+
+static struct platform_device universal5420_input_booster = {
+	.name = INPUT_BOOSTER_NAME,
+	.dev.platform_data = &input_booster_pdata,
+};
+#endif
 
 static struct platform_device *universal5410_input_devices[] __initdata = {
 	&s3c_device_i2c0,
 	&universal5410_gpio_keys,
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-	&input_debug,
-#endif
 #ifdef CONFIG_KEYBOARD_CYPRESS_TOUCH
 	&s3c_device_i2c11,
 #endif
 #ifdef CONFIG_INPUT_WACOM
 	&exynos5_device_hs_i2c4,
 #endif
+#ifdef CONFIG_INPUT_BOOSTER
+	&universal5420_input_booster,
+#endif
 };
 
-#if !defined(CONFIG_V1A) && !defined(CONFIG_N1A)
 void __init tsp_check_and_init(void)
 {
 	/* We do not need to check Ic vendor anymore */
 	synaptics_tsp_init();
 }
-#endif
 
 void __init exynos5_universal5420_input_init(void)
 {
-	sec_class = class_create(THIS_MODULE, "sec");
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-	atmel_tsp_init();
+#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C)
+	synaptics_dsx_tsp_init();
 #else
-#if defined(CONFIG_TOUCHSCREEN_ATMEL_MXTS) || \
-	defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)
+#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)
 	tsp_check_and_init();
 #elif defined(CONFIG_TOUCHSCREEN_MELFAS)
 	s3c_i2c0_set_platdata(&touch_i2c0_platdata);

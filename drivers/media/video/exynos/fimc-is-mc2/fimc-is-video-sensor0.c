@@ -433,17 +433,76 @@ static int fimc_is_ss0_video_s_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	struct fimc_is_video_ctx *vctx = file->private_data;
-	struct fimc_is_device_sensor *sensor = vctx->device;
+	struct fimc_is_device_sensor *sensor;
+
+	BUG_ON(!ctrl);
+	BUG_ON(!vctx);
+
+	sensor = vctx->device;
+	if (!sensor) {
+		err("sensor is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
 
 	switch (ctrl->id) {
 	case V4L2_CID_IS_S_STREAM:
-		if (ctrl->value == IS_ENABLE_STREAM)
-			ret = fimc_is_sensor_front_start(sensor);
-		else
-			ret = fimc_is_sensor_front_stop(sensor);
+		{
+			u32 sstream, instant, noblock;
+
+			sstream = (ctrl->value & SENSOR_SSTREAM_MASK) >> SENSOR_SSTREAM_SHIFT;
+			instant = (ctrl->value & SENSOR_INSTANT_MASK) >> SENSOR_INSTANT_SHIFT;
+			noblock = (ctrl->value & SENSOR_NOBLOCK_MASK) >> SENSOR_NOBLOCK_SHIFT;
+			/*
+			 * nonblock(0) : blocking command
+			 * nonblock(1) : non-blocking command
+			 */
+
+			if (sstream == IS_ENABLE_STREAM) {
+				ret = fimc_is_sensor_front_start(sensor, instant, noblock);
+			} else {
+				ret = fimc_is_sensor_front_stop(sensor);
+			}
+		}
 		break;
 	}
 
+p_err:
+	return ret;
+}
+
+static int fimc_is_ss0_video_g_ctrl(struct file *file, void *priv,
+	struct v4l2_control *ctrl)
+{
+	int ret = 0;
+	struct fimc_is_video_ctx *vctx = file->private_data;
+	struct fimc_is_device_sensor *sensor;
+
+	BUG_ON(!vctx);
+	BUG_ON(!ctrl);
+
+	sensor = vctx->device;
+	if (!sensor) {
+		err("sensor is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	switch (ctrl->id) {
+	case V4L2_CID_IS_G_STREAM:
+		if (sensor->instant_ret)
+			ctrl->value = sensor->instant_ret;
+		else
+			ctrl->value = (test_bit(FIMC_IS_SENSOR_FRONT_START, &sensor->state) ?
+				IS_ENABLE_STREAM : IS_DISABLE_STREAM);
+		break;
+	default:
+		err("unsupported ioctl(%d)\n", ctrl->id);
+		ret = -EINVAL;
+		break;
+	}
+
+p_err:
 	return ret;
 }
 
@@ -484,6 +543,12 @@ static int fimc_is_ss0_video_s_parm(struct file *file, void *priv,
 	sensor = vctx->device;
 	if (!sensor) {
 		err("sensor is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	if (!sensor->active_sensor) {
+		err("active_sensor is NULL");
 		ret = -EINVAL;
 		goto p_err;
 	}
@@ -561,6 +626,7 @@ const struct v4l2_ioctl_ops fimc_is_ss0_video_ioctl_ops = {
 	.vidioc_g_input			= fimc_is_ss0_video_g_input,
 	.vidioc_s_input			= fimc_is_ss0_video_s_input,
 	.vidioc_s_ctrl			= fimc_is_ss0_video_s_ctrl,
+	.vidioc_g_ctrl			= fimc_is_ss0_video_g_ctrl,
 	.vidioc_g_parm			= fimc_is_ss0_video_g_parm,
 	.vidioc_s_parm			= fimc_is_ss0_video_s_parm,
 };

@@ -446,10 +446,6 @@ config DIRECT_RECLAIM_FILE_PAGES_ONLY
 	default n
 	depends on ZSWAP
 
-config DIRECT_RECLAIM_ALLOW_COMPACTION
-	bool "Allow compaction on direct reclaim path"
-	default y
-
 config TIGHT_PGDAT_BALANCE
 	bool "Increase balance condition"
 	default n

@@ -72,9 +72,6 @@ struct synaptics_rmi4_platform_data {
 	const char *project_name;
     int num_of_rx;
     int num_of_tx;
-#ifdef CONFIG_SEC_TSP_FACTORY
-	int bootmode;
-#endif
 #ifdef SYNAPTICS_RMI_INFORM_CHARGER
 	void (*register_cb)(struct synaptics_rmi_callbacks *);
 #endif

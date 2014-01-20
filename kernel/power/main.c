@@ -16,6 +16,10 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 
+#ifdef CONFIG_FAST_BOOT
+#include <linux/fake_shut_down.h>
+#endif
+
 #include "power.h"
 
 DEFINE_MUTEX(pm_mutex);
@@ -269,6 +273,25 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return (s - buf);
 }
 
+#ifdef CONFIG_FAST_BOOT
+bool fake_shut_down;
+EXPORT_SYMBOL(fake_shut_down);
+
+RAW_NOTIFIER_HEAD(fsd_notifier_list);
+
+int register_fake_shut_down_notifier(struct notifier_block *nb)
+{
+	return raw_notifier_chain_register(&fsd_notifier_list, nb);
+}
+EXPORT_SYMBOL(register_fake_shut_down_notifier);
+
+int unregister_fake_shut_down_notifier(struct notifier_block *nb)
+{
+	return raw_notifier_chain_unregister(&fsd_notifier_list, nb);
+}
+EXPORT_SYMBOL(unregister_fake_shut_down_notifier);
+#endif
+
 static suspend_state_t decode_state(const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
@@ -289,6 +312,15 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++)
 		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
 			return state;
+#ifdef CONFIG_FAST_BOOT
+	if (len == 4 && !strncmp(buf, "dmem", len)) {
+		pr_info("%s: fake shut down!!!\n", __func__);
+		fake_shut_down = true;
+		raw_notifier_call_chain(&fsd_notifier_list,
+				FAKE_SHUT_DOWN_CMD_ON, NULL);
+		return PM_SUSPEND_MEM;
+	}
+#endif
 #endif
 
 	return PM_SUSPEND_ON;

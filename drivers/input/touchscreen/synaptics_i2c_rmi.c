@@ -181,8 +181,18 @@ struct synaptics_rmi4_f12_query_8 {
 				unsigned char data6_is_present:1;
 				unsigned char data7_is_present:1;
 			} __packed;
+			struct {
+				unsigned char data8_is_present:1;
+				unsigned char data9_is_present:1;
+				unsigned char data10_is_present:1;
+				unsigned char data11_is_present:1;
+				unsigned char data12_is_present:1;
+				unsigned char data13_is_present:1;
+				unsigned char data14_is_present:1;
+				unsigned char data15_is_present:1;
+			} __packed;
 		};
-		unsigned char data[2];
+		unsigned char data[3];
 	};
 };
 
@@ -433,7 +443,7 @@ struct synaptics_rmi4_f51_data {
 };
 #endif
 
-static struct device_attribute attrs[] = {
+static struct device_attribute synaptics_rmi4_attrs[] = {
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	__ATTR(full_pm_cycle, (S_IRUGO | S_IWUSR | S_IWGRP),
 			synaptics_rmi4_full_pm_cycle_show,
@@ -527,6 +537,13 @@ static void synaptics_change_dvfs_lock(struct work_struct *work)
 		tsp_debug_dbg(false, &rmi4_data->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS CHANGED\n",
 			__func__, rmi4_data->boost_level);
 		break;
+	case TSP_BOOSTER_LEVEL9:
+		if (pm_qos_request_active(&rmi4_data->tsp_cpu_qos))
+			pm_qos_update_request(&rmi4_data->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_9_T);
+
+		tsp_debug_dbg(false, &rmi4_data->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS CHANGED\n",
+			__func__, rmi4_data->boost_level);
+		break;
 	default:
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [TSP_DVFS] Undefined type passed %d\n",
 			__func__, rmi4_data->boost_level);
@@ -567,6 +584,8 @@ static void synaptics_init_dvfs_level(struct synaptics_rmi4_data *rmi4_data)
 	 * booster_level : 2	(press)CPU 1600000, MIF 667000, INT 333000 -> after 130msec
 	 *							-> CPU 650000, MIF 400000, INT 111000 -> after 500msec -> OFF
 	 * booster_level : 3	(press)CPU 650000, MIF 667000, INT 333000 -> after 130msec -> OFF
+	 * booster_level : 9	(press)CPU 1900000, MIF 800000, INT 400000 -> after 500msec
+	 *							-> CPU 1500000, MIF 800000, INT 400000 -> after 1000msec -> OFF
 	 */
 	unsigned int level = rmi4_data->boost_level;
 
@@ -604,6 +623,22 @@ static void synaptics_init_dvfs_level(struct synaptics_rmi4_data *rmi4_data)
 		else
 			pm_qos_add_request(&rmi4_data->tsp_int_qos, PM_QOS_DEVICE_THROUGHPUT, TOUCH_BOOSTER_INT_FRQ_3);
 		break;
+	case TSP_BOOSTER_LEVEL9:
+		if (pm_qos_request_active(&rmi4_data->tsp_cpu_qos))
+			pm_qos_update_request(&rmi4_data->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_9);
+		else
+			pm_qos_add_request(&rmi4_data->tsp_cpu_qos, PM_QOS_CPU_FREQ_MIN, TOUCH_BOOSTER_CPU_FRQ_9);
+
+		if (pm_qos_request_active(&rmi4_data->tsp_mif_qos))
+			pm_qos_update_request(&rmi4_data->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_9);
+		else
+			pm_qos_add_request(&rmi4_data->tsp_mif_qos, PM_QOS_BUS_THROUGHPUT, TOUCH_BOOSTER_MIF_FRQ_9);
+
+		if (pm_qos_request_active(&rmi4_data->tsp_int_qos))
+			pm_qos_update_request(&rmi4_data->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_9);
+		else
+			pm_qos_add_request(&rmi4_data->tsp_int_qos, PM_QOS_DEVICE_THROUGHPUT, TOUCH_BOOSTER_INT_FRQ_9);
+		break;
 	default:
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [TSP_DVFS] Undefined type passed %d\n",
 			__func__, level);
@@ -621,8 +656,12 @@ static void synaptics_set_dvfs_lock(struct synaptics_rmi4_data *rmi4_data, unsig
 	switch (mode) {
 	case TSP_BOOSTER_OFF:
 		if (rmi4_data->dvfs_lock_status) {
-			schedule_delayed_work(&rmi4_data->work_dvfs_off,
-				msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME));
+			if (rmi4_data->boost_level == TSP_BOOSTER_LEVEL9)
+				schedule_delayed_work(&rmi4_data->work_dvfs_off,
+					msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME_9));
+			else
+				schedule_delayed_work(&rmi4_data->work_dvfs_off,
+					msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME));
 		}
 		break;
 	case TSP_BOOSTER_ON:
@@ -632,7 +671,11 @@ static void synaptics_set_dvfs_lock(struct synaptics_rmi4_data *rmi4_data, unsig
 			cancel_delayed_work(&rmi4_data->work_dvfs_chg);
 			synaptics_init_dvfs_level(rmi4_data);
 
-			schedule_delayed_work(&rmi4_data->work_dvfs_chg,
+			if (rmi4_data->boost_level == TSP_BOOSTER_LEVEL9)
+				schedule_delayed_work(&rmi4_data->work_dvfs_chg,
+							msecs_to_jiffies(TOUCH_BOOSTER_CHG_TIME_9));
+			else
+				schedule_delayed_work(&rmi4_data->work_dvfs_chg,
 							msecs_to_jiffies(TOUCH_BOOSTER_CHG_TIME));
 
 			tsp_debug_dbg(false, &rmi4_data->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS ON\n",
@@ -1286,30 +1329,72 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	int retval;
 	unsigned char touch_count = 0; /* number of touch points */
 	unsigned char finger;
-	unsigned char fingers_supported;
+	unsigned char fingers_to_process;
 	unsigned char finger_status;
+	unsigned char size_of_2d_data;
 	unsigned short data_addr;
 	int x;
 	int y;
 	int wx;
 	int wy;
+	struct synaptics_rmi4_f12_extra_data *extra_data;
 	struct synaptics_rmi4_f12_finger_data *data;
 	struct synaptics_rmi4_f12_finger_data *finger_data;
 
-#ifdef TSP_BOOSTER
+#if defined(CONFIG_INPUT_BOOSTER) || defined(TSP_BOOSTER)
 	bool booster_restart = false;
 #endif
 #ifdef PROXIMITY_TSP
 	struct synaptics_rmi4_f51_handle *f51 = rmi4_data->f51;
 #endif
+	static unsigned char fingers_already_present;
 
-	fingers_supported = fhandler->num_of_data_points;
+	fingers_to_process = fhandler->num_of_data_points;
 	data_addr = fhandler->full_addr.data_base;
+	extra_data = (struct synaptics_rmi4_f12_extra_data *)fhandler->extra;
+	size_of_2d_data = sizeof(struct synaptics_rmi4_f12_finger_data);
+
+	/* Determine the total number of fingers to process */
+	if (extra_data->data15_size) {
+		unsigned short object_attention = 0;
+
+		retval = synaptics_rmi4_i2c_read(rmi4_data,
+				data_addr + extra_data->data15_offset,
+				extra_data->data15_data,
+				extra_data->data15_size);
+		if (retval < 0) {
+			tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s, %4d: Failed to read. error = %d\n",
+				__func__, __LINE__, retval);
+			return 0;
+		}
+
+		/* Object_attention : [000000xx xxxxxxxxx] : "x" represent that finger is on or not
+		 * Get the highest finger number to read finger data efficently.
+		 */
+		object_attention = extra_data->data15_data[0];
+		if (extra_data->data15_size > 1)
+			object_attention |= (extra_data->data15_data[1] & MASK_3BIT) << 8;
+
+		for (; fingers_to_process > 0; fingers_to_process--) {
+			if (object_attention & (1 << (fingers_to_process - 1)))
+				break;
+		}
+
+		tsp_debug_dbg(false, &rmi4_data->i2c_client->dev, "fingers[%d, %d] object_attention[0x%02x]\n",
+			fingers_to_process, fingers_already_present, object_attention);
+	}
+
+	fingers_to_process = max(fingers_to_process, fingers_already_present);
+
+	if (!fingers_to_process) {
+		synaptics_rmi4_release_all_finger(rmi4_data);
+		return 0;
+	}
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
-			data_addr + fhandler->data1_offset,
+			data_addr + extra_data->data1_offset,
 			(unsigned char *)fhandler->data,
-			fhandler->data_size);
+			fingers_to_process * size_of_2d_data);
 	if (retval < 0) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s, %4d: Failed to read. error = %d\n",
 			__func__, __LINE__, retval);
@@ -1317,7 +1402,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	}
 	data = (struct synaptics_rmi4_f12_finger_data *)fhandler->data;
 
-	for (finger = 0; finger < fingers_supported; finger++) {
+	for (finger = 0; finger < fingers_to_process; finger++) {
 		finger_data = data + finger;
 		finger_status = finger_data->object_type_and_status;
 
@@ -1342,6 +1427,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #endif
 
 		if (finger_status) {
+			fingers_already_present = finger + 1;
 #ifdef CONFIG_GLOVE_TOUCH
 			if ((finger_status == 0x06) &&
 				!rmi4_data->touchkey_glove_mode_status) {
@@ -1364,9 +1450,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 				tsp_debug_info(true, &rmi4_data->i2c_client->dev,
 						"%s: finger status 0x3, but No Palm. Reject!\n",
 						__func__);
-				return 0;
+				continue;
 			}
-
+#if !defined(CONFIG_SEC_FACTORY)
 			if (f51) {
 				if ((f51->proximity_controls & HAS_EDGE_SWIPE)
 					&& f51->surface_data.palm) {
@@ -1374,6 +1460,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 					wy = f51->surface_data.wy;
 				}
 			}
+#endif
 #endif
 #endif
 			if (rmi4_data->board->x_flip)
@@ -1395,7 +1482,10 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			input_report_abs(rmi4_data->input_dev,
 					ABS_MT_TOUCH_MINOR, min(wx, wy));
 #endif
-#ifdef EDGE_SWIPE
+#if defined(EDGE_SWIPE) && !defined(CONFIG_SEC_FACTORY)
+			/* TODO : Do not report palm info in factory binary
+			 * Disable the EDGE_SWIPE feature in factory binary not so far
+			 */
 			if (f51) {
 				if (f51->proximity_controls & HAS_EDGE_SWIPE) {
 					input_report_abs(rmi4_data->input_dev,
@@ -1412,7 +1502,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #endif
 
 			if (!rmi4_data->finger[finger].state) {
-#ifdef TSP_BOOSTER
+#if defined(CONFIG_INPUT_BOOSTER) || defined(TSP_BOOSTER)
 				booster_restart = true;
 #endif
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
@@ -1445,16 +1535,15 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		rmi4_data->finger[finger].state = finger_status;
 	}
 
-
 	if (touch_count == 0) {
 		/* Clear BTN_TOUCH when All touch are released  */
 		input_report_key(rmi4_data->input_dev,
 				BTN_TOUCH, 0);
+		fingers_already_present = 0;
 #ifndef TYPE_B_PROTOCOL
 		input_mt_sync(rmi4_data->input_dev);
 #endif
 	}
-
 	input_sync(rmi4_data->input_dev);
 
 #ifdef TSP_BOOSTER
@@ -1462,6 +1551,18 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		synaptics_set_dvfs_lock(rmi4_data, TSP_BOOSTER_ON, booster_restart);
 	else
 		synaptics_set_dvfs_lock(rmi4_data, TSP_BOOSTER_OFF, false);
+#endif
+#if defined(CONFIG_INPUT_BOOSTER)
+	if (booster_restart) {
+		INPUT_BOOSTER_REPORT_KEY_EVENT(rmi4_data->input_dev, KEY_BOOSTER_TOUCH, 0);
+		INPUT_BOOSTER_REPORT_KEY_EVENT(rmi4_data->input_dev, KEY_BOOSTER_TOUCH, 1);
+		INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH,
+			BOOSTER_MODE_ON);
+	}
+	if (!touch_count) {
+		INPUT_BOOSTER_REPORT_KEY_EVENT(rmi4_data->input_dev, KEY_BOOSTER_TOUCH, 0);
+		INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH, BOOSTER_MODE_OFF);
+	}
 #endif
 	return touch_count;
 }
@@ -2072,6 +2173,7 @@ static int synaptics_rmi4_f11_init(struct synaptics_rmi4_data *rmi4_data,
 	abs_data_blk_size = 3 + (2 * (abs_data_size == 0 ? 1 : 0));
 	fhandler->size_of_data_register_block = abs_data_blk_size;
 	fhandler->data = NULL;
+	fhandler->extra = NULL;
 
 	return retval;
 }
@@ -2196,13 +2298,15 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 	unsigned char ii;
 	unsigned char intr_offset;
 	unsigned char size_of_2d_data;
+	unsigned char size_of_query8;
 	unsigned char ctrl_8_offset;
 	unsigned char ctrl_9_offset;
 	unsigned char ctrl_11_offset;
+	unsigned char ctrl_15_offset;
 	unsigned char ctrl_23_offset;
 	unsigned char ctrl_26_offset;
 	unsigned char ctrl_28_offset;
-	unsigned char fingers_to_support = F12_FINGERS_TO_SUPPORT;
+	struct synaptics_rmi4_f12_extra_data *extra_data;
 	struct synaptics_rmi4_f12_query_5 query_5;
 	struct synaptics_rmi4_f12_query_8 query_8;
 	struct synaptics_rmi4_f12_ctrl_8 ctrl_8;
@@ -2214,6 +2318,9 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 
 	fhandler->fn_number = fd->fn_number;
 	fhandler->num_of_data_sources = fd->intr_src_count;
+	fhandler->extra = kzalloc(sizeof(*extra_data), GFP_KERNEL);
+	extra_data = (struct synaptics_rmi4_f12_extra_data *)fhandler->extra;
+	size_of_2d_data = sizeof(struct synaptics_rmi4_f12_finger_data);
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
 			fhandler->full_addr.query_base + 5,
@@ -2240,11 +2347,13 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 			query_5.ctrl9_is_present +
 			query_5.ctrl10_is_present;
 
-	ctrl_23_offset = ctrl_11_offset +
+	ctrl_15_offset = ctrl_11_offset +
 			query_5.ctrl11_is_present +
 			query_5.ctrl12_is_present +
 			query_5.ctrl13_is_present +
-			query_5.ctrl14_is_present +
+			query_5.ctrl14_is_present;
+
+	ctrl_23_offset = ctrl_15_offset +
 			query_5.ctrl15_is_present +
 			query_5.ctrl16_is_present +
 			query_5.ctrl17_is_present +
@@ -2274,7 +2383,7 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 	}
 	/* Maximum number of fingers supported */
 	fhandler->num_of_data_points = min(ctrl_23.max_reported_objects,
-			fingers_to_support);
+			(unsigned char)F12_FINGERS_TO_SUPPORT);
 
 	rmi4_data->num_of_fingers = fhandler->num_of_data_points;
 
@@ -2287,16 +2396,48 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 	}
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
-			fhandler->full_addr.query_base + 8,
-			query_8.data,
-			sizeof(query_8.data));
+			fhandler->full_addr.query_base + 7,
+			&size_of_query8,
+			sizeof(size_of_query8));
 	if (retval < 0) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s, %4d: Failed to read. error = %d\n",
 			__func__, __LINE__, retval);
 		return retval;
 	}
+
+	retval = synaptics_rmi4_i2c_read(rmi4_data,
+			fhandler->full_addr.query_base + 8,
+			query_8.data,
+			size_of_query8);
+	if (retval < 0) {
+		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s, %4d: Failed to read. error = %d\n",
+			__func__, __LINE__, retval);
+		return retval;
+	}
+
 	/* Determine the presence of the Data0 register */
-	fhandler->data1_offset = query_8.data0_is_present;
+	extra_data->data1_offset = query_8.data0_is_present;
+
+	if ((size_of_query8 >= 3) && (query_8.data15_is_present)) {
+		extra_data->data15_offset = query_8.data0_is_present +
+			query_8.data1_is_present +
+			query_8.data2_is_present +
+			query_8.data3_is_present +
+			query_8.data4_is_present +
+			query_8.data5_is_present +
+			query_8.data6_is_present +
+			query_8.data7_is_present +
+			query_8.data8_is_present +
+			query_8.data9_is_present +
+			query_8.data10_is_present +
+			query_8.data11_is_present +
+			query_8.data12_is_present +
+			query_8.data13_is_present +
+			query_8.data14_is_present;
+		extra_data->data15_size = (rmi4_data->num_of_fingers + 7) / 8;
+	} else {
+		extra_data->data15_size = 0;
+	}
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
 			fhandler->full_addr.ctrl_base + ctrl_8_offset,
@@ -2375,6 +2516,8 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 	rmi4_data->f12_ctrl11_addr = fhandler->full_addr.ctrl_base +
 				ctrl_11_offset;
 
+	rmi4_data->f12_ctrl15_addr = fhandler->full_addr.ctrl_base +
+				ctrl_15_offset;
 #ifdef CONFIG_GLOVE_TOUCH
 	rmi4_data->glove_mode_enables_addr = fhandler->full_addr.ctrl_base +
 				ctrl_26_offset;
@@ -2410,6 +2553,7 @@ static int synaptics_rmi4_f1a_alloc_mem(struct synaptics_rmi4_data *rmi4_data,
 	}
 
 	fhandler->data = (void *)f1a;
+	fhandler->extra = NULL;
 
 	retval = synaptics_rmi4_i2c_read(rmi4_data,
 			fhandler->full_addr.query_base,
@@ -2793,6 +2937,7 @@ static int synaptics_rmi4_f51_init(struct synaptics_rmi4_data *rmi4_data,
 	fhandler->data_size = sizeof(*data_register);
 	data_register = kzalloc(fhandler->data_size, GFP_KERNEL);
 	fhandler->data = (void *)data_register;
+	fhandler->extra = NULL;
 
 	rmi4_data->f51 = kzalloc(sizeof(*rmi4_data->f51), GFP_KERNEL);
 	f51 = rmi4_data->f51;
@@ -2834,7 +2979,9 @@ int synaptics_rmi4_proximity_enables(struct synaptics_rmi4_data *rmi4_data,
 {
 	struct synaptics_rmi4_f51_handle *f51 = rmi4_data->f51;
 	int retval;
-
+#ifdef SECURE_TSP
+	rmi4_data->hover_status_in_normal_mode = enables;
+#endif
 	if (!f51)
 		return -ENODEV;
 
@@ -3401,6 +3548,9 @@ static int synaptics_rmi4_set_input_device
 	set_bit(EV_ABS, rmi4_data->input_dev->evbit);
 	set_bit(BTN_TOUCH, rmi4_data->input_dev->keybit);
 	set_bit(BTN_TOOL_FINGER, rmi4_data->input_dev->keybit);
+#ifdef CONFIG_INPUT_BOOSTER
+	set_bit(KEY_BOOSTER_TOUCH, rmi4_data->input_dev->keybit);
+#endif
 #ifdef INPUT_PROP_DIRECT
 	set_bit(INPUT_PROP_DIRECT, rmi4_data->input_dev->propbit);
 #endif
@@ -3490,48 +3640,6 @@ err_input_device:
 	return retval;
 }
 
-#ifdef CONFIG_SEC_TSP_FACTORY
-#include <linux/uaccess.h>
-#define LCD_LDI_FILE_PATH	"/sys/class/lcd/panel/window_type"
-static int synaptics_rmi4_open_lcd_ldi(struct synaptics_rmi4_data *rmi4_data)
-{
-	int iRet = 0;
-	mm_segment_t old_fs;
-	struct file *window_type;
-	unsigned char lcdtype[4] = {0,};
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	window_type = filp_open(LCD_LDI_FILE_PATH, O_RDONLY, 0666);
-	if (IS_ERR(window_type)) {
-		iRet = PTR_ERR(window_type);
-		if (iRet != -ENOENT)
-			tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: window_type file open fail\n", __func__);
-		set_fs(old_fs);
-		goto exit;
-	}
-
-	iRet = window_type->f_op->read(window_type, (u8 *)lcdtype, sizeof(u8) * 4, &window_type->f_pos);
-	if (iRet != (sizeof(u8) * 4)) {
-		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: Can't read the lcd ldi data\n", __func__);
-		iRet = -EIO;
-	}
-
-	/* The variable of lcdtype has ASCII values(40 81 45) at 0x08 OCTA,
-	  * so if someone need a TSP panel revision then to read third parameter.*/
-	rmi4_data->panel_revision = lcdtype[3] & 0x0F;
-	tsp_debug_info(true, &rmi4_data->i2c_client->dev,
-		"%s: update panel_revision 0x%02X\n", __func__, rmi4_data->panel_revision);
-
-	filp_close(window_type, current->files);
-	set_fs(old_fs);
-
-exit:
-	return iRet;
-}
-#endif
-
 static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
@@ -3542,6 +3650,12 @@ static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 #ifdef PROXIMITY_TSP
 	struct synaptics_rmi4_f51_handle *f51 = rmi4_data->f51;
 #endif
+
+	/* Protection code to treat about unintented pressed touch.
+	 * Mustly there shoud be no touch in here. but some case touch is ramained
+	 * specific case(after executing run_rawcap_read). so add release all finger fucntion.
+	 */
+	synaptics_rmi4_release_all_finger(rmi4_data);
 
 	rmi = &(rmi4_data->rmi4_mod_info);
 
@@ -3555,18 +3669,11 @@ static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 					return retval;
 				}
 			}
-#ifdef CONFIG_SEC_TSP_FACTORY
+#ifdef CONFIG_SEC_FACTORY
 			/* Read firmware version from IC when every power up IC.
 			 * During Factory process touch panel can be changed manually.
 			 */
 			if (fhandler->fn_number == SYNAPTICS_RMI4_F34) {
-				/* Read OLED ID pin, During Factory process touch panel can be changed manually. */
-				const struct synaptics_rmi4_platform_data *pdata = rmi4_data->board;
-
-				if (pdata->get_ddi_type)
-					rmi4_data->ddi_type = pdata->get_ddi_type();
-
-				synaptics_rmi4_open_lcd_ldi(rmi4_data);
 				retval = synaptics_rmi4_f34_read_version(rmi4_data, fhandler);
 				if (retval < 0) {
 					tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: Failed to f34 read version error = %d\n",
@@ -3629,7 +3736,7 @@ void synaptics_rmi4_release_all_finger(
 				MT_TOOL_FINGER, 0);
 
 		if (rmi4_data->finger[ii].state)
-			dev_info(&rmi4_data->i2c_client->dev, "[%d][R] 0x%02x M[%d], Ver[%02X%02X%02X %02X%02X]\n",
+			dev_info(&rmi4_data->i2c_client->dev, "[%d][RA] 0x%02x M[%d], Ver[%02X%02X%02X %02X%02X]\n",
 				ii, rmi4_data->finger[ii].state, rmi4_data->finger[ii].mcount,
 				rmi4_data->ic_revision_of_ic, rmi4_data->panel_revision,
 				rmi4_data->fw_version_of_ic, rmi4_data->glove_mode_enables,
@@ -3648,13 +3755,16 @@ void synaptics_rmi4_release_all_finger(
 		SW_GLOVE, false);
 	rmi4_data->touchkey_glove_mode_status = false;
 #endif
+#ifdef CONFIG_INPUT_BOOSTER
+	INPUT_BOOSTER_REPORT_KEY_EVENT(rmi4_data->input_dev, KEY_BOOSTER_TOUCH, 0);
+	INPUT_BOOSTER_SEND_EVENT(KEY_BOOSTER_TOUCH, BOOSTER_MODE_FORCE_OFF);
+#endif
 	input_sync(rmi4_data->input_dev);
 
 	rmi4_data->fingers_on_2d = false;
 #ifdef PROXIMITY_TSP
 	rmi4_data->f51_finger = false;
 #endif
-
 #ifdef TSP_BOOSTER
 	synaptics_set_dvfs_lock(rmi4_data, TSP_BOOSTER_FORCE_OFF, false);
 #endif
@@ -4075,9 +4185,9 @@ err_tsp_reboot:
 		goto err_enable_irq;
 	}
 
-	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
+	for (attr_count = 0; attr_count < ARRAY_SIZE(synaptics_rmi4_attrs); attr_count++) {
 		retval = sysfs_create_file(&rmi4_data->input_dev->dev.kobj,
-				&attrs[attr_count].attr);
+				&synaptics_rmi4_attrs[attr_count].attr);
 		if (retval < 0) {
 			tsp_debug_err(true, &client->dev, "%s: Failed to create sysfs attributes\n",
 					__func__);
@@ -4118,7 +4228,7 @@ err_sysfs:
 	attr_count_num = (int)attr_count;
 	for (attr_count_num--; attr_count_num >= 0; attr_count_num--) {
 		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
-				&attrs[attr_count].attr);
+				&synaptics_rmi4_attrs[attr_count].attr);
 	}
 	synaptics_rmi4_irq_enable(rmi4_data, false);
 
@@ -4161,21 +4271,17 @@ static int __devexit synaptics_rmi4_remove(struct i2c_client *client)
 #endif
 	synaptics_rmi4_irq_enable(rmi4_data, false);
 
-	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
+	for (attr_count = 0; attr_count < ARRAY_SIZE(synaptics_rmi4_attrs); attr_count++) {
 		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
-				&attrs[attr_count].attr);
+				&synaptics_rmi4_attrs[attr_count].attr);
 	}
+
+	synaptics_rmi4_remove_exp_fn(rmi4_data);
+	synaptics_rmi4_release_support_fn(rmi4_data);
 
 	input_unregister_device(rmi4_data->input_dev);
 
-	synaptics_rmi4_remove_exp_fn(rmi4_data);
-
 	rmi4_data->board->power(false);
-	rmi4_data->touch_stopped = true;
-
-	synaptics_rmi4_release_support_fn(rmi4_data);
-
-	input_free_device(rmi4_data->input_dev);
 
 	kfree(rmi4_data);
 

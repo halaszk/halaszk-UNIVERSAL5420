@@ -1232,6 +1232,9 @@ static int sii8240_init_regs(struct sii8240_data *sii8240)
 	struct i2c_client *cbus = sii8240->pdata->cbus_client;
 
 	pr_debug("sii8240_init_regs\n");
+	memset(sii8240->regs.peer_devcap, 0x0,
+			sizeof(sii8240->regs.peer_devcap));
+
 	ret = mhl_modify_reg(disc, INT_CTRL_REG, 0x06, 0x00);
 	if (ret < 0) {
 		pr_info("sii8240: %s():%d failed !\n", __func__, __LINE__);
@@ -1323,12 +1326,8 @@ static int sii8240_init_regs(struct sii8240_data *sii8240)
 	ret = mhl_write_byte_reg(hdmi, 0x00, 0x00);
 	if (ret < 0)
 		return ret;
-	/* TODO: Why writing the same register two times?? */
-	ret = mhl_write_byte_reg(hdmi, 0x4C, 0xD0);
-	if (ret < 0)
-		return ret;
 
-	ret = mhl_write_byte_reg(hdmi, 0x4C, 0xE0);
+	ret = mhl_write_byte_reg(hdmi, 0x4C, 0xD0);
 	if (ret < 0)
 		return ret;
 
@@ -1361,9 +1360,10 @@ static int sii8240_init_regs(struct sii8240_data *sii8240)
 	if (ret < 0)
 		return ret;
 	/*disable intr when cbus open*/
-	ret = mhl_write_byte_reg(disc, 0x13, 0xAC);
-	if (ret < 0)
-		return ret;
+	/*ret = mhl_write_byte_reg(disc, 0x13, 0xAC);
+	 *if (ret < 0)
+	 *	return ret;
+	 */
 
 	ret = mhl_write_byte_reg(hdmi, TPI_PACKET_FILTER_REG,
 					DROP_GCP_PKT | DROP_AVI_PKT |
@@ -1677,14 +1677,9 @@ static void sii8240_power_down(struct sii8240_data *sii8240)
 		pr_info("sii8240: interrupt disabled\n");
 	}
 
-	if (sii8240->pdata->sii8240_muic_cb)
-		sii8240->pdata->sii8240_muic_cb(false, -1);
-
 	sii8240->state = STATE_DISCONNECTED;
 
-	mhl_write_byte_reg(disc, POWER_CTRL_REG, 0);
 	sii8240->pdata->hw_onoff(0);
-	sii8240->muic_state = MHL_DETTACHED;
 }
 
 static int cbus_handle_write_state(struct sii8240_data *sii8240,
@@ -1714,7 +1709,7 @@ static void sii8240_setup_charging(struct sii8240_data *sii8240)
 	u8	devType, pow, plim, value;
 	u8	*peer_devcap = sii8240->regs.peer_devcap;
 
-	if (peer_devcap[MHL_DEVCAP_MHL_VERSION] == 0x20) {
+	if ((peer_devcap[MHL_DEVCAP_MHL_VERSION] & 0xF0) >= 0x20) {
 		value = peer_devcap[MHL_DEVCAP_DEV_CAT];
 
 		devType = MHL_FLD_GET(value, 3, 0);
@@ -1737,17 +1732,20 @@ static void sii8240_setup_charging(struct sii8240_data *sii8240)
 		* connected through the cable*/
 		if (pow == 1) {
 			/*Powered dongle*/
-			if (sii8240->pdata->sii8240_muic_cb)
-				sii8240->pdata->sii8240_muic_cb(false, plim);
+			if (sii8240->pdata->charger_mhl_cb)
+				sii8240->pdata->charger_mhl_cb(false, plim);
 			}
-	} else {
+	} else if ((peer_devcap[MHL_DEVCAP_MHL_VERSION] & 0xF0) == 0x10) {
 		u16 adopter_id = peer_devcap[MHL_DEVCAP_ADOPTER_ID_L] |
 				peer_devcap[MHL_DEVCAP_ADOPTER_ID_H] << 8;
 
-		pr_info("sii8240: adopter id:%d, reserved:%d\n",
+		pr_info("sii8240:%s adopter id:%d, reserved:%d\n", __func__,
 				adopter_id, peer_devcap[MHL_DEVCAP_RESERVED]);
 		if (adopter_id == 321 && peer_devcap[MHL_DEVCAP_RESERVED] == 2)
-			sii8240->pdata->sii8240_muic_cb(false, 0x1);
+			sii8240->pdata->charger_mhl_cb(false, 0x1);
+	} else {
+		pr_err("sii8240:%s MHL version error - 0x%X\n", __func__,
+				peer_devcap[MHL_DEVCAP_MHL_VERSION]);
 	}
 
 	return;
@@ -2348,11 +2346,7 @@ static int sii8240_bypass_avi_info(struct sii8240_data *sii8240)
 					CBUS_MHL_STATUS_OFFSET_1,
 					sii8240->regs.link_mode, 0);
 
-	/*HDMI input clock is under 75MHz*/
-	if (sii8240->aviInfoFrame[INFO_VIC] < 4)
-		ret = mhl_write_byte_reg(hdmi, 0x4C, 0xE0);
-	else
-		ret = mhl_write_byte_reg(hdmi, 0x4C, 0xD0);
+	ret = mhl_write_byte_reg(hdmi, 0x4C, 0xD0);
 
 	/*bypass avi info*/
 	memcpy(&sii8240->current_aviInfoFrame,
@@ -2385,14 +2379,27 @@ static void sii8240_avi_control_thread(struct work_struct *work)
 		sii8240->avi_work = false;
 	switch (sii8240->avi_cmd) {
 	case HPD_HIGH_EVENT:
-		memset(sii8240->regs.peer_devcap, 0x0,
-			sizeof(sii8240->regs.peer_devcap));
-
 		/*We will read minimum devcap information*/
 		sii8240_queue_devcap_read_locked(sii8240,
 						MHL_DEVCAP_MHL_VERSION);
 		sii8240_queue_devcap_read_locked(sii8240,
 					MHL_DEVCAP_VID_LINK_MODE);
+
+		if (sii8240->cbus_ready) {
+			pr_info("sii8240: DCAP_READY and read devcap\n");
+			if (sii8240_queue_cbus_cmd_locked(sii8240, READ_DEVCAP,
+						MHL_DEVCAP_RESERVED, 0) < 0)
+				pr_info("sii8240: MHL_RESERVED read fail\n");
+			if (sii8240_queue_cbus_cmd_locked(sii8240, READ_DEVCAP,
+						MHL_DEVCAP_ADOPTER_ID_H, 0) < 0)
+				pr_info("sii8240: ADOPTER_ID_H read fail\n");
+			if (sii8240_queue_cbus_cmd_locked(sii8240, READ_DEVCAP,
+						MHL_DEVCAP_ADOPTER_ID_L, 0) < 0)
+				pr_info("sii8240: ADOPTER_ID_L read fail\n");
+			if (sii8240_queue_cbus_cmd_locked(sii8240, READ_DEVCAP,
+						MHL_DEVCAP_DEV_CAT, 0) < 0)
+				pr_info("sii8240: DEVCAP_DEV_CAT read fail\n");
+		}
 
 		pr_info("sii8240: HPD high - MHL ver=0x%x, linkmode = 0x%x\n",
 			sii8240->regs.peer_devcap[MHL_DEVCAP_MHL_VERSION],
@@ -2404,7 +2411,7 @@ static void sii8240_avi_control_thread(struct work_struct *work)
 			goto exit;
 		}
 
-		if ((sii8240->regs.peer_devcap[MHL_DEVCAP_MHL_VERSION] == 0x20)
+		if (((sii8240->regs.peer_devcap[MHL_DEVCAP_MHL_VERSION] & 0xF0) >= 0x20)
 		 && (sii8240->regs.peer_devcap[MHL_DEVCAP_VID_LINK_MODE] &
 					 (MHL_DEV_VID_LINK_SUPP_PPIXEL |
 					MHL_DEV_VID_LINK_SUPPYCBCR422)) &&
@@ -2521,8 +2528,8 @@ static void sii8240_avi_control_thread(struct work_struct *work)
 			goto exit;
 		}
 
-		if ((sii8240->regs.peer_devcap[MHL_DEVCAP_MHL_VERSION]
-						& 0x20) &&
+		if (((sii8240->regs.peer_devcap[MHL_DEVCAP_MHL_VERSION] & 0xF0)
+						>= 0x20) &&
 		(sii8240->regs.peer_devcap[MHL_DEVCAP_VID_LINK_MODE] &
 				 MHL_DEV_VID_LINK_SUPP_PPIXEL) &&
 		(sii8240->regs.peer_devcap[MHL_DEVCAP_VID_LINK_MODE] &
@@ -2552,12 +2559,12 @@ static void sii8240_detection_restart(struct work_struct *work)
 
 	mutex_lock(&sii8240->lock);
 	pr_info("sii8240: detection restarted\n");
-	if (sii8240->state == STATE_DISCONNECTED) {
+	if (sii8240->muic_state == MHL_DETTACHED) {
 		pr_info("sii8240 : already powered off\n");
 		goto disconnection_exit;
 	}
 	sii8240->state = STATE_DISCONNECTED;
-	sii8240->rgnd = RGND_UNKNOWN;
+	sii8240->cbus_ready = 0;
 	sii8240->pdata->hw_reset();
 	if (sii8240_init_regs(sii8240) < 0) {
 		pr_info("sii8240: redetection failed\n");
@@ -2596,11 +2603,15 @@ static int sii8240_detection_callback(struct notifier_block *this,
 		return MHL_CON_UNHANDLED;
 	}
 
+	sii8240->muic_state = event;
 	if (event) {
 		pr_info("sii8240:detection started\n");
 		wake_lock(&sii8240->mhl_wake_lock);
+		sii8240->cbus_ready = 0;
 	} else {
 		pr_info("sii8240:disconnection\n");
+		if (sii8240->pdata->charger_mhl_cb)
+			sii8240->pdata->charger_mhl_cb(false, -1);
 		wake_unlock(&sii8240->mhl_wake_lock);
 		mutex_lock(&sii8240->lock);
 		goto power_down;
@@ -2611,7 +2622,6 @@ static int sii8240_detection_callback(struct notifier_block *this,
 	/* Reset flags,state of mhl */
 	sii8240->state = STATE_DISCONNECTED;
 	sii8240->rgnd = RGND_UNKNOWN;
-	sii8240->muic_state = MHL_ATTACHED;
 	sii8240->cbus_abort = false;
 
 	/* Set the board configuration so the  SiI8240 has access to the
@@ -2674,11 +2684,6 @@ static int sii8240_detection_callback(struct notifier_block *this,
 	return MHL_CON_HANDLED;
 
 unhandled:
-	mhl_read_byte_reg(disc, DISC_INTR_REG, &intr1);
-	mhl_read_byte_reg(disc, DISC_RGND_REG, &rgnd);
-	pr_info("sii8240: discovery fail: disc intr1 0x%x, rgnd 0x%x :",
-						intr1, rgnd);
-
 	if (sii8240->state == STATE_DISCONNECTED)
 		pr_cont(" (timeout)");
 	else if (sii8240->state == STATE_CBUS_UNSTABLE)
@@ -2795,6 +2800,7 @@ static int sii8240_msc_irq_handler(struct sii8240_data *sii8240, u8 intr)
 				/* TODO:If HPD is overriden,clear HPD_OUT bit
 				   upstream register */
 				sii8240->hpd_status = false;
+				sii8240->cbus_ready = 0;
 				mhl_modify_reg(tmds, UPSTRM_HPD_CTRL_REG,
 					BIT_HPD_CTRL_HPD_OUT_OVR_VAL_MASK|
 					BIT_HPD_CTRL_HPD_OUT_OVR_EN_MASK,
@@ -2825,6 +2831,10 @@ static int sii8240_msc_irq_handler(struct sii8240_data *sii8240, u8 intr)
 		pr_info("sii8240: WRITE_STAT received\n");
 
 		sii8240->cbus_ready = cbus_status[0] & MHL_STATUS_DCAP_READY;
+
+		if (sii8240->cbus_ready)
+			pr_info("sii8240: DCAP_READY intr\n");
+
 		if (!(sii8240->regs.link_mode & MHL_STATUS_PATH_ENABLED) &&
 			(MHL_STATUS_PATH_ENABLED & cbus_status[1])) {
 
@@ -3505,8 +3515,8 @@ static irqreturn_t sii8240_irq_thread(int irq, void *data)
 		if (sii8240->state == STATE_MHL_CONNECTED) {
 			pr_info("sii8240: mhl connected\n");
 			msleep(30);
-			if (sii8240->pdata->sii8240_muic_cb)
-				sii8240->pdata->sii8240_muic_cb(true, 0x3);
+			if (sii8240->pdata->charger_mhl_cb)
+				sii8240->pdata->charger_mhl_cb(true, 0x3);
 			ret = sii8240_init_regs(sii8240);
 			if (ret < 0) {
 				pr_err("[ERROR] %s() sii8240_init_regs\n",
@@ -3530,6 +3540,11 @@ static irqreturn_t sii8240_irq_thread(int irq, void *data)
 				sii8240->irq_enabled = false;
 				pr_info("sii8240: interrupt disabled\n");
 			}
+			if(sii8240->pdata->vbus_present)
+				if(sii8240->pdata->vbus_present())
+					if (sii8240->pdata->charger_mhl_cb)
+						sii8240->pdata->charger_mhl_cb(false, 0x3);
+
 			queue_work(sii8240->cbus_cmd_wqs,
 						&sii8240->redetect_work);
 		}
@@ -3547,8 +3562,6 @@ static irqreturn_t sii8240_irq_thread(int irq, void *data)
 				sii8240->irq_enabled = false;
 				pr_info("sii8240: interrupt disabled\n");
 			}
-			if (sii8240->pdata->sii8240_muic_cb)
-				sii8240->pdata->sii8240_muic_cb(false, -1);
 			queue_work(sii8240->cbus_cmd_wqs,
 						&sii8240->redetect_work);
 
@@ -3563,8 +3576,8 @@ static irqreturn_t sii8240_irq_thread(int irq, void *data)
 		}
 		/*checking of cbus disconnection*/
 		if (intr1 & BIT_INTR4_CBUS_DISCONNECT) {
-			if (sii8240->pdata->sii8240_muic_cb)
-				sii8240->pdata->sii8240_muic_cb(false, -1);
+			if (sii8240->pdata->charger_mhl_cb)
+				sii8240->pdata->charger_mhl_cb(false, -1);
 
 			mhl_write_byte_reg(hdmi, 0x80, 0xD0);
 			pr_info("sii8240: CBUS DISCONNECTED !!\n");

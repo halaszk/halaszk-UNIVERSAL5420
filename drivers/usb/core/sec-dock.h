@@ -1,7 +1,7 @@
 /*
  * drivers/usb/core/sec-dock.h
  *
- * Copyright (C) 2012 Samsung Electronics
+ * Copyright (C) 2013 Samsung Electronics
  * Author: Woo-kwang Lee <wookwang.lee@samsung.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -15,6 +15,7 @@
 
 int usb_open_count;
 bool is_smartdock;
+bool is_lan_hub;
 
 static struct usb_device_id battery_notify_exception_table[] = {
 /* add exception table list */
@@ -24,6 +25,8 @@ static struct usb_device_id battery_notify_exception_table[] = {
 { USB_DEVICE(0x8087, 0x0716), }, /* Qualcomm modem */
 { USB_DEVICE(0x08bb, 0x2704), }, /* TI USB Audio DAC 1 */
 { USB_DEVICE(0x08bb, 0x27c4), }, /* TI USB Audio DAC 2 */
+{ USB_DEVICE(0x0424, 0x9512), }, /* SMSC USB LAN HUB 9512 */
+{ USB_DEVICE(0x0424, 0xec00), }, /* SMSC LAN Driver */
 { }	/* Terminating entry */
 };
 
@@ -94,6 +97,21 @@ static int call_battery_notify(struct usb_device *dev, bool bOnOff)
 			is_smartdock = 0;
 			usb_open_count = 0;
 			pr_info("%s : smartdock is disconnected\n", __func__);
+		}
+		return 0;
+	}
+
+	/* Lan Hub adapter must be skipped */
+	else if ((le16_to_cpu(dev->descriptor.idVendor) == 0x0424 &&
+	     le16_to_cpu(dev->descriptor.idProduct) == 0x9512)) {
+		if (bOnOff) {
+			is_lan_hub = 1;
+			usb_open_count = 0;
+			pr_info("%s : Lan Hub adapter is connected\n", __func__);
+		} else {
+			is_lan_hub = 0;
+			usb_open_count = 0;
+			pr_info("%s : Lan Hub adapter is disconnected\n", __func__);
 		}
 		return 0;
 	}

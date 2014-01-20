@@ -68,23 +68,15 @@ struct sii8240_platform_data {
 	int (*unreg_notifier)(struct notifier_block *nb);
 
 	u8 power_state;
-	u8	swing_level;
+	u8 swing_level;
 	int ddc_i2c_num;
+
 	void (*init)(void);
 	void (*mhl_sel)(bool enable);
 	void (*hw_onoff)(bool on);
 	void (*hw_reset)(void);
-	void (*enable_vbus)(bool enable);
-#if defined(__MHL_NEW_CBUS_MSC_CMD__)
-	void (*vbus_present)(bool on, int value);
-#else
-	void (*vbus_present)(bool on);
-#endif
-#ifdef CONFIG_SAMSUNG_MHL_UNPOWERED
-	int (*get_vbus_status)(void);
-	void (*sii9234_otg_control)(bool onoff);
-#endif
-	void (*sii8240_muic_cb)(bool attached, int charger);
+	bool (*vbus_present)(void);
+	void (*charger_mhl_cb)(bool attached, int charger);
 
 #ifdef CONFIG_EXTCON
 	const char *extcon_name;

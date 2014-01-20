@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmutils.h 412804 2013-07-16 16:26:39Z $
+ * $Id: bcmutils.h 427979 2013-10-07 08:35:57Z $
  */
 
 #ifndef	_bcmutils_h_
@@ -386,7 +386,7 @@ extern int bcm_ether_atoe(const char *p, struct ether_addr *ea);
 
 struct ipv4_addr;
 extern char *bcm_ip_ntoa(struct ipv4_addr *ia, char *buf);
-
+extern int bcm_atoipv4(const char *p, struct ipv4_addr *ip);
 
 extern void bcm_mdelay(uint ms);
 

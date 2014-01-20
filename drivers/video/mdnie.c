@@ -33,7 +33,7 @@
 #elif defined(CONFIG_LCD_MIPI_S6E3FA0)
 #include "mdnie_table_h.h"
 #elif defined(CONFIG_LCD_LSL122DL01)
-#ifdef CONFIG_N1A
+#if defined (CONFIG_N1A) || defined (CONFIG_N2A) 
 #include "mdnie_table_n1.h"
 #else
 #include "mdnie_table_v1.h"
@@ -227,6 +227,11 @@ static struct mdnie_tuning_info *mdnie_request_table(struct mdnie_info *mdnie)
 		table = &tune_dmb[mdnie->mode];
 #endif
 		goto exit;
+#if defined(CONFIG_FB_DBLC_PWM)
+	} else if (mdnie->outdoormode) {
+		table = &outdoor_table;
+		goto exit;
+#endif
 	} else if (mdnie->scenario < SCENARIO_MAX) {
 		table = &tuning_table[mdnie->cabc][mdnie->mode][mdnie->scenario];
 		goto exit;
@@ -771,6 +776,41 @@ static ssize_t bypass_store(struct device *dev,
 	return count;
 }
 
+#if	defined(CONFIG_FB_DBLC_PWM)
+
+static int set_outdoormode(struct notifier_block *nb,
+	unsigned long action, void *data)
+{
+	struct mdnie_info *mdnie;
+	unsigned int *value;
+
+	if (action != SECFB_EVENT_MDNIE_OUTDOOR)
+		return 0;
+
+	mdnie = container_of(nb, struct mdnie_info, secfb_notif);
+
+	switch(action) {
+	case SECFB_EVENT_MDNIE_OUTDOOR:
+		value = (unsigned int*) data;
+		dev_info(mdnie->dev, "current_outdoormode = %d, set_outdoormode = %d\n", mdnie->outdoormode, *value);
+
+		if(mdnie->outdoormode != *value) {
+			mdnie->outdoormode = *value;
+			mdnie_update(mdnie, 0);
+		}
+		break;
+
+	default:
+		dev_err(mdnie->dev, "invalid event\n");
+		break;
+
+	}
+
+	return 0;
+}
+
+#endif
+
 static struct device_attribute mdnie_attributes[] = {
 	__ATTR(mode, 0664, mode_show, mode_store),
 	__ATTR(scenario, 0664, scenario_show, scenario_store),
@@ -1014,7 +1054,9 @@ static int mdnie_probe(struct platform_device *pdev)
 	mdnie->accessibility = ACCESSIBILITY_OFF;
 	mdnie->cabc = CABC_OFF;
 	mdnie->bypass = BYPASS_OFF;
-
+#if	defined(CONFIG_FB_DBLC_PWM)
+	mdnie->outdoormode = 0;
+#endif
 	mutex_init(&mdnie->lock);
 	mutex_init(&mdnie->dev_lock);
 
@@ -1052,6 +1094,13 @@ request_gpio:
 		mdnie->bd->props.brightness = mdnie_data->dft_bl;
 	}
 #endif
+
+#if defined(CONFIG_FB_DBLC_PWM)
+	memset(&mdnie->secfb_notif, 0, sizeof(mdnie->secfb_notif));
+	mdnie->secfb_notif.notifier_call = set_outdoormode;
+	secfb_register_client(&mdnie->secfb_notif);
+#endif
+
 	platform_set_drvdata(pdev, mdnie);
 	dev_set_drvdata(mdnie->dev, mdnie);
 

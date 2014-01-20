@@ -329,7 +329,8 @@ void exynos_ss_udc_cable_connect(struct exynos_ss_udc *udc, bool connect)
 	wake_lock(&udc->wake_lock);
 #define WAKE_LOCK_RELEASE(udc) \
 	wake_lock_timeout(&udc->wake_lock, HZ / 2);
-
+//Only HA project support the USB 3.0 reconnect mechanism
+#ifdef CONFIG_HA_3G
 static void exynos_ss_udc_reconnect_work(struct work_struct *data)
 {
 	struct exynos_ss_udc *udc = container_of(data, struct exynos_ss_udc, reconnect_work);
@@ -345,6 +346,11 @@ static void exynos_ss_udc_reconnect_work(struct work_struct *data)
 	cancel_work_sync(&udc->reconnect_work);
 #define WORK_SCHEDULE(udc) \
 	schedule_work(&udc->reconnect_work);
+#else
+#define WORK_INIT(udc)
+#define WORK_CANCEL(udc)
+#define WORK_SCHEDULE(udc)
+#endif
 #else
 #define EXYNOS_SS_UDC_CABLE_CONNECT(udc, connect)
 #define WAKE_LOCK_INIT(udc)
@@ -2514,6 +2520,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 		dev_err(udc->dev, "%s: failed to configure physical EP1\n",
 				   __func__);
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	/*
 	   Incase of H-Prj we want to Probe whether Host for super speed
 	   We Start the UDC with speed_limit always USB_SPEED_SUPER.
@@ -2534,6 +2541,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 			udc->ss_host_avail = 0;
 		}
 	}
+#endif
 #endif
 #endif
 }
@@ -2848,11 +2856,13 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
 
 	spin_unlock(&udc->lock);
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	/*Schedule the reconnect work event */
 	if (udc->reconnect) {
 		udc->reconnect = false;
 		WORK_SCHEDULE(udc)
 	}
+#endif
 #endif
 	return IRQ_HANDLED;
 }
@@ -3199,7 +3209,9 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
 	udc->enabled = false;
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	udc->ss_host_avail = -1;
+#endif
 #endif
 	udc->speed_limit = udc->gadget.max_speed;
 	/* Disable event interrupt */
@@ -3404,7 +3416,7 @@ static struct usb_gadget_ops exynos_ss_udc_gadget_ops = {
 	.udc_start		= exynos_ss_udc_start,
 	.udc_stop		= exynos_ss_udc_stop,
 };
-
+#ifdef CONFIG_HA_3G
 int exynos_ss_udc_set_speedlimit(struct usb_gadget *gadget,
 				 enum usb_device_speed speed)
 {
@@ -3426,7 +3438,9 @@ int exynos_ss_udc_set_speedlimit(struct usb_gadget *gadget,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(exynos_ss_udc_set_speedlimit);
+#endif
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 int exynos_ss_udc_get_ss_host_available(struct usb_gadget *gadget)
 {
 	struct exynos_ss_udc *udc;
@@ -3456,6 +3470,7 @@ exynos_ss_udc_show_ss_available(struct device *dev,
 
 static DEVICE_ATTR(ss_available, S_IRUSR | S_IRGRP,
 	exynos_ss_udc_show_ss_available, NULL);
+#endif
 #endif
 static void gadget_release(struct device *dev)
 {
@@ -3586,9 +3601,9 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	udc->gadget.dev.parent = dev;
 	udc->gadget.dev.dma_mask = dev->dma_mask;
 	udc->gadget.dev.release = gadget_release;
-
+#ifdef CONFIG_HA_3G
 	udc->ss_host_avail = -1;
-
+#endif
 	/* setup endpoint information */
 
 	INIT_LIST_HEAD(&udc->gadget.ep_list);
@@ -3618,11 +3633,13 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 		goto err_add_udc;
 	}
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	ret = sysfs_create_file(&udc->dev->kobj, &dev_attr_ss_available.attr);
 	if (ret) {
 		dev_err(udc->dev, "cannot create udc attribute\n");
 		goto err_sysfs;
 	}
+#endif
 #endif
 	if (udc->core->otg) {
 		ret = otg_set_peripheral(udc->core->otg, &udc->gadget);
@@ -3638,7 +3655,9 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 
 err_otg:
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	sysfs_remove_file(&udc->dev->kobj, &dev_attr_ss_available.attr);
+#endif
 #endif
 err_sysfs:
 	usb_del_gadget_udc(&udc->gadget);
@@ -3656,7 +3675,9 @@ static int __devexit exynos_ss_udc_remove(struct platform_device *pdev)
 		otg_set_peripheral(udc->core->otg, NULL);
 
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 	sysfs_remove_file(&udc->dev->kobj, &dev_attr_ss_available.attr);
+#endif
 #endif
 	usb_del_gadget_udc(&udc->gadget);
 

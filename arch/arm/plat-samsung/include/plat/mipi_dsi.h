@@ -30,6 +30,8 @@ extern struct mipi_dsim_lcd_driver er63311_mipi_lcd_driver;
 extern struct mipi_dsim_lcd_driver s6e8fa0_6P_mipi_lcd_driver;
 #elif defined(CONFIG_LCD_MIPI_S6E3FA0)
 extern struct mipi_dsim_lcd_driver s6e3fa0_mipi_lcd_driver;
+#elif defined(CONFIG_LCD_MIPI_S6TNMR7)
+extern struct mipi_dsim_lcd_driver s6tnmr7_mipi_lcd_driver;
 #endif
 
 #ifdef CONFIG_FB_I80IF

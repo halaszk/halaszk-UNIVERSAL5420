@@ -29,7 +29,6 @@
 #include <linux/async.h>
 #include <linux/suspend.h>
 #include <linux/timer.h>
-#include <mach/sec_debug.h>
 #include "../base.h"
 #include "power.h"
 
@@ -357,7 +356,6 @@ static void pm_dev_err(struct device *dev, pm_message_t state, char *info,
 {
 	printk(KERN_ERR "PM: Device %s failed to %s%s: error %d\n",
 		dev_name(dev), pm_verb(state.event), info, error);
-	sec_debug_aux_log(SEC_DEBUG_AUXLOG_PM_CHANGE, "PM: Device %s failed to %s%s: error %d",	dev_name(dev), pm_verb(state.event), info, error);
 }
 
 static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
@@ -390,11 +388,7 @@ static int dpm_run_callback(pm_callback_t cb, struct device *dev,
 
 	pm_dev_dbg(dev, state, info);
 
-	sec_debug_aux_log(SEC_DEBUG_AUXLOG_PM_CHANGE,"before %pF %s%s%s", \
-		(dev->driver ? (dev->driver->pm ? dev->driver->pm : cb) : cb), info, pm_verb(state.event), \
-			((state.event & PM_EVENT_SLEEP) && device_may_wakeup(dev)) ? ", may wakeup" : "");
 	error = cb(dev);
-	sec_debug_aux_log(SEC_DEBUG_AUXLOG_PM_CHANGE,"after  %pF",dev->driver ? (dev->driver->pm ? dev->driver->pm : cb) : cb);
 
 	suspend_report_result(cb, error);
 

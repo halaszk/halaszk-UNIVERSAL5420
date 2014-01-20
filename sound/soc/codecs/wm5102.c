@@ -577,6 +577,12 @@ static const struct reg_default wm5102_sysclk_revb_patch[] = {
 	{ 0x30C3, 0x00ED },
 };
 
+static const struct reg_default wm5102t_sysclk_pwr[] = {
+	{ 0x3125, 0x0A03 },
+	{ 0x3127, 0x0A03 },
+	{ 0x3129, 0x0A03 },
+};
+
 static int wm5102_sysclk_ev(struct snd_soc_dapm_widget *w,
 			    struct snd_kcontrol *kcontrol, int event)
 {
@@ -603,6 +609,12 @@ static int wm5102_sysclk_ev(struct snd_soc_dapm_widget *w,
 			for (i = 0; i < patch_size; i++)
 				regmap_write(regmap, patch[i].reg,
 					     patch[i].def);
+
+		if (arizona->pdata.wm5102t_output_pwr)
+			for (i = 0; i < ARRAY_SIZE(wm5102t_sysclk_pwr); i++)
+				regmap_write(regmap,
+					     wm5102t_sysclk_pwr[i].reg,
+					     wm5102t_sysclk_pwr[i].def);
 		break;
 
 	default:

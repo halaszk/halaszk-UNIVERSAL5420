@@ -830,6 +830,14 @@ struct camera2_sm {
 /** \brief
 	User-defined control for lens.
 */
+struct camera2_input_uctl {
+	uint32_t	cropRegion[4];
+};
+
+struct camera2_output_uctl {
+	uint32_t	cropRegion[4];
+};
+
 struct camera2_lens_uctl {
 	struct camera2_lens_ctl ctl;
 
@@ -1119,7 +1127,7 @@ struct camera2_stream {
 		\remarks
 		[X] kernel virtual address for this buffer
 	*/
-	uint32_t		address;
+	uint32_t			address;
 
 	/**	\brief
 		this frame count is from FLITE through dm.request.fcount,
@@ -1127,7 +1135,7 @@ struct camera2_stream {
 		\remarks
 		[X] frame count
 	*/
-	uint32_t		fcount;
+	uint32_t			fcount;
 
 	/**	\brief
 		this request count is from HAL through ctl.request.fcount,
@@ -1135,7 +1143,7 @@ struct camera2_stream {
 		\remarks
 		[X] request count
 	*/
-	uint32_t		rcount;
+	uint32_t			rcount;
 
 	/**	\brief
 		frame index of isp framemgr.
@@ -1143,7 +1151,7 @@ struct camera2_stream {
 		\remarks
 		[X] frame index
 	*/
-	uint32_t		findex;
+	uint32_t			findex;
 
 	/**	\brief
 		frame validation of isp framemgr.
@@ -1151,7 +1159,19 @@ struct camera2_stream {
 		\remarks
 		[X] frame valid
 	*/
-	uint32_t		fvalid;
+	uint32_t			fvalid;
+	/**	\brief
+		input information
+		\remarks
+		[X] input information
+	*/
+	struct camera2_input_uctl	input;
+	/**	\brief
+		output information
+		\remarks
+		[X] output information
+	*/
+	struct camera2_output_uctl	output;
 };
 
 #define CAM_LENS_CMD		(0x1 << 0x0)

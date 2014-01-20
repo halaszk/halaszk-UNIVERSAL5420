@@ -30,9 +30,6 @@
 #include <plat/cpu.h>
 
 #include "s5p-dp-core.h"
-#ifdef CONFIG_S5P_DP_ESD_RECOVERY
-#include "s5p-dp-reg.h"
-#endif
 
 static int s5p_dp_init_dp(struct s5p_dp_device *dp)
 {
@@ -1200,6 +1197,10 @@ static int s5p_dp_set_link_train_for_psr(struct s5p_dp_device *dp,
 			break;
 	}
 
+	/* PSR Forcing value to link training */
+	for (i = 0; i < dp->link_train.lane_count; i++)
+		s5p_dp_set_lane_link_training(dp,0x08, i);
+
 	return retval;
 }
 
@@ -1210,6 +1211,7 @@ static int s5p_dp_psr_enter(struct s5p_dp_device *dp)
 	int timeout_loop = 0;
 	struct fb_event event;
 	int ret = 0;
+	u8 data;
 
 	pdev = to_platform_device(dp->dev);
 	pdata = pdev->dev.platform_data;
@@ -1238,6 +1240,7 @@ static int s5p_dp_psr_enter(struct s5p_dp_device *dp)
 			dev_err(dp->dev, "DP: Timeout of PSR active\n");
 			ret = -ETIMEDOUT;
 			dp->psr_enter_state = PSR_NONE;
+			dp->psr_error_count++;
 			goto err_exit;
 		}
 		mdelay(1);
@@ -1245,6 +1248,11 @@ static int s5p_dp_psr_enter(struct s5p_dp_device *dp)
 
 	mdelay(2);
 	dev_dbg(dp->dev, "PSR ENTER DP timeout_loop: %d\n", timeout_loop);
+
+	s5p_dp_read_byte_from_dpcd(dp, DPCD_ADDR_SINK_PSR_STATUS, &data);
+	if (data == 0)
+		dev_info(dp->dev, "%s: SINK_PSR_STATUS = 0x%02X\n",
+			__func__, data);
 
 	s5p_dp_set_analog_power_down(dp, ANALOG_TOTAL, 1);
 
@@ -1271,11 +1279,7 @@ static int s5p_dp_psr_pre_entry(struct s5p_dp_device *dp)
 
 	mutex_lock(&dp->lock);
 	dev_dbg(dp->dev, "%s +\n", __func__);
-	if (dp->psr_enter_state == PSR_PRE_ENTRY_DONE) {
-		dev_info(dp->dev, "%s: Already edP PSR_PRE_ENTER state\n", __func__);
-		mutex_unlock(&dp->lock);
-		return 0;
-	}
+
 	s5p_dp_write_byte_to_dpcd(dp,
 		DPCD_ADDR_PRE_ENTRY, 0x1);
 	dp->psr_enter_state = PSR_PRE_ENTRY_DONE;
@@ -1305,6 +1309,7 @@ int s5p_dp_psr_exit(struct s5p_dp_device *dp)
 
 	if (dp->psr_enter_state == PSR_NONE) {
 		dev_info(dp->dev, "%s: Already edP PSR_EXIT state\n", __func__);
+		dp->psr_exit_state = PSR_NONE;
 		mutex_unlock(&dp->lock);
 		return 0;
 	}
@@ -1314,6 +1319,7 @@ int s5p_dp_psr_exit(struct s5p_dp_device *dp)
 	s5p_dp_exit_psr(dp);
 
 	s5p_dp_set_fifo_reset(dp);
+	s5p_dp_reset_macro_onoff(dp, 1);
 	s5p_dp_set_analog_power_down(dp, ANALOG_TOTAL, 0);
 
 	if (s5p_dp_get_pll_lock_status(dp) == PLL_UNLOCKED) {
@@ -1330,6 +1336,8 @@ int s5p_dp_psr_exit(struct s5p_dp_device *dp)
 
 	ndelay(600);
 	s5p_dp_clear_fifo_reset(dp);
+	s5p_dp_reset_macro_onoff(dp, 0);
+	s5p_dp_reset_serdes_fifo(dp);
 
 	/* Set sink to D0 (Normal operation) mode. */
 	s5p_dp_write_byte_to_dpcd(dp, DPCD_ADDR_SINK_POWER_STATE,
@@ -1406,11 +1414,16 @@ static int s5p_dp_notify(struct notifier_block *nb,
 	struct s5p_dp_device *dp;
 	int ret = 0;
 	ktime_t start;
-
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+	struct fb_event event;
+#endif
 	dp = container_of(nb, struct s5p_dp_device, notifier);
 
 	switch (action) {
 		case FB_EVENT_PSR_ENTER:
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+			fb_notifier_call_chain(FB_EVENT_PSR_WACOM_CHECK, &event);
+#endif
 			dev_dbg(dp->dev, "FB_EVENT_PSR_ENTER occurs!\n");
 
 			start = ktime_get();
@@ -1550,13 +1563,26 @@ static irqreturn_t s5p_dp_irq_handler(int irq, void *arg)
 {
 	struct s5p_dp_device *dp = arg;
 #ifdef CONFIG_S5P_DP_ESD_RECOVERY
-	u32 irq_sts_reg;
+	int ret;
 
-	irq_sts_reg = readl(dp->reg_base + S5P_DP_COMMON_INT_STA_4);
-	writel(irq_sts_reg, dp->reg_base + S5P_DP_COMMON_INT_STA_4);
+	clk_enable(dp->clock);
+	ret = s5p_dp_clear_esd_interrupt(dp);
 
-	s5p_dp_init_hpd(dp);
-	schedule_work(&dp->esd_recovery.work);
+#ifdef CONFIG_S5P_DP_PSR
+	if (ret &&
+	  dp->psr_enter_state != PSR_PRE_ENTER && 
+	  dp->psr_exit_state != PSR_PRE_EXIT) {
+		s5p_dp_config_interrupt(dp);
+		schedule_delayed_work(&dp->esd_recovery, HZ/16);
+	} else {
+		dev_info(dp->dev, "esd_recovery skip. (%d, %d) \n",
+			 dp->psr_enter_state, dp->psr_exit_state);
+	}
+#else
+	s5p_dp_config_interrupt(dp);
+	schedule_delayed_work(&dp->esd_recovery, HZ/16);
+#endif
+	clk_disable(dp->clock);
 #endif
 	dev_err(dp->dev, "s5p_dp_irq_handler\n");
 	return IRQ_HANDLED;
@@ -1564,8 +1590,6 @@ static irqreturn_t s5p_dp_irq_handler(int irq, void *arg)
 
 static int s5p_dp_enable_boot(struct s5p_dp_device *dp)
 {
-	int ret = 0;
-	int retry = 0;
 	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
 
 	mutex_lock(&dp->lock);
@@ -1586,7 +1610,18 @@ static int s5p_dp_enable(struct s5p_dp_device *dp)
 	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
 	u32 reg;
 
+#ifdef CONFIG_S5P_DP_PSR
+	if ((dp->psr_enter_state == PSR_PRE_ENTER) || (dp->psr_enter_state == PSR_ENTER_DONE)) {
+		s5p_dp_psr_exit(dp);
+	}
+#endif
+
 	mutex_lock(&dp->lock);
+
+#ifdef CONFIG_S5P_DP_ESD_RECOVERY
+	if (dp->enabled)
+		s5p_dp_disable_esd_interrupt(dp);
+#endif
 
 	if (dp->enabled)
 		goto out;
@@ -1667,19 +1702,25 @@ dp_phy_init:
 	s5p_dp_write_byte_to_dpcd(dp, 0x492, 0x04);
 	s5p_dp_write_byte_to_dpcd(dp, 0x493, 0x31);
 
-	writel(0x2a, dp->reg_base + 0x730);
+	writel(0x2F, dp->reg_base + 0x730); /* S5P_DP_VIDEO_FIFO_THRD */
 
-	reg = readl(dp->reg_base + 0x800);
+	reg = readl(dp->reg_base + 0x800); /* S5P_DP_SOC_GENERAL_CTL */
 	reg |= (1<<31);
 	writel(reg, dp->reg_base + 0x800);
 
 	s5p_dp_write_byte_to_dpcd(dp,
 		DPCD_ADDR_PSR_CONFIGURATION,
 		DPCD_PSR_ENABLE);
+
+	s5p_dp_set_video_timing(dp);
 #endif
 
 	if (pdata->backlight_on)
 		pdata->backlight_on();
+
+#ifdef CONFIG_S5P_DP_ESD_RECOVERY
+	s5p_dp_enable_esd_interrupt(dp);
+#endif
 
 	mutex_unlock(&dp->lock);
 	return 0;
@@ -1718,9 +1759,6 @@ static void s5p_dp_disable(struct s5p_dp_device *dp)
 		goto out;
 
 	dp->enabled = 0;
-#ifdef CONFIG_S5P_DP_ESD_RECOVERY
-	dp->hpd_count = 0;
-#endif
 
 	s5p_dp_reset(dp);
 	s5p_dp_set_pll_power_down(dp, 1);
@@ -1743,11 +1781,25 @@ static int s5p_dp_set_power(struct lcd_device *lcd, int power)
 	struct s5p_dp_device *dp = lcd_get_data(lcd);
 	int retval;
 
+#ifdef CONFIG_S5P_DP_PSR
+	if (dp->user_disabled)
+		return 0;
+#endif
+
+#ifdef CONFIG_S5P_DP_ESD_RECOVERY
+	dp->set_power_state = power;
+#endif
+
 	if (power == FB_BLANK_UNBLANK) {
 		retval = s5p_dp_enable(dp);
 		if (retval < 0)
 			return retval;
 	} else {
+#ifdef CONFIG_S5P_DP_ESD_RECOVERY
+		if (dp->enabled)
+			s5p_dp_disable_esd_interrupt(dp);
+		flush_delayed_work_sync(&dp->esd_recovery);
+#endif
 		s5p_dp_disable(dp);
 	}
 
@@ -1762,17 +1814,44 @@ struct lcd_ops s5p_dp_lcd_ops = {
 void esd_recover_handler(struct work_struct *work)
 {
 	struct s5p_dp_device *dp =
-		container_of(work,
-				struct s5p_dp_device, esd_recovery.work);
+		container_of(work, struct s5p_dp_device, esd_recovery.work);
+	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
 
-	dp->hpd_count++;
+	if (!dp->enabled)
+		return;
 
-	if(dp->hpd_count > 2) {
-		s5p_dp_disable(dp);
-		s5p_dp_enable(dp);
-		dp->hpd_count = 0;
-		dev_err(dp->dev, "esd_recovery code is called. \n");
-	}
+	dp->esd_count++;
+	dev_info(dp->dev, "esd_recovery start. (%d) \n", dp->esd_count);
+
+#ifdef CONFIG_S5P_DP_PSR
+	s3c_fb_psr_exit_from_touch();
+	usleep_range(40000, 40000);
+#endif
+
+	if (dp->set_power_state != FB_BLANK_UNBLANK)
+		goto esd_done;
+#ifdef CONFIG_S5P_DP_PSR
+	dev_info(dp->dev, "esd_recovery state (%d, %d) \n",
+		 dp->psr_enter_state, dp->psr_exit_state);
+#endif
+	s5p_dp_disable(dp);
+
+	if (pdata->phy_exit)
+		pdata->phy_exit();
+
+	if (pdata->lcd_off)
+		pdata->lcd_off();
+
+	if (pdata->lcd_on)
+		pdata->lcd_on();
+
+	if (dp->set_power_state != FB_BLANK_UNBLANK)
+		goto esd_done;
+
+	s5p_dp_enable(dp);
+
+esd_done:
+	dev_info(dp->dev, "esd_recovery done. \n");
 }
 #endif
 
@@ -1860,7 +1939,7 @@ static int __devinit s5p_dp_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&dp->esd_recovery, esd_recover_handler);
 #endif
 
-#if 0//#ifdef CONFIG_LCD_LSL122DL01
+#ifdef CONFIG_LCD_LSL122DL01
 	ret = s5p_dp_enable_boot(dp);
 #else
 	ret = s5p_dp_enable(dp);
@@ -1869,6 +1948,7 @@ static int __devinit s5p_dp_probe(struct platform_device *pdev)
 		goto err_fb;
 
 #ifdef CONFIG_S5P_DP_PSR
+	dp->user_disabled = false;
 	dp->psr_enter_state = PSR_NONE;
 	dp->psr_exit_state = PSR_NONE;
 	dp->notifier.notifier_call = s5p_dp_notify;
@@ -1899,7 +1979,9 @@ static int __devexit s5p_dp_remove(struct platform_device *pdev)
 	struct s5p_dp_device *dp = platform_get_drvdata(pdev);
 
 #ifdef CONFIG_S5P_DP_PSR
+	mutex_lock(&dp->lock);
 	fb_unregister_client(&dp->notifier);
+	mutex_unlock(&dp->lock);
 #endif
 
 	free_irq(dp->irq, dp);
@@ -1926,7 +2008,10 @@ static void  s5p_dp_shutdown(struct platform_device *pdev)
 	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
 
 #ifdef CONFIG_S5P_DP_PSR
+	mutex_lock(&dp->lock);
+	dp->user_disabled = true;
 	fb_unregister_client(&dp->notifier);
+	mutex_unlock(&dp->lock);
 #endif
 	lcd_device_unregister(dp->lcd);
 

@@ -212,9 +212,6 @@
  * while sending SET_INT, use these Offset[0x21...0x23]. */
 
 /* 0xC8: CBUS Device Capability Registers */
-#define MHL_VER_MAJOR			(1<<1) /* Most Significant 4-bits */
-#define MHL_VER_MINOR			(0<<0) /* Least significant 4-bits */
-
 #define DEV_TYPE_SOURCE			0x02
 #define DEV_TYPE_SINK			0x01
 #define DEV_TYPE_DONGLE			0x03
@@ -429,7 +426,7 @@
 /* Host Device capabilities values */
 #define DEV_STATE			0
 /* MHL Version 1.2 */
-#define DEV_MHL_VERSION			((MHL_VER_MAJOR<<4) | MHL_VER_MINOR)
+#define DEV_MHL_VERSION			CONFIG_MHL_VERSION
 /* A source kind of device which will not provide power across VBUS */
 #define DEV_CAT_SOURCE_NO_PWR		(DEV_POW_SUPPLY | DEV_TYPE_SOURCE)
 #define DEV_ADOPTER_ID_H		0x01	/* Samsung's Adopter ID? */

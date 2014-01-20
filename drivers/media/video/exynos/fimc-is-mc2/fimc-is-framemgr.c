@@ -525,7 +525,7 @@ int fimc_is_frame_open(struct fimc_is_framemgr *this, u32 id, u32 buffers)
 	this->frame_com_cnt = 0;
 
 	for (i = 0; i < buffers; ++i) {
-		this->frame[i].init = FRAME_UNI_MEM;
+		this->frame[i].memory = FRAME_UNI_MEM;
 		this->frame[i].work_data1 = NULL;
 		this->frame[i].work_data2 = NULL;
 		this->frame[i].index = i;
@@ -565,7 +565,7 @@ int fimc_is_frame_close(struct fimc_is_framemgr *this)
 	buffers = this->frame_cnt;
 
 	for (i = 0; i < buffers; ++i) {
-		this->frame[i].init = FRAME_UNI_MEM;
+		this->frame[i].memory = FRAME_UNI_MEM;
 		this->frame[i].index = i;
 		this->frame[i].fcount = 0;
 		this->frame[i].rcount = 0;

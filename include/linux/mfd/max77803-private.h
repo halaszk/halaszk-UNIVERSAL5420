@@ -354,6 +354,8 @@ struct max77803_dev {
 	int irq;
 	int irq_base;
 	int irq_gpio;
+	/* WA for V1 MUIC RESET */
+	int muic_reset_irq;
 	bool wakeup;
 	struct mutex irqlock;
 	int irq_masks_cur[MAX77803_IRQ_GROUP_NR];
@@ -397,7 +399,7 @@ extern int max77803_muic_set_audio_switch(bool enable);
 extern int max77803_muic_read_adc(void);
 extern int max77803_muic_read_vbvolt(void);
 extern int max77803_muic_read_vbus(void);
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if !defined(CONFIG_HA)
 extern int max77803_muic_set_jigset(int reg_value);
 #endif
 
@@ -412,6 +414,7 @@ enum cable_type_muic {
 	CABLE_TYPE_OTG_MUIC,
 	CABLE_TYPE_TA_MUIC,
 	CABLE_TYPE_DESKDOCK_MUIC,
+	CABLE_TYPE_DESKDOCK_TA_MUIC,
 	CABLE_TYPE_CARDOCK_MUIC,
 	CABLE_TYPE_JIG_UART_OFF_MUIC,
 	CABLE_TYPE_JIG_UART_OFF_VB_MUIC,	/* VBUS enabled */
@@ -425,6 +428,7 @@ enum cable_type_muic {
 	CABLE_TYPE_SMARTDOCK_USB_MUIC,
 	CABLE_TYPE_AUDIODOCK_MUIC,
 	CABLE_TYPE_CDP_MUIC,
+	CABLE_TYPE_LANHUB,
 #if defined(CONFIG_MUIC_DET_JACK)
 	CABLE_TYPE_EARJACK_MUIC,
 #endif

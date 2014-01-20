@@ -63,7 +63,7 @@ static struct platform_device exynos5_mif_devfreq = {
 };
 
 static struct exynos_devfreq_platdata smdk5420_qos_mif_pd __initdata = {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	.default_qos = 160000,
 #else
 	.default_qos = 133000,
@@ -76,7 +76,7 @@ static struct platform_device exynos5_int_devfreq = {
 };
 
 static struct exynos_devfreq_platdata smdk5420_qos_int_pd __initdata = {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	.default_qos = 133000,
 #else
 	.default_qos = 83000,

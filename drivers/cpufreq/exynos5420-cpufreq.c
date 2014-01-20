@@ -24,6 +24,8 @@
 
 #include <plat/clock.h>
 
+#include <mach/sec_debug.h>
+
 #define CPUFREQ_LEVEL_END_CA7	(L14 + 1)
 #define CPUFREQ_LEVEL_END_CA15	(L22 + 1)
 
@@ -757,6 +759,10 @@ static void exynos5420_set_frequency_CA7(unsigned int old_index,
 {
 	unsigned int tmp;
 
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+			"old:%7d new:%7d (A7)",
+			exynos5420_freq_table_CA7[old_index].frequency, exynos5420_freq_table_CA7[new_index].frequency);
+
 	if (old_index > new_index) {
 		if (!exynos5420_pms_change_CA7(old_index, new_index)) {
 			/* 1. Change the system clock divider values */
@@ -812,6 +818,9 @@ static void exynos5420_set_frequency_CA15(unsigned int old_index,
 {
 	unsigned int tmp;
 
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+			"old:%7d new:%7d (A15)",
+			exynos5420_freq_table_CA15[old_index].frequency, exynos5420_freq_table_CA15[new_index].frequency);
 	if (old_index > new_index) {
 		if (!exynos5420_pms_change_CA15(old_index, new_index)) {
 			/* 1. Change the system clock divider values */
@@ -882,14 +891,8 @@ static void __init set_volt_table_CA7(void)
 
 	exynos5420_freq_table_CA7[L0].frequency = CPUFREQ_ENTRY_INVALID;
 	exynos5420_freq_table_CA7[L1].frequency = CPUFREQ_ENTRY_INVALID;
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-	exynos5420_freq_table_CA7[L2].frequency = CPUFREQ_ENTRY_INVALID;
-	exynos5420_freq_table_CA7[L3].frequency = CPUFREQ_ENTRY_INVALID;
-	max_support_idx_CA7 = L4;
-#else
 	exynos5420_freq_table_CA7[L2].frequency = CPUFREQ_ENTRY_INVALID;
 	max_support_idx_CA7 = L3;
-#endif
 
 	min_support_idx_CA7 = L11;
 	exynos5420_freq_table_CA7[L12].frequency = CPUFREQ_ENTRY_INVALID;
@@ -923,12 +926,7 @@ static void __init set_volt_table_CA15(void)
 #else
 	exynos5420_freq_table_CA15[L3].frequency = CPUFREQ_ENTRY_INVALID;
 	exynos5420_freq_table_CA15[L4].frequency = CPUFREQ_ENTRY_INVALID;
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-	exynos5420_freq_table_CA15[L5].frequency = CPUFREQ_ENTRY_INVALID;
-	max_support_idx_CA15 = L6;
-#else
 	max_support_idx_CA15 = L5;
-#endif
 #endif
 
 	min_support_idx_CA15 = L16;

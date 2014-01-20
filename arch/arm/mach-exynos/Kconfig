@@ -988,7 +988,7 @@ endif
 if MACH_UNIVERSAL5420
 
 choice
-	prompt "Universal5420 Board H/V1/N1"
+	prompt "Universal5420 Board H/V1/V2/N1"
 
 config HA
 	bool "HA Board"
@@ -1000,17 +1000,41 @@ config V1A
 	select EXYNOS_SETUP_DP
 	help
 	  Support V1A Board
+config V2A
+	bool "V2A Board"
+	select S5P_DEV_DP
+	select EXYNOS_SETUP_DP
+	help
+	  Support V2A Board
 config N1A
 	bool "N1A Board"
 	select S5P_DEV_DP
 	select EXYNOS_SETUP_DP
 	help
 	  Support N1A Board
+config N2A
+	bool "N2A Board"
+	select S5P_DEV_DP
+	select EXYNOS_SETUP_DP
+	help
+	  Support N1A Board
+config CHAGALL
+	bool "CHAGALL Board"
+	select S5P_DEV_DP
+	select EXYNOS_SETUP_DP
+	help
+	  Support CHAGALL Board
+config KLIMT
+	bool "KLIMT Board"
+	select S5P_DEV_DP
+	select EXYNOS_SETUP_DP
+	help
+	  Support KLIMT Board
 
 endchoice
 
 choice
-	prompt "H/V1/N1 Board 3g/wifi"
+	prompt "H/V1/V2/N1/N2/CHAGALL/KLIMT Board 3g/wifi"
 
 config HA_3G
 	bool "HA 3G Board"
@@ -1022,10 +1046,20 @@ config V1A_3G
 	help
 	  Support V1A 3G Board
 
+config V2A_3G
+	bool "V2A 3G Board"
+	help
+	  Support V2A 3G Board
+
 config V1A_WIFI
 	bool "V1A WIFI Board"
 	help
 	  Support V1A WIFI Board
+
+config V2A_WIFI
+	bool "V2A WIFI Board"
+	help
+	  Support V2A WIFI Board
 
 config N1A_3G
 	bool "N1A 3G Board"
@@ -1036,6 +1070,41 @@ config N1A_WIFI
 	bool "N1A WIFI Board"
 	help
 	  Support N1A WIFI Board
+
+config N2A_3G
+	bool "N2A 3G Board"
+	help
+	  Support N2A-PICASSO 3G Board
+
+config N2A_WIFI
+	bool "N2A WIFI Board"
+	help
+	  Support N2A-PICASSO WIFI Board
+
+config CHAGALL_3G
+	bool "CHAGALL 3G Board"
+	help
+	  Support CHAGALL 3G Board
+
+config CHAGALL_WIFI
+	bool "CHAGALL WIFI Board"
+	help
+	  Support CHAGALL WIFI Board
+
+config CHAGALL_LTE
+	bool "CHAGALL LTE Board"
+	help
+	  Support CHAGALL LTE Board
+
+config KLIMT_3G
+	bool "KLIMT_3G 3G Board"
+	help
+	  Support KLIMT_3G 3G Board
+
+config KLIMT_WIFI
+	bool "KLIMT WIFI Board"
+	help
+	  Support KLIMT WIFI Board
 
 endchoice
 
@@ -1051,6 +1120,11 @@ config TARGET_LOCALE_KOR
 	bool "Locale Kor support"
 	help
 	  Enable universal5420 LOCALE KOR.
+
+config TARGET_LOCALE_USA
+	bool "Locale USA support"
+	help
+	  Enable universal5420 LOCALE USA.
 
 endchoice
 
@@ -1087,6 +1161,10 @@ config GPS_BCM4752
 
 config GPS_BCM47521
 	bool "BROADCOM_GPS_CHIPSET_47521"
+	default n
+
+config GPS_BCM47531
+	bool "BROADCOM_GPS_CHIPSET_47531"
 	default n
 
 config GPS_CSRxT

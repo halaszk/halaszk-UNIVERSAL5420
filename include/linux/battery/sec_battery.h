@@ -29,6 +29,11 @@
 #include <linux/workqueue.h>
 #include <linux/proc_fs.h>
 #include <linux/jiffies.h>
+#ifdef CONFIG_FAST_BOOT
+#include <linux/fake_shut_down.h>
+
+extern void kernel_power_off(void);
+#endif
 
 #define ADC_CH_COUNT		10
 #define ADC_SAMPLE_COUNT	10
@@ -134,6 +139,12 @@ struct sec_battery_info {
 	int test_activated;
 	bool factory_mode;
 	bool slate_mode;
+
+#ifdef CONFIG_FAST_BOOT
+	struct notifier_block fsd_notifier_block;
+	bool dup_power_off;
+	bool suspend_check;
+#endif
 
 	int siop_level;
 };

@@ -1,3 +1,4 @@
+                                                                                         
 # bcmdhd
 #####################
 # SDIO Basic feature
@@ -15,6 +16,7 @@ DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DLINUX -DBCMDRIVER             \
 #################
 # Common feature
 #################
+DHDCFLAGS += -DWL_IFACE_COMB_NUM_CHANNELS
 
 DHDCFLAGS += -DCUSTOMER_HW4
 DHDCFLAGS += -DWL_CFG80211
@@ -150,6 +152,7 @@ ifneq ($(CONFIG_BCM4339),)
   DHDCFLAGS += -DPROP_TXSTATUS_VSDB
 ifeq ($(CONFIG_ARCH_MSM8974),y)
   DHDCFLAGS += -DCUSTOM_DEF_TXGLOM_SIZE=32 -DDHD_TXBOUND=32
+  DHDCFLAGS += -DENABLE_ADAPTIVE_SCHED -DCUSTOM_CPUFREQ_THRESH=1000000
 endif
   DHDCFLAGS += -DCUSTOM_MAX_TXGLOM_SIZE=32
 
@@ -161,11 +164,9 @@ endif
   DHDCFLAGS += -DWLTDLS -DWLTDLS_AUTO_ENABLE
   DHDCFLAGS += -DWLFBT
   DHDCFLAGS += -DDHD_ENABLE_LPC
-  DHDCFLAGS += -DSUPPORT_IBSS
+  DHDCFLAGS += -DSUPPORT_AIBSS
   DHDCFLAGS += -DSUPPORT_LTECX
-ifneq ($(CONFIG_2GHZ_VHT_NO_SUPPORT),y)
   DHDCFLAGS += -DSUPPORT_2G_VHT
-endif
   DHDCFLAGS += -DSUPPORT_WL_TXPOWER
   DHDCFLAGS += -DBCMCCX_S69
 ifeq ($(CONFIG_BCM4339),y)
@@ -211,7 +212,7 @@ endif
   DHDCFLAGS += -DWLTDLS -DWLTDLS_AUTO_ENABLE
   DHDCFLAGS += -DWLFBT
   DHDCFLAGS += -DDHD_ENABLE_LPC
-  DHDCFLAGS += -DSUPPORT_IBSS
+  DHDCFLAGS += -DSUPPORT_AIBSS
   DHDCFLAGS += -DSUPPORT_LTECX
   DHDCFLAGS += -DSUPPORT_2G_VHT
   DHDCFLAGS += -DSUPPORT_WL_TXPOWER
@@ -326,7 +327,7 @@ EXTRA_CFLAGS += -I$(src)/include/ -I$(src)/
 KBUILD_CFLAGS += -I$(LINUXDIR)/include -I$(shell pwd)
 
 DHDOFILES := bcmsdh.o bcmsdh_linux.o bcmsdh_sdmmc.o bcmsdh_sdmmc_linux.o \
-	dhd_cdc.o dhd_common.o dhd_wlfc.o dhd_ip.o dhd_custom_gpio.o dhd_custom_sec.o \
+	dhd_cdc.o dhd_pno.o dhd_common.o dhd_wlfc.o dhd_ip.o dhd_custom_gpio.o dhd_custom_sec.o \
 	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_sdio.o aiutils.o bcmevent.o \
 	bcmutils.o bcmwifi_channels.o hndpmu.o linux_osl.o sbutils.o siutils.o \
 	wl_android.o wl_cfg80211.o wl_cfgp2p.o wldev_common.o wl_linux_mon.o wl_roam.o

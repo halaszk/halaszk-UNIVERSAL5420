@@ -15,7 +15,7 @@
 #include <plat/gpio-cfg.h>
 #include <plat/devs.h>
 
-#if defined(CONFIG_V1A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
 extern void vienna_motor_init(void);
 #else
 #include <linux/mfd/max77803.h>
@@ -24,14 +24,18 @@ extern void vienna_motor_init(void);
 #include "board-universal5420.h"
 
 #define GPD0_0_TOUT		(0x2 << 0)
-//#define GPIO_VIBTONE_PWM	EXYNOS5420_GPB2(0)
 
 void __init exynos5_universal5420_vibrator_init(void)
 {
 #if defined(CONFIG_V1A)
 	vienna_motor_init();
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 	int ret;
+#if defined(CONFIG_V2A)
+	gpio_request(GPIO_MOTOR_EN, "MOTOR_EN");
+	gpio_direction_output(GPIO_MOTOR_EN, 1);
+	gpio_export(GPIO_MOTOR_EN, 1);
+#endif
 	ret = gpio_request(GPIO_VIBTONE_PWM, "motor_pwm");
 	if (ret) {
 		printk(KERN_ERR "%s gpio_request error %d\n",

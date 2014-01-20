@@ -413,6 +413,11 @@ config LEDS_MAX77803
         help
           This option enables support for the LEDs on the MAX77803.
 
+config FEAT_LED_MAX77888
+        bool "JIGSet control of MAX77888"
+        default n
+        help
+          This option enables function to set JIGSet bit of CONTROL3 register.
 
 config LEDS_MAX8997
 	tristate "LED support for MAX8997 PMIC"

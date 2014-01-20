@@ -63,6 +63,11 @@
 #include <linux/dma-mapping.h>
 #endif
 
+#if defined(CONFIG_GPS_BCMxxxxx)
+/* Devices	*/
+#define CONFIG_GPS_S3C_UART	1
+#endif
+
 #if defined(CONFIG_BT_BCM4339) || defined(CONFIG_BT_BCM4335)
 #include <linux/pm_qos.h>
 #endif
@@ -819,6 +824,14 @@ static unsigned int s3c24xx_serial_get_mctrl(struct uart_port *port)
 static void s3c24xx_serial_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
 	/* todo - possibly remove AFC and do manual CTS */
+#if defined(CONFIG_GPS_BCMxxxxx)
+	unsigned int umcon = rd_regl(port, S3C2410_UMCON);
+
+	if (port->line == CONFIG_GPS_S3C_UART)
+		umcon |= S3C2410_UMCOM_AFC;
+
+	wr_regl(port, S3C2410_UMCON, umcon);
+#endif
 }
 
 static void s3c24xx_serial_break_ctl(struct uart_port *port, int break_state)
@@ -1264,10 +1277,11 @@ static void s3c24xx_serial_set_termios(struct uart_port *port,
 
 	wr_regl(port, S3C2410_ULCON, ulcon);
 	wr_regl(port, S3C2410_UBRDIV, quot);
-	wr_regl(port, S3C2410_UMCON, umcon);
 
 	if (ourport->info->has_divslot)
 		wr_regl(port, S3C2443_DIVSLOT, udivslot);
+
+	wr_regl(port, S3C2410_UMCON, umcon);
 
 	dbg("uart: ulcon = 0x%08x, ucon = 0x%08x, ufcon = 0x%08x\n",
 	    rd_regl(port, S3C2410_ULCON),

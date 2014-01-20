@@ -31,13 +31,52 @@
 #endif
 #include <asm/system_info.h>
 
+
+#ifdef CONFIG_SEC_DEBUG_TSP_LOG
+#include <mach/sec_debug.h>
+
+#define tsp_debug_dbg(mode, dev, fmt, ...)	\
+({								\
+	if (mode) {					\
+		dev_dbg(dev, fmt, ## __VA_ARGS__);	\
+		sec_debug_tsp_log(fmt, ## __VA_ARGS__);		\
+	}				\
+	else					\
+		dev_dbg(dev, fmt, ## __VA_ARGS__);	\
+})
+
+#define tsp_debug_info(mode, dev, fmt, ...)	\
+({								\
+	if (mode) {							\
+		dev_info(dev, fmt, ## __VA_ARGS__);		\
+		sec_debug_tsp_log(fmt, ## __VA_ARGS__);		\
+	}				\
+	else					\
+		dev_info(dev, fmt, ## __VA_ARGS__);	\
+})
+
+#define tsp_debug_err(mode, dev, fmt, ...)	\
+({								\
+	if (mode) {					\
+		dev_err(dev, fmt, ## __VA_ARGS__);	\
+		sec_debug_tsp_log(fmt, ## __VA_ARGS__);	\
+	}				\
+	else					\
+		dev_err(dev, fmt, ## __VA_ARGS__); \
+})
+#else
+#define tsp_debug_dbg(mode, dev, fmt, ...)	dev_dbg(dev, fmt, ## __VA_ARGS__)
+#define tsp_debug_info(mode, dev, fmt, ...)	dev_info(dev, fmt, ## __VA_ARGS__)
+#define tsp_debug_err(mode, dev, fmt, ...)	dev_err(dev, fmt, ## __VA_ARGS__)
+#endif
+
 #define MXT_DEFAULT_FIRMWARE_NAME	"MXTS.fw"
 
 #define MXT_FIRMWARE_INKERNEL_PATH	"tsp_atmel/"
 #define MXT_MAX_FW_PATH				30
 #define MXT_FIRMWARE_UPDATE_TYPE	true
 
-#define MXT_BACKUP_TIME			25	/* msec */
+#define MXT_BACKUP_TIME			60	/* msec */
 #define MXT_RESET_INTEVAL_TIME	50	/* msec */
 
 #define MXT_SW_RESET_TIME		300	/* msec */
@@ -117,6 +156,7 @@ enum {
 	MXT_SPT_DYNAMICCONFIGURATIONCONTROLLER_T70,
 	MXT_SPT_DYNAMICCONFIGURATIONCONTAINER_T71,
 	MXT_PROCG_NOISESUPPRESSION_T72,
+	MXT_SPT_CTESCANCONFIG_T77	= 77,
 	MXT_TOUCH_MULTITOUCHSCREEN_T100 = 100,
 	MXT_SPT_TOUCHSCREENHOVER_T101,
 	MXT_SPT_SELFCAPHOVERCTECONFIG_T102,
@@ -170,6 +210,7 @@ enum {
 #define MXT_TOUCH_XRANGE_MSB	19
 #define MXT_TOUCH_YRANGE_LSB	20
 #define MXT_TOUCH_YRANGE_MSB	21
+#define MXT_TOUCH_MOVFILTER2	36
 
 /* MXT_TOUCH_KEYARRAY_T15 Field */
 #define MXT_KEYARRY_CTRL	0
@@ -269,18 +310,24 @@ enum {
 #define MXT_REVISION_I	1	/* Support hovering */
 
 /************** Feature + **************/
-#if defined(CONFIG_V1A)
-#define TSP_BOOSTER			0
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#ifdef CONFIG_INPUT_BOOSTER
+#define TSP_BOOSTER				0
+#define TOUCHKEY_BOOSTER		0
+#else
+#define TSP_BOOSTER				1
+#define TOUCHKEY_BOOSTER		1
+#endif
 #define TSP_SEC_FACTORY			1
 #define TSP_INFORM_CHARGER		1
 #define TSP_USE_SHAPETOUCH		1
 #define ENABLE_TOUCH_KEY		1
-#define TOUCHKEY_BOOSTER		0
 #define TSP_CHECK_ATCH			1
-#define TSP_PATCH               0
+#define TSP_PATCH			1
 #define TSP_USE_PALM_FLAG		1
-
-#elif defined(CONFIG_N1A)
+#define TSP_CHANGE_CONFIG_FOR_INPUT    1
+#define USE_FOR_SUFACE			1
+#elif defined(CONFIG_N1A) || defined (CONFIG_N2A)
 #define TSP_BOOSTER			1
 #define TSP_SEC_FACTORY			1
 #define TSP_INFORM_CHARGER		1
@@ -288,9 +335,14 @@ enum {
 #define ENABLE_TOUCH_KEY		1
 #define TOUCHKEY_BOOSTER		1
 #define TSP_CHECK_ATCH			1
-#define TSP_PATCH				1
+#define TSP_PATCH			1
+#ifdef CONFIG_SEC_FACTORY
+#define TSP_USE_PALM_FLAG		0
+#else
 #define TSP_USE_PALM_FLAG		1
-
+#endif
+#define TSP_CHANGE_CONFIG_FOR_INPUT    1
+#define USE_FOR_SUFACE			1
 #else
 #define TSP_BOOSTER				0
 #define TSP_SEC_FACTORY			1
@@ -301,15 +353,17 @@ enum {
 #define TSP_CHECK_ATCH			0
 #define TSP_PATCH               0
 #define TSP_USE_PALM_FLAG		0
+#define TSP_CHANGE_CONFIG_FOR_INPUT    0
+#define USE_FOR_SUFACE			0
 #endif
 /* TODO TEMP_HOVER : Need to check and modify
  * it can be changed related potocol of hover So current
  * implementation is temporary code.
  */
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-#define TSP_HOVER_WORKAROUND			0
-#else
+#if defined(CONFIG_HA)
 #define TSP_HOVER_WORKAROUND			1
+#else
+#define TSP_HOVER_WORKAROUND			0
 #endif
 
 /* TSP_USE_ATMELDBG feature just for atmel tunning app
@@ -427,12 +481,12 @@ enum BOOST_MODE {
 #define TOUCH_KEY_NULL	0
 
 /* support 6 touch key */
-#define TOUCH_KEY_D_MENU	0x20
-#define TOUCH_KEY_MENU		0x10
-#define TOUCH_KEY_D_HOME_1	0x08
-#define TOUCH_KEY_D_HOME_2	0x04
-#define TOUCH_KEY_BACK		0x02
-#define TOUCH_KEY_D_BACK	0x01
+#define TOUCH_KEY_D_BACK		(0x1)
+#define TOUCH_KEY_BACK			(0x1 << 1)
+#define TOUCH_KEY_D_HOME_2		(0x1 << 2)
+#define TOUCH_KEY_D_HOME_1		(0x1 << 3)
+#define TOUCH_KEY_MENU			(0x1 << 4)
+#define TOUCH_KEY_D_MENU		(0x1 << 5)
 
 struct mxt_touchkey {
 	unsigned int value;
@@ -712,6 +766,9 @@ struct mxt_patch{
 	u8 run_stage;
 	u8 start;
 	u8 finger_cnt;
+	u8 start_stage; //0904
+	u8 skip_test;	//0908
+	u32 stage_timestamp;	//1218
 };
 #endif
 
@@ -728,6 +785,7 @@ struct mxt_data {
 	u8 max_reportid;
 	u8 finger_mask ;
 	bool mxt_enabled;
+	u16 mxt_err_cnt;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif
@@ -766,12 +824,21 @@ struct mxt_data {
 	bool report_dummy_key;
 	bool ignore_menu_key;
 	bool ignore_back_key;
+	bool ignore_menu_key_by_back;
+	bool ignore_back_key_by_menu;
+#if defined(CONFIG_N1A_3G)
+	bool threshold_cmd_reversed;
+	int setdata;
+#endif
 #endif
 #if TOUCHKEY_BOOSTER
 	struct touchkey_booster tsk_booster;
 #endif
 #if TSP_PATCH
 	struct mxt_patch patch;
+#endif
+#if TSP_CHANGE_CONFIG_FOR_INPUT
+	bool is_inputmethod;
 #endif
 };
 
@@ -843,5 +910,7 @@ static void touchkey_set_dvfs_off(struct work_struct *work);
 static void touchkey_set_dvfs_lock(struct mxt_data *data, uint32_t on);
 static int touchkey_init_dvfs(struct mxt_data *data);
 #endif
-
+#if defined(CONFIG_N1A_3G)
+static bool set_threshold(void *device_data);
+#endif
 #endif
