@@ -131,6 +131,10 @@ static ssize_t eeprom_check_show(struct device *dev,
 	struct ssp_data *data = dev_get_drvdata(dev);
 
 	struct ssp_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		goto exit;
+	}
 	msg->cmd = PRESSURE_FACTORY;
 	msg->length = 1;
 	msg->options = AP2HUB_READ;

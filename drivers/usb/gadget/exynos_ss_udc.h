@@ -507,9 +507,11 @@ struct exynos_ss_udc {
 	struct clk		*clk;
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	struct wake_lock wake_lock;
+#ifdef CONFIG_HA_3G
 	struct work_struct reconnect_work;
 	int			ss_host_avail;
 	bool			reconnect;
+#endif
 #endif
 	u32			*event_buff;
 	dma_addr_t		event_buff_dma;

@@ -376,7 +376,7 @@ static const struct drc_param init_drc_param = {
 		.width = DEFAULT_CAPTURE_STILL_WIDTH,
 		.height = DEFAULT_CAPTURE_STILL_HEIGHT,
 		.format = OTF_OUTPUT_FORMAT_YUV444,
-		.bitwidth = OTF_INPUT_BIT_WIDTH_8BIT,
+		.bitwidth = OTF_INPUT_BIT_WIDTH_12BIT,
 		.order = OTF_OUTPUT_ORDER_BAYER_GR_BG,
 		.uiCropOffsetX = 0,
 		.uiCropOffsetX = 0,
@@ -859,7 +859,8 @@ static int fimc_is_ischain_loadfirm(struct fimc_is_device_ischain *this)
 
 	memcpy((void *)this->imemory.kvaddr, (void *)buf, fsize);
 	fimc_is_ischain_cache_flush(this, 0, fsize + 1);
-	fimc_is_ischain_version(this, IS_FIRMWARE, buf, fsize);
+	if (cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_FRONT)
+		fimc_is_ischain_version(this, IS_FIRMWARE, buf, fsize);
 
 request_fw:
 	if (fw_requested) {
@@ -872,11 +873,24 @@ request_fw:
 			goto out;
 		}
 
+		if (!fw_blob) {
+			merr("fw_blob is NULL", this);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		if (!fw_blob->data) {
+			merr("fw_blob->data is NULL", this);
+			ret = -EINVAL;
+			goto out;
+		}
+
 		memcpy((void *)this->imemory.kvaddr, fw_blob->data,
 			fw_blob->size);
 		fimc_is_ischain_cache_flush(this, 0, fw_blob->size + 1);
-		fimc_is_ischain_version(this, IS_FIRMWARE, fw_blob->data,
-			fw_blob->size);
+		if (cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_FRONT)
+			fimc_is_ischain_version(this, IS_FIRMWARE, fw_blob->data,
+				fw_blob->size);
 
 		release_firmware(fw_blob);
 #ifdef SDCARD_FW
@@ -994,6 +1008,18 @@ request_fw:
 
 		if (!retry) {
 			merr("request_firmware is fail(%d)", this, ret);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		if (!fw_blob) {
+			merr("fw_blob is NULL", this);
+			ret = -EINVAL;
+			goto out;
+		}
+
+		if (!fw_blob->data) {
+			merr("fw_blob->data is NULL", this);
 			ret = -EINVAL;
 			goto out;
 		}
@@ -1875,15 +1901,17 @@ p_err:
 	return ret;
 }
 
-static int fimc_is_itf_map(struct fimc_is_device_ischain *this,
+int fimc_is_itf_map(struct fimc_is_device_ischain *device,
 	u32 group, u32 shot_addr, u32 shot_size)
 {
 	int ret = 0;
 
+	BUG_ON(!device);
+
 	dbg_ischain("%s()\n", __func__);
 
-	ret = fimc_is_hw_map(this->interface,
-		this->instance, group, shot_addr, shot_size);
+	ret = fimc_is_hw_map(device->interface,
+		device->instance, group, shot_addr, shot_size);
 
 	return ret;
 }
@@ -2235,8 +2263,10 @@ static int fimc_is_itf_grp_shot(struct fimc_is_device_ischain *device,
 	/* Set DVFS level by scenario */
 	if (device->sensor->framerate > 30) {
 		core->clock.dvfs_skipcnt = DVFS_SKIP_FRAME_NUM;
-		fimc_is_set_dvfs(core, device, group->id, DVFS_L0,
-							DVFS_MIF_L2, I2C_L0);
+		if (device->sensor->framerate <= 60)
+			fimc_is_set_dvfs(core, device, group->id, DVFS_L0, DVFS_MIF_L2, I2C_L0);
+		else
+			fimc_is_set_dvfs(core, device, group->id, DVFS_L0, DVFS_MIF_L2, I2C_L0);
 	} else if (fimc_is_get_dvfs_scenario(core) == DVFS_SCENARIO_DUAL) {
 		if (device->sensor_width > 2560) {
 			core->clock.dvfs_skipcnt = 1000;
@@ -2259,11 +2289,16 @@ static int fimc_is_itf_grp_shot(struct fimc_is_device_ischain *device,
 
 	if (!core->clock.dvfs_skipcnt &&
 				!pm_qos_request_active(&device->user_qos)) {
-		if ((device->chain0_width > 2400) ||
-					(device->sensor->framerate == 120)) {
+		if (device->chain0_width > 2400) {
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+			int_level = DVFS_L1;
+			mif_level = DVFS_MIF_L2;
+			i2c_clk = I2C_L1;
+#else
 			int_level = DVFS_L0;
 			mif_level = DVFS_MIF_L2;
 			i2c_clk = I2C_L0;
+#endif
 		} else if (test_bit(FIMC_IS_ISDEV_DSTART, &device->dis.state)) {
 			int_level = DVFS_L0;
 			mif_level = DVFS_MIF_L2;
@@ -2847,6 +2882,8 @@ static int fimc_is_ischain_s_setfile(struct fimc_is_device_ischain *device,
 	BUG_ON(!hindex);
 	BUG_ON(!indexes);
 
+	pr_info("[ISC:D:%d] setfile is %08X\n", device->instance, setfile);
+
 	if ((setfile & FIMC_IS_SETFILE_MASK) >= ISS_SUB_END) {
 		merr("setfile id(%08X) is invalid", device, setfile);
 		ret = -EINVAL;
@@ -2868,7 +2905,6 @@ static int fimc_is_ischain_s_setfile(struct fimc_is_device_ischain *device,
 	*hindex |= HIGHBIT_OF(PARAM_SCALERP_IMAGE_EFFECT);
 	(*indexes)++;
 
-	pr_info("[ISC:D:%d] scp setfile is %08X (%d)\n", device->instance, setfile, crange);
 p_err:
 	return ret;
 }
@@ -4483,6 +4519,66 @@ const struct fimc_is_queue_ops fimc_is_ischain_3a1_ops = {
 	.stop_streaming		= fimc_is_ischain_3a1_stop
 };
 
+static int fimc_is_ischain_3ax_tag(struct fimc_is_device_ischain *device,
+	struct fimc_is_subdev *subdev,
+	struct fimc_is_frame *ldr_frame)
+{
+	int ret = 0;
+	unsigned long flags;
+	struct fimc_is_framemgr *framemgr;
+	struct fimc_is_frame *frame;
+
+	BUG_ON(!device);
+	BUG_ON(!subdev);
+	BUG_ON(!ldr_frame);
+	BUG_ON(!ldr_frame->shot_ext);
+
+	framemgr = GET_SUBDEV_FRAMEMGR(subdev);
+	if (!framemgr) {
+		merr("framemgr is NULL", device);
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	/* HACK */
+	if (1 /* grp_frame->shot_ext->request_3ax */) {
+		framemgr_e_barrier_irqs(framemgr, FMGR_IDX_8, flags);
+
+		fimc_is_frame_request_head(framemgr, &frame);
+		if (frame) {
+			if (!frame->stream) {
+				framemgr_x_barrier_irqr(framemgr, 0, flags);
+				merr("frame->stream is NULL", device);
+				ret = -EINVAL;
+				goto p_err;
+			}
+
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] =
+				frame->dvaddr_buffer[0];
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
+			frame->stream->findex = ldr_frame->index;
+			set_bit(OUT_3AX_FRAME, &ldr_frame->out_flag);
+			set_bit(REQ_FRAME, &frame->req_flag);
+			fimc_is_frame_trans_req_to_pro(framemgr, frame);
+		} else {
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] = 0;
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
+			ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
+			merr("3ax %d frame is drop", device, ldr_frame->fcount);
+		}
+
+		framemgr_x_barrier_irqr(framemgr, FMGR_IDX_8, flags);
+	} else {
+		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] = 0;
+		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
+		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
+	}
+
+p_err:
+	return ret;
+}
+
 int fimc_is_ischain_isp_start(struct fimc_is_device_ischain *device,
 	struct fimc_is_subdev *leader,
 	struct fimc_is_queue *queue)
@@ -5182,9 +5278,9 @@ int fimc_is_ischain_scc_stop(struct fimc_is_device_ischain *device)
 	return ret;
 }
 
-int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
+static int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
 	struct fimc_is_subdev *subdev,
-	struct fimc_is_frame *grp_frame)
+	struct fimc_is_frame *ldr_frame)
 {
 	int ret = 0;
 	unsigned long flags;
@@ -5193,7 +5289,7 @@ int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
 
 	BUG_ON(!device);
 	BUG_ON(!subdev);
-	BUG_ON(!grp_frame);
+	BUG_ON(!ldr_frame);
 
 	framemgr = GET_SUBDEV_FRAMEMGR(subdev);
 	if (!framemgr) {
@@ -5202,7 +5298,7 @@ int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
 		goto p_err;
 	}
 
-	if (grp_frame->shot_ext->request_scc) {
+	if (ldr_frame->shot_ext->request_scc) {
 		if (!test_bit(FIMC_IS_ISDEV_DSTART, &subdev->state)) {
 			ret = fimc_is_ischain_scc_start(device);
 			if (ret) {
@@ -5215,22 +5311,29 @@ int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
 
 		fimc_is_frame_request_head(framemgr, &frame);
 		if (frame) {
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[0] =
+			if (!frame->stream) {
+				framemgr_x_barrier_irqr(framemgr, 0, flags);
+				merr("frame->stream is NULL", device);
+				ret = -EINVAL;
+				goto p_err;
+			}
+
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[0] =
 				frame->dvaddr_buffer[0];
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[1] =
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[1] =
 				frame->dvaddr_buffer[1];
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[2] =
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[2] =
 				frame->dvaddr_buffer[2];
-			frame->stream->findex = grp_frame->index;
-			set_bit(OUT_SCC_FRAME, &grp_frame->out_flag);
+			frame->stream->findex = ldr_frame->index;
+			set_bit(OUT_SCC_FRAME, &ldr_frame->out_flag);
 			set_bit(REQ_FRAME, &frame->req_flag);
 			fimc_is_frame_trans_req_to_pro(framemgr, frame);
 		} else {
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[0] = 0;
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[1] = 0;
-			grp_frame->shot->uctl.scalerUd.sccTargetAddress[2] = 0;
-			grp_frame->shot_ext->request_scc = 0;
-			mwarn("scc %d frame is drop", device, grp_frame->fcount);
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[0] = 0;
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[1] = 0;
+			ldr_frame->shot->uctl.scalerUd.sccTargetAddress[2] = 0;
+			ldr_frame->shot_ext->request_scc = 0;
+			mwarn("scc %d frame is drop", device, ldr_frame->fcount);
 		}
 
 		framemgr_x_barrier_irqr(framemgr, FMGR_IDX_8, flags);
@@ -5243,10 +5346,10 @@ int fimc_is_ischain_scc_tag(struct fimc_is_device_ischain *device,
 			}
 		}
 
-		grp_frame->shot->uctl.scalerUd.sccTargetAddress[0] = 0;
-		grp_frame->shot->uctl.scalerUd.sccTargetAddress[1] = 0;
-		grp_frame->shot->uctl.scalerUd.sccTargetAddress[2] = 0;
-		grp_frame->shot_ext->request_scc = 0;
+		ldr_frame->shot->uctl.scalerUd.sccTargetAddress[0] = 0;
+		ldr_frame->shot->uctl.scalerUd.sccTargetAddress[1] = 0;
+		ldr_frame->shot->uctl.scalerUd.sccTargetAddress[2] = 0;
+		ldr_frame->shot_ext->request_scc = 0;
 	}
 
 p_err:
@@ -5420,12 +5523,9 @@ p_err:
 	return ret;
 }
 
-u32 fcnt0, fcnt10;
-int drop_cnt;
-
-int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
+static int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
 	struct fimc_is_subdev *subdev,
-	struct fimc_is_frame *grp_frame)
+	struct fimc_is_frame *ldr_frame)
 {
 	int ret = 0;
 	unsigned long flags;
@@ -5434,7 +5534,7 @@ int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
 
 	BUG_ON(!device);
 	BUG_ON(!subdev);
-	BUG_ON(!grp_frame);
+	BUG_ON(!ldr_frame);
 
 	framemgr = GET_SUBDEV_FRAMEMGR(subdev);
 	if (!framemgr) {
@@ -5443,7 +5543,7 @@ int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
 		goto p_err;
 	}
 
-	if (grp_frame->shot_ext->request_scp) {
+	if (ldr_frame->shot_ext->request_scp) {
 		if (!test_bit(FIMC_IS_ISDEV_DSTART, &subdev->state)) {
 			ret = fimc_is_ischain_scp_start(device);
 			if (ret) {
@@ -5456,43 +5556,29 @@ int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
 
 		fimc_is_frame_request_head(framemgr, &frame);
 		if (frame) {
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[0] =
-				frame->dvaddr_buffer[0];
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[1] =
-				frame->dvaddr_buffer[1];
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[2] =
-				frame->dvaddr_buffer[2];
-			frame->stream->findex = grp_frame->index;
-			set_bit(OUT_SCP_FRAME, &grp_frame->out_flag);
-			set_bit(REQ_FRAME, &frame->req_flag);
-			fimc_is_frame_trans_req_to_pro(framemgr, frame);
-			drop_cnt = 0;
-			fcnt0 = 0;
-			fcnt10 = 0;
-		} else {
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[0] = 0;
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[1] = 0;
-			grp_frame->shot->uctl.scalerUd.scpTargetAddress[2] = 0;
-			grp_frame->shot_ext->request_scp = 0;
-			mwarn("scp %d frame is drop", device, grp_frame->fcount);
-			{
-				drop_cnt++;
-				if (drop_cnt == 1)
-					fcnt0 = grp_frame->fcount;
-
-				if (drop_cnt > 200) {
-					fcnt10 = grp_frame->fcount;
-					if ((fcnt10 - fcnt0) < 220) {
-						fimc_is_hw_print(device->interface);
-						BUG_ON(1);
-					} else {
-						drop_cnt = 0;
-						fcnt0 = 0;
-						fcnt10 = 0;
-					}
-				}
+			if (!frame->stream) {
+				framemgr_x_barrier_irqr(framemgr, 0, flags);
+				merr("frame->stream is NULL", device);
+				ret = -EINVAL;
+				goto p_err;
 			}
 
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[0] =
+				frame->dvaddr_buffer[0];
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[1] =
+				frame->dvaddr_buffer[1];
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[2] =
+				frame->dvaddr_buffer[2];
+			frame->stream->findex = ldr_frame->index;
+			set_bit(OUT_SCP_FRAME, &ldr_frame->out_flag);
+			set_bit(REQ_FRAME, &frame->req_flag);
+			fimc_is_frame_trans_req_to_pro(framemgr, frame);
+		} else {
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[0] = 0;
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[1] = 0;
+			ldr_frame->shot->uctl.scalerUd.scpTargetAddress[2] = 0;
+			ldr_frame->shot_ext->request_scp = 0;
+			mwarn("scp %d frame is drop", device, ldr_frame->fcount);
 		}
 
 		framemgr_x_barrier_irqr(framemgr, FMGR_IDX_9, flags);
@@ -5505,10 +5591,10 @@ int fimc_is_ischain_scp_tag(struct fimc_is_device_ischain *device,
 			}
 		}
 
-		grp_frame->shot->uctl.scalerUd.scpTargetAddress[0] = 0;
-		grp_frame->shot->uctl.scalerUd.scpTargetAddress[1] = 0;
-		grp_frame->shot->uctl.scalerUd.scpTargetAddress[2] = 0;
-		grp_frame->shot_ext->request_scp = 0;
+		ldr_frame->shot->uctl.scalerUd.scpTargetAddress[0] = 0;
+		ldr_frame->shot->uctl.scalerUd.scpTargetAddress[1] = 0;
+		ldr_frame->shot->uctl.scalerUd.scpTargetAddress[2] = 0;
+		ldr_frame->shot_ext->request_scp = 0;
 	}
 
 p_err:
@@ -6062,7 +6148,7 @@ int fimc_is_subdev_buffer_queue(struct fimc_is_subdev *subdev,
 		goto p_err;
 	}
 
-	if (frame->init == FRAME_UNI_MEM) {
+	if (unlikely(frame->memory == FRAME_UNI_MEM)) {
 		merr("frame %d is NOT init", vctx, index);
 		ret = EINVAL;
 		goto p_err;
@@ -6172,7 +6258,7 @@ int fimc_is_ischain_print_status(struct fimc_is_device_ischain *device)
 }
 
 int fimc_is_ischain_3a0_callback(struct fimc_is_device_ischain *device,
-	struct fimc_is_frame *frame)
+	struct fimc_is_frame *check_frame)
 {
 	int ret = 0;
 	u32 setfile_save;
@@ -6180,37 +6266,38 @@ int fimc_is_ischain_3a0_callback(struct fimc_is_device_ischain *device,
 	unsigned long flags;
 	struct fimc_is_group *group;
 	struct fimc_is_video_ctx *vctx;
-	struct fimc_is_framemgr *ldr_framemgr, *sub_framemgr;
-	struct fimc_is_frame *ldr_frame, *sub_frame;
+	struct fimc_is_framemgr *framemgr;
+	struct fimc_is_frame *frame;
+	struct fimc_is_subdev *tax;
 
 #ifdef DBG_STREAMING
 	dbg_ischain("%s\n", __func__);
 #endif
 
 	BUG_ON(!device);
-	BUG_ON(!frame);
+	BUG_ON(!check_frame);
 
 	group = &device->group_3ax;
-	vctx = group->leader.vctx;
+	tax = &group->leader;
+	vctx = tax->vctx;
 	if (!vctx) {
 		merr("vctx is NULL, critical error", device);
 		ret = -EINVAL;
 		return ret;
 	}
 
-	ldr_framemgr = GET_SRC_FRAMEMGR(vctx);
-	sub_framemgr = GET_DST_FRAMEMGR(vctx);
+	framemgr = GET_SRC_FRAMEMGR(vctx);
 
-	fimc_is_frame_request_head(ldr_framemgr, &ldr_frame);
+	fimc_is_frame_request_head(framemgr, &frame);
 
-	if (unlikely(!ldr_frame)) {
+	if (unlikely(!frame)) {
 		merr("ldr_frame is NULL", device);
 		return -EINVAL;
 	}
 
-	if (unlikely(ldr_frame != frame)) {
-		merr("ldr_frame is invalid(%X != %X)", device,
-			(u32)ldr_frame, (u32)frame);
+	if (unlikely(frame != check_frame)) {
+		merr("frame checking is fail(%X != %X)", device,
+			(u32)frame, (u32)check_frame);
 		ret = -EINVAL;
 		goto p_err;
 	}
@@ -6221,17 +6308,10 @@ int fimc_is_ischain_3a0_callback(struct fimc_is_device_ischain *device,
 		goto p_err;
 	}
 
-	if (unlikely(frame->init != FRAME_MAP_MEM)) {
-		if (frame->init == FRAME_INI_MEM) {
-			fimc_is_itf_map(device, GROUP_ID(group->id),
-				frame->dvaddr_shot, frame->shot_size);
-			frame->init = FRAME_MAP_MEM;
-		} else {
-			merr("frame mapping is invalid(%d)", device,
-				frame->init);
-			ret = -EINVAL;
-			goto p_err;
-		}
+	if (unlikely(frame->memory == FRAME_INI_MEM)) {
+		fimc_is_itf_map(device, GROUP_ID(group->id),
+			frame->dvaddr_shot, frame->shot_size);
+		frame->memory = FRAME_MAP_MEM;
 	}
 
 #ifdef ENABLE_SETFILE
@@ -6277,51 +6357,31 @@ int fimc_is_ischain_3a0_callback(struct fimc_is_device_ischain *device,
 	}
 #endif
 
-	framemgr_e_barrier_irqs(sub_framemgr, 0, flags);
-
-	fimc_is_frame_request_head(sub_framemgr, &sub_frame);
-	if (sub_frame) {
-		if (!sub_frame->stream) {
-			framemgr_x_barrier_irqr(sub_framemgr, 0, flags);
-			merr("sub_frame->stream is NULL", device);
-			ret = -EINVAL;
+	if (tax) {
+		ret = fimc_is_ischain_3ax_tag(device, tax, frame);
+		if (ret) {
+			merr("fimc_is_ischain_3ax_tag is fail(%d)", device, ret);
 			goto p_err;
 		}
-
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] =
-			sub_frame->dvaddr_buffer[0];
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
-		sub_frame->stream->findex = ldr_frame->index;
-		set_bit(OUT_3AX_FRAME, &ldr_frame->out_flag);
-		set_bit(REQ_FRAME, &sub_frame->req_flag);
-		fimc_is_frame_trans_req_to_pro(sub_framemgr, sub_frame);
-	} else {
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
-		merr("3a0 %d frame is drop", device, ldr_frame->fcount);
 	}
-
-	framemgr_x_barrier_irqr(sub_framemgr, 0, flags);
 
 p_err:
 	if (ret) {
 		merr("shot(index : %d) is skipped(error : %d)", device,
-			ldr_frame->index, ret);
+			frame->index, ret);
 	} else {
-		framemgr_e_barrier_irqs(ldr_framemgr, 0, flags);
-		fimc_is_frame_trans_req_to_pro(ldr_framemgr, ldr_frame);
-		framemgr_x_barrier_irqr(ldr_framemgr, 0, flags);
-		set_bit(REQ_3A0_SHOT, &ldr_frame->req_flag);
-		fimc_is_itf_grp_shot(device, group, ldr_frame);
+		framemgr_e_barrier_irqs(framemgr, 0, flags);
+		fimc_is_frame_trans_req_to_pro(framemgr, frame);
+		framemgr_x_barrier_irqr(framemgr, 0, flags);
+		set_bit(REQ_3A0_SHOT, &frame->req_flag);
+		fimc_is_itf_grp_shot(device, group, frame);
 	}
 
 	return ret;
 }
 
 int fimc_is_ischain_3a1_callback(struct fimc_is_device_ischain *device,
-	struct fimc_is_frame *frame)
+	struct fimc_is_frame *check_frame)
 {
 	int ret = 0;
 	u32 setfile_save;
@@ -6329,37 +6389,38 @@ int fimc_is_ischain_3a1_callback(struct fimc_is_device_ischain *device,
 	unsigned long flags;
 	struct fimc_is_group *group;
 	struct fimc_is_video_ctx *vctx;
-	struct fimc_is_framemgr *ldr_framemgr, *sub_framemgr;
-	struct fimc_is_frame *ldr_frame, *sub_frame;
+	struct fimc_is_framemgr *framemgr;
+	struct fimc_is_frame *frame;
+	struct fimc_is_subdev *tax;
 
 #ifdef DBG_STREAMING
 	dbg_ischain("%s\n", __func__);
 #endif
 
 	BUG_ON(!device);
-	BUG_ON(!frame);
+	BUG_ON(!check_frame);
 
 	group = &device->group_3ax;
-	vctx = group->leader.vctx;
+	tax = &group->leader;
+	vctx = tax->vctx;
 	if (!vctx) {
 		merr("vctx is NULL, critical error", device);
 		ret = -EINVAL;
 		return ret;
 	}
 
-	ldr_framemgr = GET_SRC_FRAMEMGR(vctx);
-	sub_framemgr = GET_DST_FRAMEMGR(vctx);
+	framemgr = GET_SRC_FRAMEMGR(vctx);
 
-	fimc_is_frame_request_head(ldr_framemgr, &ldr_frame);
+	fimc_is_frame_request_head(framemgr, &frame);
 
-	if (unlikely(!ldr_frame)) {
-		merr("ldr_frame is NULL", device);
+	if (unlikely(!frame)) {
+		merr("frame is NULL", device);
 		return -EINVAL;
 	}
 
-	if (unlikely(ldr_frame != frame)) {
-		merr("ldr_frame is invalid(%X != %X)", device,
-			(u32)ldr_frame, (u32)frame);
+	if (unlikely(frame != check_frame)) {
+		merr("frame checking is fail(%X != %X)", device,
+			(u32)frame, (u32)check_frame);
 		ret = -EINVAL;
 		goto p_err;
 	}
@@ -6370,17 +6431,10 @@ int fimc_is_ischain_3a1_callback(struct fimc_is_device_ischain *device,
 		goto p_err;
 	}
 
-	if (unlikely(frame->init != FRAME_MAP_MEM)) {
-		if (frame->init == FRAME_INI_MEM) {
-			fimc_is_itf_map(device, GROUP_ID(group->id),
-				frame->dvaddr_shot, frame->shot_size);
-			frame->init = FRAME_MAP_MEM;
-		} else {
-			merr("frame mapping is invalid(%d)", device,
-				frame->init);
-			ret = -EINVAL;
-			goto p_err;
-		}
+	if (unlikely(frame->memory == FRAME_INI_MEM)) {
+		fimc_is_itf_map(device, GROUP_ID(group->id),
+			frame->dvaddr_shot, frame->shot_size);
+		frame->memory = FRAME_MAP_MEM;
 	}
 
 #ifdef ENABLE_SETFILE
@@ -6399,11 +6453,12 @@ int fimc_is_ischain_3a1_callback(struct fimc_is_device_ischain *device,
 #endif
 
 #ifdef ENABLE_FAST_SHOT
-		if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state))
-			memcpy(&frame->shot->ctl.aa, &group->fast_ctl.aa,
-				sizeof(struct camera2_aa_ctl));
-			memcpy(&frame->shot->ctl.scaler, &group->fast_ctl.scaler,
-				sizeof(struct camera2_scaler_ctl));
+	if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &group->state)) {
+		memcpy(&frame->shot->ctl.aa, &group->fast_ctl.aa,
+			sizeof(struct camera2_aa_ctl));
+		memcpy(&frame->shot->ctl.scaler, &group->fast_ctl.scaler,
+			sizeof(struct camera2_scaler_ctl));
+	}
 #endif
 
 #ifdef BAYER_CROP_DZOOM
@@ -6434,44 +6489,24 @@ int fimc_is_ischain_3a1_callback(struct fimc_is_device_ischain *device,
 	}
 #endif
 
-	framemgr_e_barrier_irqs(sub_framemgr, FMGR_IDX_8, flags);
-
-	fimc_is_frame_request_head(sub_framemgr, &sub_frame);
-	if (sub_frame) {
-		if (!sub_frame->stream) {
-			framemgr_x_barrier_irqr(sub_framemgr, 0, flags);
-			merr("sub_frame->stream is NULL", device);
-			ret = -EINVAL;
+	if (tax) {
+		ret = fimc_is_ischain_3ax_tag(device, tax, frame);
+		if (ret) {
+			merr("fimc_is_ischain_3ax_tag is fail(%d)", device, ret);
 			goto p_err;
 		}
-
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] =
-			sub_frame->dvaddr_buffer[0];
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
-		sub_frame->stream->findex = ldr_frame->index;
-		set_bit(OUT_3AX_FRAME, &ldr_frame->out_flag);
-		set_bit(REQ_FRAME, &sub_frame->req_flag);
-		fimc_is_frame_trans_req_to_pro(sub_framemgr, sub_frame);
-	} else {
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[0] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[1] = 0;
-		ldr_frame->shot->uctl.scalerUd.ispTargetAddress[2] = 0;
-		merr("3a1 %d frame is drop", device, ldr_frame->fcount);
 	}
-
-	framemgr_x_barrier_irqr(sub_framemgr, FMGR_IDX_8, flags);
 
 p_err:
 	if (ret) {
 		merr("shot(index : %d) is skipped(error : %d)", device,
-			ldr_frame->index, ret);
+			frame->index, ret);
 	} else {
-		framemgr_e_barrier_irqs(ldr_framemgr, 0, flags);
-		fimc_is_frame_trans_req_to_pro(ldr_framemgr, ldr_frame);
-		framemgr_x_barrier_irqr(ldr_framemgr, 0, flags);
-		set_bit(REQ_3A1_SHOT, &ldr_frame->req_flag);
-		fimc_is_itf_grp_shot(device, group, ldr_frame);
+		framemgr_e_barrier_irqs(framemgr, 0, flags);
+		fimc_is_frame_trans_req_to_pro(framemgr, frame);
+		framemgr_x_barrier_irqr(framemgr, 0, flags);
+		set_bit(REQ_3A1_SHOT, &frame->req_flag);
+		fimc_is_itf_grp_shot(device, group, frame);
 	}
 
 	return ret;
@@ -6534,8 +6569,8 @@ int fimc_is_ischain_isp_callback(struct fimc_is_device_ischain *device,
 	}
 
 	if (unlikely(frame != check_frame)) {
-		merr("grp_frame is invalid(%X != %X)", device,
-			(u32)frame, (u32)frame);
+		merr("frame checking is fail(%X != %X)", device,
+			(u32)frame, (u32)check_frame);
 		ret = -EINVAL;
 		goto exit;
 	}
@@ -6546,17 +6581,10 @@ int fimc_is_ischain_isp_callback(struct fimc_is_device_ischain *device,
 		goto exit;
 	}
 
-	if (unlikely(frame->init != FRAME_MAP_MEM)) {
-		if (frame->init == FRAME_INI_MEM) {
-			fimc_is_itf_map(device, GROUP_ID(group->id),
-				frame->dvaddr_shot, frame->shot_size);
-			frame->init = FRAME_MAP_MEM;
-		} else {
-			merr("frame mapping is invalid(%d)", device,
-				frame->init);
-			ret = -EINVAL;
-			goto exit;
-		}
+	if (unlikely(frame->memory == FRAME_INI_MEM)) {
+		fimc_is_itf_map(device, GROUP_ID(group->id),
+			frame->dvaddr_shot, frame->shot_size);
+		frame->memory = FRAME_MAP_MEM;
 	}
 
 #ifdef ENABLE_DRC

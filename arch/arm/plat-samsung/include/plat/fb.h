@@ -106,6 +106,14 @@ extern void s5p_fimd1_set_platdata(struct s3c_fb_platdata *pd);
 extern void s3cfb_extdsp_set_platdata(struct s3c_fb_pd_win *pd);
 
 /**
+ * s5p_mic_set_platdata() - Setup the MIC device with platform data.
+ * @pd: The platform data to set. The data is copied from the passed structure
+ *      so the machine data can mark the data __initdata so that any unused
+ *      machines will end up dumping their data at runtime.
+ */
+extern void s5p_mic_set_platdata(struct s3c_fb_pd_win *pd);
+
+/**
  * s3c64xx_fb_gpio_setup_24bpp() - S3C64XX setup function for 24bpp LCD
  *
  * Initialise the GPIO for an 24bpp LCD display on the RGB interface.

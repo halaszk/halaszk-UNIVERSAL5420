@@ -14,7 +14,7 @@
  */
 #include "ssp.h"
 
-#define SSP_FIRMWARE_REVISION_STM	13091100 /* after hw_rev 6 */
+#define SSP_FIRMWARE_REVISION_STM	14010200 /* after hw_rev 6 */
 #define SSP_FIRMWARE_REVISION_STM_REV5	13072401 /* upto hw_rev 5 */
 
 #define BOOT_SPI_HZ	500000
@@ -787,6 +787,7 @@ int forced_to_download_binary(struct ssp_data *data, int iBinType)
 
 	data->fw_dl_state = FW_DL_STATE_SYNC;
 	pr_info("[SSP] %s, DL state = %d\n", __func__, data->fw_dl_state);
+	clean_pending_list(data);
 	ssp_enable(data, true);
 
 	iRet = initialize_mcu(data);
@@ -797,10 +798,11 @@ int forced_to_download_binary(struct ssp_data *data, int iBinType)
 	}
 
 	/* we should reload cal data after updating firmware on boooting */
+	proximity_open_lcd_ldi(data);
+	proximity_open_calibration(data);
 	accel_open_calibration(data);
 	gyro_open_calibration(data);
 	pressure_open_calibration(data);
-	proximity_open_lcd_ldi(data);
 
 	sync_sensor_state(data);
 

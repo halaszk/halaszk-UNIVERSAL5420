@@ -139,6 +139,8 @@ static int max77803_i2c_probe(struct i2c_client *i2c,
 	if (pdata) {
 		max77803->irq_base = pdata->irq_base;
 		max77803->irq_gpio = pdata->irq_gpio;
+		/* WA for V1 MUIC RESET */
+		max77803->muic_reset_irq = pdata->muic_reset_irq;
 		max77803->wakeup = pdata->wakeup;
 	} else
 		goto err;

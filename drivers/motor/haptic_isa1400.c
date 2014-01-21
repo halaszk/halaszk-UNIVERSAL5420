@@ -31,6 +31,7 @@
 #include <linux/haptic_isa1400.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
+#include <linux/delay.h>
 #if defined(CONFIG_HAPTIC)
 #include "haptic.h"
 #endif
@@ -43,6 +44,11 @@ static int isa1400_i2c_write(struct i2c_client *client,
 	if (error)
 		printk(KERN_ERR "[VIB] Failed to write addr=[0x%x], val=[0x%x]\n",
 				addr, val);
+#if defined(ISA1400_DEBUG_LOG)
+	else
+		printk(KERN_ERR "[VIB] addr=[0x%x], val=[0x%x]\n",
+				addr, val);
+#endif
 
 	return error;
 }
@@ -65,6 +71,7 @@ static void isa1400_hw_init(struct isa1400_drvdata *data)
 {
 	data->pdata->gpio_en(true);
 	data->pdata->clk_en(true);
+	usleep_range(500, 1000);
 	isa1400_reg_write(data, ISA1400_REG_INIT);
 }
 
@@ -74,9 +81,7 @@ static void isa1400_on(struct isa1400_drvdata *data)
 		isa1400_hw_init(data);
 		isa1400_reg_write(data, ISA1400_REG_START);
 	} else {
-#if 0
 		isa1400_reg_write(data, ISA1400_REG_STOP);
-#endif
 		data->pdata->clk_en(false);
 		data->pdata->gpio_en(false);
 	}
@@ -156,6 +161,8 @@ static void isa1400_enable(struct timed_output_dev *_dev, int value)
 static struct isa1400_drvdata	*isa1400_ddata;
 void isa1400_set_force(u8 index, int duty)
 {
+	int motor_index = 0;
+
 	if (NULL == isa1400_ddata) {
 		printk(KERN_ERR "[VIB] driver is not ready\n");
 		return ;
@@ -166,14 +173,19 @@ void isa1400_set_force(u8 index, int duty)
 		return ;
 	}
 
+	motor_index = isa1400_ddata->pdata->actuator[index];
+
 	/* for the internal pwm */
 	/* if the isa1400 is used by external clock,
 	 * this function should be fixed. */
 	duty = (duty > 0) ? duty : (abs(duty) |0x80);
 
 	isa1400_i2c_write(isa1400_ddata->client,
-		ISA1400_REG_GAIN + isa1400_ddata->pdata->actuator[index],
+		ISA1400_REG_GAIN + motor_index,
 		duty);
+	isa1400_i2c_write(isa1400_ddata->client,
+		ISA1400_REG_HPTEN,
+		(0x01 << motor_index));
 }
 
 void isa1400_chip_enable(bool en)

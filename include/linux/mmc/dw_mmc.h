@@ -205,9 +205,6 @@ struct dw_mci {
 	struct delayed_work	tp_mon;
 	u32			transferred_cnt;
 	u32			cmd_cnt;
-	u32			sync_pre_cnt;
-	unsigned long		pm_qos_time;
-	int			pm_qos_step;
 	struct pm_qos_request	pm_qos_mif;
 	struct pm_qos_request	pm_qos_cpu;
 
@@ -250,6 +247,8 @@ struct dw_mci_dma_ops {
 #define DW_MMC_QUIRK_FIXED_VOLTAGE		BIT(7)
 /* Use S/W data timeout */
 #define DW_MMC_QUIRK_SW_DATA_TIMEOUT		BIT(8)
+/* Use fine tuning for eMMC */
+#define DW_MMC_QUIRK_USE_FINE_TUNING		BIT(9)
 
 enum dw_mci_cd_types {
 	DW_MCI_CD_INTERNAL,	/* use mmc internal CD line */
@@ -331,6 +330,7 @@ struct dw_mci_board {
 	unsigned int ddr200_timing;
 	u8 clk_drv;
 	u8 clk_smpl;
+	bool is_fine_tuned;
 	bool tuned;
 	bool only_once_tune;
 	struct drv_strength {
@@ -374,10 +374,8 @@ struct dw_mci_board {
 	struct block_settings *blk_settings;
 	struct dw_mci_clk *clk_tbl;
 	struct dw_mci_mon_table *tp_mon_tbl;
-	bool ttp_enabled;
-	unsigned long ttp_timeout;
 	unsigned int sw_timeout;
-	u8 tuning_map[MAX_TUNING_RETRIES];
+	u16 tuning_map[MAX_TUNING_RETRIES];
 	u8 tuning_map_mask;
 };
 

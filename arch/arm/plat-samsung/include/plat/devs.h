@@ -92,6 +92,7 @@ extern struct platform_device s5p_device_extdsp;
 extern struct platform_device s5p_device_mipi_dsim0;
 extern struct platform_device s5p_device_mipi_dsim1;
 extern struct platform_device s5p_device_dp;
+extern struct platform_device s5p_device_mic;
 extern struct platform_device s5p_device_hdmi;
 extern struct platform_device s5p_device_cec;
 extern struct platform_device s5p_device_i2c_hdmiphy;

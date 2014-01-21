@@ -684,7 +684,7 @@ static unsigned int read_clusterid(void)
 
 void bts_drex_initialize(void)
 {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	__raw_writel(0x0, EXYNOS5_DREXI_0_QOSCONTROL15);
 	__raw_writel(0x80, EXYNOS5_DREXI_0_QOSCONTROL12);
 	__raw_writel(0x80, EXYNOS5_DREXI_0_QOSCONTROL8);

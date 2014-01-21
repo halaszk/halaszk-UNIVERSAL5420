@@ -43,10 +43,14 @@
 u8 *tk_fw_name = FW_PATH;
 
 /*For HA-3G*/
-#ifdef CONFIG_HA
+#if defined(CONFIG_HA)
 static u8 fw_ver_file = 0x10;
 static u8 md_ver_file = 0x9;
 u8 module_divider[] = {0, 0x04, 0x07, 0x08, 0xff};
+#elif defined(CONFIG_CHAGALL)
+static u8 fw_ver_file = 0x1;
+static u8 md_ver_file = 0x1;
+u8 module_divider[] = {0, 0xff};
 #else
 static u8 fw_ver_file = 0x0;
 static u8 md_ver_file = 0x0;
@@ -65,6 +69,9 @@ static int touchkey_keycode[] = { 0,
 
 #elif defined(TK_USE_2KEY_TYPE_M0)
 	KEY_BACK, KEY_MENU,
+
+#elif defined(CONFIG_CHAGALL)
+	KEY_BACK, KEY_RECENT,
 
 #else
 	KEY_MENU, KEY_BACK,
@@ -514,8 +521,8 @@ void touchkey_flip_cover(int value)
 				data[0] = 0xA0;
 				data[3] = 0x40;
 		}
-		
-		i2c_touchkey_write(tkey_i2c->client, data, 4);		
+
+		i2c_touchkey_write(tkey_i2c->client, data, 4);
 		msleep(100);
 
 		dev_dbg(&tkey_i2c->client->dev,
@@ -743,7 +750,7 @@ static void touchkey_change_dvfs_lock(struct work_struct *work)
 		set_qos(&tkey_i2c->mif_qos, PM_QOS_BUS_THROUGHPUT, TKEY_BOOSTER_MIF_FREQ2);
 		set_qos(&tkey_i2c->int_qos, PM_QOS_DEVICE_THROUGHPUT, TKEY_BOOSTER_INT_FREQ2);
 	}
-	
+
 	printk(KERN_DEBUG"touchkey:DVFS ON, %d\n", tkey_i2c->boost_level);
 	tkey_i2c->tsk_dvfs_lock_status = true;
 	tkey_i2c->dvfs_signal = false;
@@ -827,7 +834,8 @@ static int get_module_ver(void)
 
 static void touchkey_init_fw_name(struct touchkey_i2c *tkey_i2c)
 {
-	/*check ver of ic*/
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+	/* check module ver of ic */
 	if (tkey_i2c->md_ver_ic == 0) {
 		tkey_i2c->md_ver_ic = get_module_ver();
 		printk(KERN_DEBUG"touchkey:failed to read module_ver. seperate by hwid(ver %x)\n", tkey_i2c->md_ver_ic);
@@ -848,6 +856,7 @@ static void touchkey_init_fw_name(struct touchkey_i2c *tkey_i2c)
 		printk(KERN_DEBUG"touchkey:%s, unknown module ver %x\n", __func__, tkey_i2c->md_ver_ic);
 		return ;
 	}
+#endif
 }
 
 /* To check firmware compatibility */
@@ -874,7 +883,7 @@ bool is_same_module_class(struct touchkey_i2c *tkey_i2c)
 
 	if (md_ver_file == tkey_i2c->md_ver_ic)
 		return true;
-	
+
 	class_file = get_module_class(md_ver_file);
 	class_ic = get_module_class(tkey_i2c->md_ver_ic);
 
@@ -893,7 +902,7 @@ int tkey_load_fw_built_in(struct touchkey_i2c *tkey_i2c)
 
 	while (retry--) {
 		ret =
-			request_firmware(&tkey_i2c->update_info.firm_data, tk_fw_name,
+			request_firmware(&tkey_i2c->firm_data, tk_fw_name,
 			&tkey_i2c->client->dev);
 		if (ret < 0) {
 			printk(KERN_ERR
@@ -904,7 +913,10 @@ int tkey_load_fw_built_in(struct touchkey_i2c *tkey_i2c)
 		break;
 	}
 
-	firmware_data = (u8 *)tkey_i2c->update_info.firm_data->data;
+	if (ret < 0)
+		return ret;
+
+	tkey_i2c->fw_img = (struct fw_image *)tkey_i2c->firm_data->data;
 
 	return ret;
 }
@@ -915,8 +927,7 @@ int tkey_load_fw_sdcard(struct touchkey_i2c *tkey_i2c)
 	mm_segment_t old_fs;
 	long fsize, nread;
 	int ret = 0;
-	unsigned int nSize;
-	u8 **ums_data = &firmware_data;
+	u8 *ums_data = NULL;
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
@@ -935,15 +946,15 @@ int tkey_load_fw_sdcard(struct touchkey_i2c *tkey_i2c)
 		"touchkey:start, file path %s, size %ld Bytes\n",
 		TKEY_FW_PATH, fsize);
 
-	*ums_data = kmalloc(fsize, GFP_KERNEL);
-	if (IS_ERR(*ums_data)) {
+	ums_data = kmalloc(fsize, GFP_KERNEL);
+	if (IS_ERR(ums_data)) {
 		printk(KERN_ERR
 			"touchkey:%s, kmalloc failed\n", __func__);
 		ret = -EFAULT;
 		goto malloc_error;
 	}
 
-	nread = vfs_read(fp, (char __user *)*ums_data,
+	nread = vfs_read(fp, (char __user *)ums_data,
 		fsize, &fp->f_pos);
 	printk(KERN_NOTICE "touchkey:nread %ld Bytes\n", nread);
 	if (nread != fsize) {
@@ -951,26 +962,48 @@ int tkey_load_fw_sdcard(struct touchkey_i2c *tkey_i2c)
 			"touchkey:failed to read firmware file, nread %ld Bytes\n",
 			nread);
 		ret = -EIO;
-		kfree(*ums_data);
+		kfree(ums_data);
 		goto read_err;
 	}
 
 	filp_close(fp, current->files);
 	set_fs(old_fs);
 
+	tkey_i2c->fw_img = (struct fw_image *)ums_data;
+
 	return 0;
 
 read_err:
 malloc_error:
-size_error:
 	filp_close(fp, current->files);
 	set_fs(old_fs);
 	return ret;
 }
 
+void touchkey_unload_fw(struct touchkey_i2c *tkey_i2c)
+{
+	switch (tkey_i2c->fw_path) {
+	case FW_BUILT_IN:
+		release_firmware(tkey_i2c->firm_data);
+		break;
+	case FW_IN_SDCARD:
+		kfree(tkey_i2c->fw_img);
+		break;
+	default:
+		break;
+	}
+
+	tkey_i2c->fw_path = FW_NONE;
+
+	tkey_i2c->fw_img = NULL;
+	tkey_i2c->firm_data = NULL;
+	firmware_data = NULL;
+}
+
 int touchkey_load_fw(struct touchkey_i2c *tkey_i2c, u8 fw_path)
 {
 	int ret = 0;
+	struct fw_image *fw_img;
 
 	switch (fw_path) {
 	case FW_BUILT_IN:
@@ -981,27 +1014,26 @@ int touchkey_load_fw(struct touchkey_i2c *tkey_i2c, u8 fw_path)
 		break;
 	default:
 		printk(KERN_DEBUG"touchkey:unknown path(%d)\n", fw_path);
-		break;
+		goto err_load_fw;
+	}
+
+	if (ret < 0)
+		goto err_load_fw;
+
+	fw_img = tkey_i2c->fw_img;
+	/* header check  */
+	if (fw_img->hdr_ver == 0 && fw_img->third_ver == 0) {
+		printk(KERN_DEBUG"touchkey:detect hdr\n");
+		firmware_data = (u8 *)fw_img->data;
+	} else {
+		printk(KERN_DEBUG"touchkey:no hdr\n");
+		firmware_data = (u8 *)fw_img;
 	}
 
 	return ret;
-}
-
-void touchkey_unload_fw(struct touchkey_i2c *tkey_i2c)
-{
-	switch (tkey_i2c->update_info.fw_path) {
-	case FW_BUILT_IN:
-		release_firmware(tkey_i2c->update_info.firm_data);
-		tkey_i2c->update_info.firm_data = NULL;
-		break;
-	case FW_IN_SDCARD:
-		kfree(firmware_data);
-		firmware_data = NULL;
-		break;
-	default:
-		break;
-	}
-	tkey_i2c->update_info.fw_path = FW_NONE;
+ err_load_fw:
+	firmware_data = NULL;
+	return ret;
 }
 
 int touchkey_fw_update(struct touchkey_i2c *tkey_i2c, u8 fw_path, bool bforced)
@@ -1013,7 +1045,7 @@ int touchkey_fw_update(struct touchkey_i2c *tkey_i2c, u8 fw_path, bool bforced)
 		printk(KERN_DEBUG"touchkey:failed to load fw data\n");
 		return ret;
 	}
-	tkey_i2c->update_info.fw_path = fw_path;
+	tkey_i2c->fw_path = fw_path;
 
 	/* f/w info */
 	dev_info(&tkey_i2c->client->dev, "fw ver %#x, new fw ver %#x\n",
@@ -1021,9 +1053,10 @@ int touchkey_fw_update(struct touchkey_i2c *tkey_i2c, u8 fw_path, bool bforced)
 	dev_info(&tkey_i2c->client->dev, "module ver %#x, new module ver %#x\n",
 		tkey_i2c->md_ver_ic, md_ver_file);
 
-	/* check update condition */
 	if (unlikely(bforced))
 		goto run_fw_update;
+
+	/* check update condition */
 	if (is_same_module_class(tkey_i2c)) {
 		if (tkey_i2c->md_ver_ic != md_ver_file)
 			goto run_fw_update;
@@ -1039,7 +1072,7 @@ int touchkey_fw_update(struct touchkey_i2c *tkey_i2c, u8 fw_path, bool bforced)
 	dev_info(&tkey_i2c->client->dev, "pass fw update\n");
 	touchkey_unload_fw(tkey_i2c);
  run_fw_update:
-	schedule_work(&tkey_i2c->update_work);
+	queue_work(tkey_i2c->fw_wq, &tkey_i2c->update_work);
 	return 0;
 }
 
@@ -1047,14 +1080,15 @@ static void touchkey_i2c_update_work(struct work_struct *work)
 {
 	struct touchkey_i2c *tkey_i2c =
 		container_of(work, struct touchkey_i2c, update_work);
-	const struct firmware *firm_data = NULL;
-	int ret;
+	int ret = 0;
 	int retry = 3;
-
+#ifdef CONFIG_CHAGALL
+	return;
+#endif
 	disable_irq(tkey_i2c->irq);
 	wake_lock(&tkey_i2c->fw_wakelock);
 
-	if (tkey_i2c->update_info.fw_path == FW_NONE)
+	if (tkey_i2c->fw_path == FW_NONE)
 		goto end_fw_update;
 
 	printk(KERN_DEBUG"touchkey:%s\n", __func__);
@@ -1072,7 +1106,7 @@ static void touchkey_i2c_update_work(struct work_struct *work)
 		tkey_i2c->update_status = TK_UPDATE_PASS;
 		break;
 	}
-	if (retry <= 0) {
+	if (retry <= 0 && ret != 0) {
 		tkey_i2c->pdata->power_on(0);
 		tkey_i2c->update_status = TK_UPDATE_FAIL;
 		dev_err(&tkey_i2c->client->dev, "failed to update f/w\n");
@@ -1086,14 +1120,14 @@ static void touchkey_i2c_update_work(struct work_struct *work)
 	dev_info(&tkey_i2c->client->dev, "f/w ver = %#X, module ver = %#X\n",
 		tkey_i2c->fw_ver_ic, tkey_i2c->md_ver_ic);
 
- end_fw_update:
+ err_fw_update:
+	touchkey_unload_fw(tkey_i2c);
+ end_fw_update: 
+	wake_unlock(&tkey_i2c->fw_wakelock);
 #if defined(TK_HAS_AUTOCAL)
 	touchkey_autocalibration(tkey_i2c);
 #endif
 	enable_irq(tkey_i2c->irq);
- err_fw_update:
-	touchkey_unload_fw(tkey_i2c);
-	wake_unlock(&tkey_i2c->fw_wakelock);
 }
 #endif
 
@@ -1104,6 +1138,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int ret;
 	int keycode_type = 0;
 	int pressed;
+	bool glove_mode_status;
 
 	if (unlikely(!touchkey_probe)) {
 		dev_err(&tkey_i2c->client->dev, "%s: Touchkey is not probed\n", __func__);
@@ -1125,15 +1160,25 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	input_report_key(tkey_i2c->input_dev,
 			 touchkey_keycode[keycode_type], pressed);
 	input_sync(tkey_i2c->input_dev);
+#ifdef CONFIG_GLOVE_TOUCH
+	glove_mode_status = tkey_i2c->tsk_glove_mode_status;
+#else
+	glove_mode_status = 0;
+#endif
+
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	dev_info(&tkey_i2c->client->dev, "keycode:%d pressed:%d %d\n",
-	touchkey_keycode[keycode_type], pressed, tkey_i2c->tsk_glove_mode_status);
+		touchkey_keycode[keycode_type], pressed, glove_mode_status);
 #else
 	dev_info(&tkey_i2c->client->dev, "pressed:%d %d\n",
-		pressed, tkey_i2c->tsk_glove_mode_status);
+		pressed, glove_mode_status);
 #endif
 #ifdef TOUCHKEY_BOOSTER
 	touchkey_set_dvfs_lock(tkey_i2c, !!pressed);
+#endif
+#ifdef CONFIG_INPUT_BOOSTER
+	INPUT_BOOSTER_SEND_EVENT(touchkey_keycode[keycode_type],
+		!!pressed);
 #endif
 	return IRQ_HANDLED;
 }
@@ -1159,6 +1204,10 @@ static int touchkey_stop(struct touchkey_i2c *tkey_i2c)
 	for (i = 1; i < touchkey_count; ++i) {
 		input_report_key(tkey_i2c->input_dev,
 				 touchkey_keycode[i], 0);
+#ifdef CONFIG_INPUT_BOOSTER
+		INPUT_BOOSTER_SEND_EVENT(touchkey_keycode[i],
+			BOOSTER_MODE_FORCE_OFF);
+#endif
 	}
 	input_sync(tkey_i2c->input_dev);
 
@@ -1431,7 +1480,12 @@ static ssize_t touchkey_led_control(struct device *dev,
 			__func__, data);
 		return size;
 	}
-
+#ifdef CONFIG_CHAGALL
+	if (data)
+		tkey_i2c->pdata->led_power_on(1);
+	else
+		tkey_i2c->pdata->led_power_on(0);
+#else
 	data = ledCmd[data];
 
 	if (!tkey_i2c->enabled) {
@@ -1449,6 +1503,7 @@ static ssize_t touchkey_led_control(struct device *dev,
 	msleep(30);
 
 out:
+#endif
 	touchkey_led_status = data;
 
 	return size;
@@ -1834,7 +1889,7 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_flip_mode.attr,
 #endif
 #ifdef TOUCHKEY_BOOSTER
-	&dev_attr_boost_level.attr,	
+	&dev_attr_boost_level.attr,
 #endif
 	NULL,
 };
@@ -1936,14 +1991,21 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 	if (ret) {
 		dev_err(&client->dev, "Failed to create device(tkey_i2c->dev)!\n");
 		goto err_device_create;
-	} else {
-		dev_set_drvdata(tkey_i2c->dev, tkey_i2c);
-		ret = sysfs_create_group(&tkey_i2c->dev->kobj,
-					&touchkey_attr_group);
-		if (ret) {
-			dev_err(&client->dev, "Failed to create sysfs group\n");
-			goto err_sysfs_init;
-		}
+	}
+	dev_set_drvdata(tkey_i2c->dev, tkey_i2c);
+
+	ret = sysfs_create_group(&tkey_i2c->dev->kobj,
+				&touchkey_attr_group);
+	if (ret) {
+		dev_err(&client->dev, "Failed to create sysfs group\n");
+		goto err_sysfs_init;
+	}
+
+	tkey_i2c->fw_wq = create_singlethread_workqueue(client->name);
+	if (!tkey_i2c->fw_wq) {
+		dev_err(&client->dev, "fail to create workqueue for fw_wq\n");
+		ret = -ENOMEM;
+		goto err_create_fw_wq;
 	}
 
 #if defined(TK_USE_LCDTYPE_CHECK)
@@ -1994,9 +2056,7 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 #if defined(TK_HAS_FIRMWARE_UPDATE)
 tkey_firmupdate_retry_byreboot:
 	if (system_rev >= TK_UPDATABLE_BD_ID) {
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		touchkey_init_fw_name(tkey_i2c);
-#endif
 		touchkey_fw_update(tkey_i2c, FW_BUILT_IN, bforced);
 	}
 #endif
@@ -2030,9 +2090,15 @@ err_firmware_update:
 	free_irq(tkey_i2c->irq, tkey_i2c);
 #endif
 err_request_threaded_irq:
+#ifdef CONFIG_GLOVE_TOUCH
 	mutex_destroy(&tkey_i2c->tsk_glove_lock);
+#endif
+#ifdef TOUCHKEY_BOOSTER
 	mutex_destroy(&tkey_i2c->tsk_dvfs_lock);
+#endif
 err_i2c_check:
+	destroy_workqueue(tkey_i2c->fw_wq);
+err_create_fw_wq:
 	sysfs_remove_group(&tkey_i2c->dev->kobj, &touchkey_attr_group);
 err_sysfs_init:
 	device_destroy(sec_class, (dev_t)NULL);
@@ -2061,7 +2127,7 @@ void touchkey_shutdown(struct i2c_client *client)
 
 struct i2c_driver touchkey_i2c_driver = {
 	.driver = {
-		.name = "sec_touchkey_driver",
+		.name = "sec_touchkey",
 		.owner = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm = &touchkey_pm_ops,

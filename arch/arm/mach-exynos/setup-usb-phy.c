@@ -685,6 +685,11 @@ static int exynos5_usb_phy_host_resume(struct platform_device *pdev)
 		hsic_ctrl |= HSIC_CTRL_FORCESLEEP;
 #endif
 		writel(hsic_ctrl, EXYNOS5_PHY_HSIC_CTRL2);
+#if defined(CONFIG_N1A_3G) || defined(CONFIG_N2A_3G)
+		writel(0xF0, EXYNOS5_PHY_HSIC_TUNE1);
+		pr_info("%s: HSIC phy tune 0x%x\n", __func__,
+			readl(EXYNOS5_PHY_HSIC_TUNE1));
+#endif
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 		if (!strcmp(pdev->name, "s5p-ehci"))
 			set_hsic_lpa_states(STATE_HSIC_LPA_WAKE);
@@ -782,6 +787,11 @@ static int exynos5_usb_phy20_init(struct platform_device *pdev)
 #endif
 	writel(hsic_ctrl, EXYNOS5_PHY_HSIC_CTRL2);
 
+#if defined(CONFIG_N1A_3G) || defined(CONFIG_N2A_3G)
+	writel(0xF0, EXYNOS5_PHY_HSIC_TUNE1);
+	pr_info("%s: HSIC phy tune 0x%x\n", __func__,
+		readl(EXYNOS5_PHY_HSIC_TUNE1));
+#endif
 	udelay(80);
 
 	/* Enable DMA burst bus configuration */
@@ -928,9 +938,15 @@ static int exynos5_usb_phy30_tune(struct platform_device *pdev)
 
 	if (!strcmp(pdata->udc_name, pdev->name)) {
 		/* TODO: Peripheral mode */
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+		/* sqrxtune [8:6] 3b110 : -15% */
+			phytune &= ~(0x7 << 6);
+			phytune |= (0x6 << 6);
+#else
 		/* sqrxtune [8:6] 3b011 : 0% */
 			phytune &= ~(0x7 << 6);
 			phytune |= (0x3 << 6);
+#endif
 		/* txvreftune[25:22] 4'b1011: +10% */
 			phytune &= ~(0xf << 22);
 			phytune |= (0xb << 22);

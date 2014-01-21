@@ -1,6 +1,6 @@
 config SND_SOC_YAMAHA_YMU831
 	tristate
-	depends on SND_SOC && I2C
+	depends on SND_SOC && SPI
 	select SND_HWDEP
 
 config SND_SOC_YAMAHA_YMU831_DEBUG

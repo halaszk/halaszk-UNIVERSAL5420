@@ -292,6 +292,8 @@ static int exynos_drd_switch_set_host(struct usb_otg *otg, struct usb_bus *host)
  *
  * Returns 0 on success otherwise negative errno.
  */
+ extern int is_usb_locked;
+
 static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 {
 	int ret;
@@ -301,6 +303,14 @@ static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 
 	dev_dbg(otg->phy->dev, "Turn %s gadget %s\n",
 			on ? "on" : "off", otg->gadget->name);
+
+	/* Samsung KOR S/W GROUP kmato.kim for MDM*/
+	if (is_usb_locked) {
+		ret = usb_gadget_vbus_disconnect(otg->gadget);
+		pr_info("%s: Becuase MDM abnomal deleted, usb vbus disconnect \n",
+			__func__);
+		return ret;
+	}
 
 	if (on) {
 		/* Start device only if host is off */

@@ -173,21 +173,29 @@ static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 
 		client = ion_client_create(ion_exynos, "DRM");
-		if (IS_ERR(client))
+		if (IS_ERR(client)) {
 			pr_err("%s: Failed to get ion_client of DRM\n",
 				__func__);
+			return -ENOMEM;
+		}
 
 		data.fd = fd_info.fd;
 		data.handle = ion_import_dma_buf(client, data.fd);
 		pr_debug("%s: fd from user space = %d\n",
 				__func__, fd_info.fd);
-		if (IS_ERR(data.handle))
+		if (IS_ERR(data.handle)) {
 			pr_err("%s: Failed to get ion_handle of DRM\n",
 				__func__);
+			ion_client_destroy(client);
+			return -ENOMEM;
+		}
 
-		if (ion_phys(client, data.handle, &fd_info.phys, &len))
+		if (ion_phys(client, data.handle, &fd_info.phys, &len)) {
 			pr_err("%s: Failed to get phys. addr of DRM\n",
 				__func__);
+			ion_client_destroy(client);
+			return -ENOMEM;
+		}
 
 		pr_debug("%s: physical addr from kernel space = 0x%08x\n",
 				__func__, (unsigned int)fd_info.phys);

@@ -40,7 +40,10 @@
 #include <linux/workqueue.h>
 
 #include "dw_mmc.h"
+
+#if defined(CONFIG_BLK_DEV_IO_TRACE)
 #include "../card/queue.h"
+#endif
 
 /* Common flag combinations */
 #define DW_MCI_DATA_ERROR_FLAGS	(SDMMC_INT_DTO | SDMMC_INT_DCRC | \
@@ -75,7 +78,7 @@ struct idmac_desc {
 };
 #endif /* CONFIG_MMC_DW_IDMAC */
 
-#define MAX_TUNING_LOOP	40
+#define MAX_TUNING_LOOP	(MAX_TUNING_RETRIES * 8 * 2)
 static const u8 tuning_blk_pattern_4bit[] = {
 	0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
 	0xc3, 0x3c, 0xcc, 0xff, 0xfe, 0xff, 0xfe, 0xef,
@@ -904,100 +907,6 @@ static int dw_mci_pre_dma_transfer(struct dw_mci *host,
 	return sg_len;
 }
 
-static void dw_mci_ttp_apply(struct dw_mci *host, u32 level, u32 time)
-{
-	struct dw_mci_mon_table *ttp_tbl = host->pdata->tp_mon_tbl;
-
-	if (ttp_tbl) {
-		ttp_tbl = &ttp_tbl[level];
-		if (ttp_tbl->range) {
-			dev_dbg(&host->dev, "%s: sync_cnt=%d mif=%d cpu=%d\n",
-						__func__,
-						host->sync_pre_cnt,
-						ttp_tbl->mif_lock_value,
-						ttp_tbl->cpu_lock_value);
-
-			pm_qos_update_request_timeout(&host->pm_qos_mif,
-							ttp_tbl->mif_lock_value,
-							time);
-			pm_qos_update_request_timeout(&host->pm_qos_cpu,
-							ttp_tbl->cpu_lock_value,
-							time);
-		}
-	}
-}
-
-static void dw_mci_ttp_request(struct dw_mci *host)
-{
-	struct request_list *rq;
-	struct dw_mci_mon_table *ttp_tbl = host->pdata->tp_mon_tbl;
-	unsigned long ttp_timeout = host->pdata->ttp_timeout;
-	u32 sync_cnt;
-	int pre_step = -1;
-	unsigned long timeout_try, timeout;
-
-	if (!host->mqrq->req || !host->mqrq->req->q)
-		return;
-
-	if (!ttp_timeout)
-		ttp_timeout = 500000;
-
-	rq = &host->mqrq->req->q->rq;
-	sync_cnt = rq->count[BLK_RW_SYNC];
-
-	if (!sync_cnt) {
-		if (host->pm_qos_time && host->pm_qos_step > 0 &&
-			time_before(jiffies,host->pm_qos_time +
-				usecs_to_jiffies(ttp_timeout)))
-			dw_mci_ttp_apply(host,0, 0);
-		host->pm_qos_time = 0;
-		host->sync_pre_cnt = 0;
-		host->pm_qos_step = 0;
-		return;
-	}
-
-	/* if it's still under processing to apply pm_qos */
-	if (host->pm_qos_time) {
-		timeout_try = host->pm_qos_time +
-				usecs_to_jiffies(ttp_timeout / 2);
-		timeout = host->pm_qos_time +
-				usecs_to_jiffies(ttp_timeout);
-		/* checking applying pm_qos time */
-		if (time_before(jiffies, timeout_try))
-			return;
-
-		if (time_before(jiffies, timeout)
-			&& abs(host->sync_pre_cnt - sync_cnt) < 2)
-			return;
-
-		pre_step = host->pm_qos_step;
-
-		if (host->sync_pre_cnt < sync_cnt) {
-			ttp_tbl = &ttp_tbl[host->pm_qos_step + 1];
-			if (ttp_tbl->range)
-				host->pm_qos_step++;
-		} else {
-			if (host->pm_qos_step)
-				host->pm_qos_step--;
-		}
-	} else {
-		/* This is first applying */
-		host->pm_qos_step = 0;
-		while (ttp_tbl->range) {
-			if (sync_cnt < ttp_tbl->range)
-				break;
-			host->pm_qos_step++;
-			ttp_tbl = &ttp_tbl[host->pm_qos_step];
-		}
-	}
-
-	if (host->pm_qos_step != pre_step) {
-		host->sync_pre_cnt = sync_cnt;
-		dw_mci_ttp_apply(host, host->pm_qos_step, ttp_timeout);
-		host->pm_qos_time = jiffies;
-	}
-}
-
 static void dw_mci_pre_req(struct mmc_host *mmc,
 			   struct mmc_request *mrq,
 			   bool is_first_req)
@@ -1012,11 +921,6 @@ static void dw_mci_pre_req(struct mmc_host *mmc,
 		data->host_cookie = 0;
 		return;
 	}
-
-	if (slot->host->pdata->tp_mon_tbl &&
-		slot->host->pdata->ttp_enabled &&
-		slot->host->mqrq)
-		dw_mci_ttp_request(slot->host);
 
 	if (dw_mci_pre_dma_transfer(slot->host, mrq->data, 1) < 0)
 		data->host_cookie = 0;
@@ -1207,10 +1111,8 @@ static bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq)
 		} while (time_before(jiffies, timeout));
 
 		/* card is checked every 1s by CMD13 at least */
-		if (mrq->cmd->opcode == MMC_SEND_STATUS) {
-			ret = true;
-			goto out;
-		}
+		if (mrq->cmd->opcode == MMC_SEND_STATUS)
+			return true;
 
 		dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_RESET);
 		/* After CTRL Reset, Should be needed clk val to CIU */
@@ -1517,8 +1419,7 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		spin_unlock(&slot->host->cclk_lock);
 
 		set_bit(DW_MMC_CARD_NEED_INIT, &slot->flags);
-		if (slot->host->pdata->tp_mon_tbl &&
-			!slot->host->pdata->ttp_enabled)
+		if (slot->host->pdata->tp_mon_tbl)
 			schedule_delayed_work(&slot->host->tp_mon, HZ);
 		break;
 	case MMC_POWER_OFF:
@@ -1527,8 +1428,7 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		spin_unlock(&slot->host->cclk_lock);
 
 		if (slot->host->pdata->tp_mon_tbl) {
-			if (!slot->host->pdata->ttp_enabled)
-				cancel_delayed_work_sync(&slot->host->tp_mon);
+			cancel_delayed_work_sync(&slot->host->tp_mon);
 			pm_qos_update_request(&slot->host->pm_qos_mif, 0);
 			pm_qos_update_request(&slot->host->pm_qos_cpu, 0);
 		}
@@ -1704,6 +1604,61 @@ out:
 	return sel;
 }
 
+static s16 get_median_sample_16bits(struct dw_mci *host, u16 map)
+{
+	const u8 iter = 8;
+	u16 __map;
+	s8 i, sel = -1;
+	u8 divratio;
+
+	divratio = (mci_readl(host, CLKSEL) >> 24) & 0x7;
+
+	if (divratio == 1)
+		map = map & (map >> 8);
+
+	for (i = 0; i < iter; i++) {
+		__map = ror16(map, i);
+		if ((__map & 0xe00f) == 0xe00f) {
+			sel = i;
+			goto out;
+		}
+	}
+
+	for (i = 0; i < iter; i++) {
+		__map = ror16(map, i);
+		if ((__map & 0xc007) == 0xc007) {
+			sel = i;
+		goto out;
+		}
+	}
+
+	for (i = 0; i < iter; i++) {
+		__map = ror16(map, i);
+		if ((__map & 0x8003) == 0x8003) {
+			sel = i;
+			goto out;
+		}
+	}
+
+out:
+	return sel;
+}
+
+static void dw_mci_set_fine_tuning_bit(struct dw_mci *host,
+		bool is_fine_tuning)
+{
+	u32 clksel;
+
+	clksel = mci_readl(host, CLKSEL);
+	clksel = (clksel & ~BIT(6));
+	if (is_fine_tuning) {
+		host->pdata->is_fine_tuned = true;
+		clksel |= BIT(6);
+	} else
+		host->pdata->is_fine_tuned = false;
+	mci_writel(host, CLKSEL, clksel);
+}
+
 static void dw_mci_save_drv_st(struct dw_mci_slot *slot)
 {
 	struct dw_mci_board *brd = slot->host->pdata;
@@ -1742,8 +1697,19 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	int compensation;
 	u8 *tuning_blk;
 	u8 blksz;
-	u8 tune, start_tune, map = 0;
-	s8 mid = -1;
+	u8 tune, start_tune;
+	s16 mid = -1;
+	u8 pass_index;
+	u16 map = 0;
+	bool en_fine_tuning = false;
+	bool is_fine_tuning = false;
+	u16 abnormal_result = 0xFF;
+
+	if (host->quirks & DW_MMC_QUIRK_USE_FINE_TUNING &&
+			mmc->tuning_progress & MMC_HS200_TUNING) {
+		en_fine_tuning = true;
+		abnormal_result = 0xFFFF;
+	}
 
 	if (opcode == MMC_SEND_TUNING_BLOCK_HS200) {
 		if (mmc->ios.bus_width == MMC_BUS_WIDTH_8) {
@@ -1774,7 +1740,7 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	if (!tuning_blk)
 		return -ENOMEM;
 
-	start_tune = dw_mci_get_sampling(host);
+	tune = start_tune = dw_mci_get_sampling(host);
 	host->cd_rd_thr = 512;
 	mci_writel(host, CDTHRCTL, host->cd_rd_thr << 16 | 1);
 
@@ -1812,22 +1778,63 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		mrq.data = &data;
 		host->mrq = &mrq;
 
-		tune = dw_mci_tuning_sampling(host);
+		/*
+		 * DDR200 tuning Sequence with fine tuning setup
+		 *
+		 * 0. phase 0 (0 degree) + no fine tuning setup
+		 * - pass_index = 0
+		 * 1. phase 0 + fine tuning setup
+		 * - pass_index = 1
+		 * 2. phase 1 (90 degree) + no fine tuning setup
+		 * - pass_index = 2
+		 * ..
+		 * 15. phase 7 + fine tuning setup
+		 * - pass_index = 15
+		 *
+		 */
+		if (en_fine_tuning) {
+			dw_mci_set_fine_tuning_bit(host, is_fine_tuning);
+			if (is_fine_tuning)
+				tune = dw_mci_tuning_sampling(host);
+		} else
+			tune = dw_mci_tuning_sampling(host);
+		pass_index = tune;
+
+		if (en_fine_tuning) {
+			pass_index *= 2;
+			if (is_fine_tuning)
+				pass_index++;
+			is_fine_tuning = !is_fine_tuning;
+		}
 
 		mmc_wait_for_req(mmc, &mrq);
 
 		if (!cmd.error && !data.error) {
 			if (!memcmp(tuning_blk_pattern, tuning_blk, blksz))
-					map |= (1 << tune);
+					map |= (1 << pass_index);
 		} else {
 			dev_dbg(&host->dev,
 				"Tuning error: cmd.error:%d, data.error:%d\n",
 					cmd.error, data.error);
 		}
 
-		if (start_tune == tune) {
+		if (start_tune == tune && !is_fine_tuning) {
 			map &= ~(host->pdata->tuning_map_mask);
-			mid = get_median_sample(host, map);
+		/*
+		 * if DW_MMC_QUIRK_USE_FINE_TUNING isn't set,
+		 * which means using fine tuning,
+		 * is_fine_tuning would never be changed, is only false.
+		 * So, backward compatibility is reserved.
+		 *
+		 * When using fine tuning, 16 bits pass map is needed.
+		 * And a function to get median value with 16 bit variable
+		 * is needed.
+		 */
+			if (en_fine_tuning)
+				mid = get_median_sample_16bits(host, map);
+			else
+				mid = get_median_sample(host, (u8)map);
+
 			dev_info(&host->dev,
 				"Tuning map: 0x %08x mid: %d\n", map, mid);
 
@@ -1835,8 +1842,8 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 
 			retries--;
 			if (mid >= 0) {
-				if (map != (0xff & ~(host->pdata->tuning_map_mask)) ||
-						!retries) {
+				if (map != (abnormal_result & ~(host->pdata->tuning_map_mask))
+					|| !retries) {
 					tuned = true;
 					break;
 				}
@@ -1853,8 +1860,21 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	dw_mci_restore_drv_st(slot, &compensation);
 	mid = (mid + 8 + compensation) % 8;
 
+	/*
+	 * To set sample value with mid, the value should be divided by 2,
+	 * because mid represents index in pass map extended.(8 -> 16 bits)
+	 * And that mid is odd number, means the selected case includes
+	 * using fine tuning.
+	 */
+	if (en_fine_tuning) {
+		if (mid % 2)
+			dw_mci_set_fine_tuning_bit(host, true);
+
+		mid /= 2;
+	}
+
 	if (tuned) {
-		dw_mci_set_sampling(host, mid);
+		dw_mci_set_sampling(host, (u8)mid);
 		if (host->pdata->only_once_tune)
 			host->pdata->tuned = true;
 	} else {
@@ -2140,6 +2160,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 					cmd != data->stop) {
 				/* To avoid fifo full condition */
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_reset(&host->dev, host);
 
 				if (host->mrq->data->stop)
 					send_stop_cmd(host, host->mrq->data);
@@ -2175,6 +2196,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 
 				/* To avoid fifo full condition */
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_reset(&host->dev, host);
 
 				if (data->stop)
 					send_stop_cmd(host, data);
@@ -2260,6 +2282,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				sg_miter_stop(&host->sg_miter);
 				host->sg = NULL;
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_reset(&host->dev, host);
 			} else {
 				data->bytes_xfered = data->blocks * data->blksz;
 				data->error = 0;
@@ -2336,6 +2359,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 
 			dw_mci_stop_dma(host);
 			set_bit(EVENT_XFER_COMPLETE, &host->completed_events);
+			set_bit(EVENT_DATA_COMPLETE, &host->pending_events);
 
 			state = STATE_DATA_BUSY;
 			break;
@@ -3522,8 +3546,7 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 
 	dw_mci_qos_init(host);
 	if (host->pdata->tp_mon_tbl) {
-		if (!host->pdata->ttp_enabled)
-			INIT_DELAYED_WORK(&host->tp_mon, dw_mci_tp_mon);
+		INIT_DELAYED_WORK(&host->tp_mon, dw_mci_tp_mon);
 		pm_qos_add_request(&host->pm_qos_mif,
 					PM_QOS_BUS_THROUGHPUT, 0);
 		pm_qos_add_request(&host->pm_qos_cpu,
@@ -3659,8 +3682,7 @@ void dw_mci_remove(struct dw_mci *host)
 
 	dw_mci_qos_exit(host);
 	if (host->pdata->tp_mon_tbl) {
-		if (!host->pdata->ttp_enabled)
-			cancel_delayed_work_sync(&host->tp_mon);
+		cancel_delayed_work_sync(&host->tp_mon);
 		pm_qos_remove_request(&host->pm_qos_mif);
 		pm_qos_remove_request(&host->pm_qos_cpu);
 	}
@@ -3730,17 +3752,11 @@ int dw_mci_suspend(struct dw_mci *host)
 
 	if (host->pdata->tp_mon_tbl &&
 		(host->pdata->pm_caps & MMC_PM_KEEP_POWER)) {
-		if (!host->pdata->ttp_enabled) {
-			cancel_delayed_work_sync(&host->tp_mon);
-			host->transferred_cnt = 0;
-			host->cmd_cnt = 0;
-		} else {
-			host->pm_qos_time = 0;
-			host->sync_pre_cnt = 0;
-			host->pm_qos_step = 0;
-		}
+		cancel_delayed_work_sync(&host->tp_mon);
 		pm_qos_update_request(&host->pm_qos_mif, 0);
 		pm_qos_update_request(&host->pm_qos_cpu, 0);
+		host->transferred_cnt = 0;
+		host->cmd_cnt = 0;
 	}
 	if (host->vmmc)
 		regulator_disable(host->vmmc);
@@ -3843,6 +3859,8 @@ int dw_mci_resume(struct dw_mci *host)
 			if (host->pdata->tuned) {
 				dw_mci_set_sampling(host,
 						host->pdata->clk_smpl);
+				dw_mci_set_fine_tuning_bit(host,
+						host->pdata->is_fine_tuned);
 				mci_writel(host, CDTHRCTL,
 						host->cd_rd_thr << 16 | 1);
 			}
@@ -3863,15 +3881,9 @@ int dw_mci_resume(struct dw_mci *host)
 
 	if (host->pdata->tp_mon_tbl &&
 		(host->pdata->pm_caps & MMC_PM_KEEP_POWER)) {
-		if (!host->pdata->ttp_enabled) {
-			host->transferred_cnt = 0;
-			host->cmd_cnt = 0;
-			schedule_delayed_work(&host->tp_mon, HZ);
-		} else {
-			host->pm_qos_time = 0;
-			host->sync_pre_cnt = 0;
-			host->pm_qos_step = 0;
-		}
+		host->transferred_cnt = 0;
+		host->cmd_cnt = 0;
+		schedule_delayed_work(&host->tp_mon, HZ);
 	}
 
 	return 0;

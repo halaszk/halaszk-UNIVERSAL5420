@@ -223,7 +223,7 @@ static void __init exynos_reserve_mem(void)
 #ifdef CONFIG_ION_EXYNOS_DRM_MFC_FW
 		{
 			.name = "drm_mfc_fw",
-			.size = SZ_1M,
+			.size = SZ_2M,
 			{
 				.alignment = SZ_1M,
 			}
@@ -331,11 +331,7 @@ static void __init universal5420_machine_init(void)
 	exynos5_universal5420_clock_init();
 	exynos5_universal5420_mmc_init();
 	exynos5_universal5420_usb_init();
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-	exynos5_vienna_battery_init();
-#else
 	exynos5_universal5420_battery_init();
-#endif
 	exynos5_universal5420_audio_init();
 	exynos5_universal5420_input_init();
 	exynos5_universal5420_display_init();

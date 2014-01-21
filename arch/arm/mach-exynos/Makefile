@@ -115,46 +115,69 @@ obj-$(CONFIG_MACH_UNIVERSAL5410)	+= sec-common.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= mach-universal5420.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-mmc.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-power.o
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= sec-common.o
+
 obj-$(CONFIG_HA)			+= board-h-pmic.o
 obj-$(CONFIG_V1A)			+= board-v1-pmic.o
+obj-$(CONFIG_V2A)			+= board-v1-pmic.o
+obj-$(CONFIG_CHAGALL)			+= board-chagall-pmic.o
 obj-$(CONFIG_N1A)			+= board-n1-pmic.o
+obj-$(CONFIG_N2A)			+= board-n1-pmic.o
+
 obj-$(CONFIG_HA)			+= board-h-thermistor.o
 obj-$(CONFIG_V1A)			+= board-v1-thermistor.o
+obj-$(CONFIG_V2A)			+= board-v1-thermistor.o
+obj-$(CONFIG_CHAGALL)			+= board-v1-thermistor.o
 obj-$(CONFIG_N1A)			+= board-n1-thermistor.o
+obj-$(CONFIG_N2A)			+= board-n1-thermistor.o
+
 obj-$(CONFIG_HA)			+= board-h-gpio.o
 obj-$(CONFIG_V1A)			+= board-v1-gpio.o
+obj-$(CONFIG_V2A)			+= board-v1-gpio.o
+obj-$(CONFIG_CHAGALL)			+= board-chagall-gpio.o
 obj-$(CONFIG_N1A)			+= board-n1-gpio.o
+obj-$(CONFIG_N2A)			+= board-n1-gpio.o
+
 obj-$(CONFIG_SEC_GPIO_DVS)		+= board-universal5420-gpiodvs.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-usb.o
 # obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-audio.o
 obj-$(CONFIG_SND_SOC_ADONISUNIV_YMU831)	+= board-universal5420-audio-y.o
 obj-$(CONFIG_SND_SOC_ADONISUNIV_WM5102)	+= board-universal5420-audio-w.o
-ifeq ($(CONFIG_V1A),y)
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-v1-display.o
-else ifeq ($(CONFIG_N1A),y)
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-v1-display.o
-else
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-display.o
-endif
-ifeq ($(CONFIG_N1A),y)
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-n1-input.o
-else
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-input.o
-endif
+
+obj-$(CONFIG_HA)			+= board-universal5420-display.o
+obj-$(CONFIG_V1A)			+= board-v1-display.o
+obj-$(CONFIG_V2A)			+= board-v1-display.o
+obj-$(CONFIG_CHAGALL)			+= board-chagall-display.o
+obj-$(CONFIG_N1A)			+= board-v1-display.o
+obj-$(CONFIG_N2A)			+= board-v1-display.o
+
+obj-$(CONFIG_V1A)		+= board-vienna-input.o
+obj-$(CONFIG_V2A)		+= board-vienna-input.o
+obj-$(CONFIG_CHAGALL)		+= board-chagall-input.o
+obj-$(CONFIG_N1A)	+= board-n1-input.o
+obj-$(CONFIG_N2A)	+= board-n1-input.o
+obj-$(CONFIG_HA)	+= board-universal5420-input.o
+
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-clock.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-media.o
-obj-$(CONFIG_HA)			+= board-universal5420-fpga.o
-obj-$(CONFIG_V1A)			+= board-v1a-fpga.o
-obj-$(CONFIG_N1A)			+= board-v1a-fpga.o
-obj-$(CONFIG_V1A)			+= board-v1-motor.o
-obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-vibrator.o
-ifeq ($(CONFIG_V1A),y)
-obj-$(CONFIG_BATTERY_SAMSUNG)		+= board-vienna-battery.o
-else ifeq ($(CONFIG_N1A),y)
-obj-$(CONFIG_BATTERY_SAMSUNG)		+= board-lt03-battery.o
+
+ifeq ($(CONFIG_HA),y)
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-fpga.o
 else
-obj-$(CONFIG_BATTERY_SAMSUNG)		+= board-universal5420-battery.o
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-v1a-fpga.o
 endif
+
+obj-$(CONFIG_V1A)			+= board-v1-motor.o
+obj-$(CONFIG_V2A)			+= board-v1-motor.o
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-vibrator.o
+
+obj-$(CONFIG_V1A)		+= board-vienna-battery.o
+obj-$(CONFIG_V2A)		+= board-vienna-battery.o
+obj-$(CONFIG_CHAGALL)		+= board-vienna-battery.o
+obj-$(CONFIG_N1A)		+= board-lt03-battery.o
+obj-$(CONFIG_N2A)		+= board-lt03-battery.o
+obj-$(CONFIG_HA)		+= board-universal5420-battery.o
+
 ifeq ($(CONFIG_LEDS_AN30259A),y)
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-led.o
 endif
@@ -260,6 +283,7 @@ ifeq ($(CONFIG_GPS_BCMxxxxx),y)
 obj-$(CONFIG_GPS_BCM47511)		+= sec_gps_bcm47511.o
 obj-$(CONFIG_GPS_BCM4752)		+= sec_gps_bcm4752.o
 obj-$(CONFIG_GPS_BCM47521)		+= sec_gps_bcm47521.o
+obj-$(CONFIG_GPS_BCM47531)		+= sec_gps_bcm47531.o
 endif
 
 ifeq ($(CONFIG_GPS_CSRxT),y)

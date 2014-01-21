@@ -459,6 +459,9 @@ static ssize_t do_write_log_from_user(struct logger_log *log,
 						(log, log->w_off + i)];
 			tmp[i] = '\0';
 			printk(KERN_INFO"%s\n", tmp);
+#ifdef CONFIG_SEC_DEBUG_TSP_LOG
+			sec_debug_tsp_log("%s\n", tmp);
+#endif
 		}
 	}
 	log->w_off = logger_offset(log, log->w_off + count);

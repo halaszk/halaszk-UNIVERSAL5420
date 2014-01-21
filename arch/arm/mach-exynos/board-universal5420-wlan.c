@@ -77,6 +77,14 @@ void *wlan_static_scan_buf0;
 void *wlan_static_scan_buf1;
 void *wlan_static_dhd_info_buf;
 
+#if defined(CONFIG_N1A)
+#define ENABLE_4339_COB_BT_WAR
+#endif
+
+#ifdef ENABLE_4339_COB_BT_WAR
+static int bt_off = 0;
+#endif /* ENABLE_4339_COB_BT_WAR */
+
 static void *brcm_wlan_mem_prealloc(int section, unsigned long size)
 {
 	if (section == PREALLOC_WLAN_SEC_NUM)
@@ -222,6 +230,17 @@ static int brcm_wlan_power(int onoff)
 	printk(KERN_INFO"%s Enter: power %s\n", __func__, onoff ? "on" : "off");
 
 	if (onoff) {
+#ifdef ENABLE_4339_COB_BT_WAR
+		if(gpio_get_value(GPIO_BT_EN) == 0) {
+			bt_off = 1;
+			gpio_set_value(GPIO_BT_EN, 1);
+			pr_err("[brcm_wlan_power] Bluetooth Power On.\n");
+			msleep(50);
+		}
+		else {
+			bt_off = 0;
+		}
+#endif
 		s3c_config_gpio_alive_table
 			(ARRAY_SIZE(wlan_on_gpio_table), wlan_on_gpio_table);
 		s5p_gpio_set_pd_cfg(GPIO_WLAN_EN, S5P_GPIO_PD_PREV_STATE);
@@ -237,6 +256,14 @@ static int brcm_wlan_power(int onoff)
 		printk(KERN_DEBUG"WLAN: GPIO_WLAN_EN = %d\n",
 		gpio_get_value(GPIO_WLAN_EN));
 	}
+
+#ifdef ENABLE_4339_COB_BT_WAR
+	if(onoff && (bt_off == 1)) {
+		msleep(100);
+		gpio_set_value(GPIO_BT_EN, 0);
+		pr_err("[brcm_wlan_power] Bluetooth Power Off.\n");
+	}
+#endif
 
 	return 0;
 }
@@ -264,7 +291,6 @@ ARRAY_SIZE(wlan_sdio_off_table), wlan_sdio_off_table); }
 #endif
 
 	mmc_force_presence_change(&exynos5_device_dwmci1, onoff);
-	msleep(500); /* wait for carddetect */
 
 	return 0;
 }

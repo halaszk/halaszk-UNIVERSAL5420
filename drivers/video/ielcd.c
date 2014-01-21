@@ -41,6 +41,22 @@ static void __iomem *mdnie_reg;
 static struct resource *s3c_ielcd_mem;
 static void __iomem *s3c_ielcd_base;
 
+static void s3c_check_disp_cmu(void)
+{
+    printk("%s: 0x%08X : CLKMUX_ACLK_300_DISP1\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP2));
+    printk("%s: 0x%08X : CLKMUX_ACLK_200\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP0));
+    printk("%s: 0x%08X : SW_CLKMUX_ACLK_300_DISP1\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP12));
+    printk("%s: 0x%08X : SW_CLKMUX_ACLK_200\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP10));
+    printk("%s: 0x%08X : USER_MUX_ACLK_300_DISP1\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP5));
+    printk("%s: 0x%08X : USER_MUX_ACLK_200_DISP1\n", __func__,
+           __raw_readl(EXYNOS5_CLKSRC_TOP3));
+}
+
 int s3c_ielcd_hw_init(void)
 {
 	s3c_ielcd_mem = request_mem_region(S3C_IELCD_PHY_BASE, S3C_IELCD_MAP_SIZE, "ielcd");
@@ -101,6 +117,8 @@ int s3c_fimd1_display_off(void)
 	cfg &= VIDCON1_VSTATUS_MASK;
 	if (cfg == VIDCON1_VSTATUS_ACTIVE)
 		active = 1;
+
+
 
 	/* FIMD per frame off in active area and direct off in non active area */
 	cfg = readl(base_reg + VIDCON0);
@@ -179,7 +197,7 @@ static void ielcd_set_lcd_size(unsigned int xres, unsigned int yres)
 void s3c_ielcd_hw_trigger_check(void)
 {
 	unsigned int cfg;
-	unsigned char count = 0;
+	unsigned int count = 0;
 	ktime_t start;
 
 	start = ktime_get();
@@ -283,9 +301,11 @@ static void s3c_ielcd_config_i80(void)
 void s3c_ielcd_hw_trigger_set_of_start(void)
 {
 	unsigned int cfg;
-	unsigned char count = 0;
+	unsigned int count = 0;
 	void __iomem *base_reg = fimd_reg;
 	void __iomem *temp_base_reg = mdnie_reg;
+
+	s3c_check_disp_cmu();
 
 	writel(0x77, temp_base_reg+0x4);
 	writel(0x0, temp_base_reg+0x3fc);

@@ -500,6 +500,29 @@ void __init s3cfb_extdsp_set_platdata(struct s3c_fb_pd_win *pd)
 }
 #endif
 
+#ifdef CONFIG_FB_MIC
+static struct resource s5p_mic_resource[] = {
+	[0] = DEFINE_RES_MEM(S5P_PA_MIC, SZ_128),
+};
+
+struct platform_device s5p_device_mic = {
+	.name		= "s5p-mic",
+	.id		= -1,
+	.num_resources	= ARRAY_SIZE(s5p_mic_resource),
+	.resource	= s5p_mic_resource,
+	.dev		= {
+		.dma_mask		= &samsung_device_dma_mask,
+		.coherent_dma_mask	= DMA_BIT_MASK(32),
+	},
+};
+
+void __init s5p_mic_set_platdata(struct s3c_fb_pd_win *pd)
+{
+	s3c_set_platdata(pd, sizeof(struct s3c_fb_pd_win),
+			 &s5p_device_mic);
+}
+#endif /* CONFIG_FB_MIC */
+
 /* HWMON */
 
 #ifdef CONFIG_S3C_DEV_HWMON

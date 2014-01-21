@@ -20,7 +20,7 @@
 #include <plat/gpio-fns.h>
 
 #include <mach/usb3-drd.h>
-#ifdef CONFIG_V1A
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 #include <linux/regulator/consumer.h>
 #endif
 #ifdef CONFIG_USB_GADGET
@@ -94,7 +94,7 @@ static struct dwc3_exynos_data universal5420_drd_pdata __initdata = {
 	.vbus_irq		= -1,
 };
 
-#ifdef CONFIG_V1A
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 void usb30_redriver_en(int enable)
 {
 	struct regulator *regulator;

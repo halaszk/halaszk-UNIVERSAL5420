@@ -17,20 +17,24 @@
 
 #if defined(CONFIG_HA)
 extern void board_h_pmic_init(void);
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 extern void board_v1_pmic_init(void);
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 extern void board_n1_pmic_init(void);
+#elif defined(CONFIG_CHAGALL)
+extern void board_chagall_pmic_init(void);
 #endif
 
 void __init exynos5_universal5420_pmic_init(void)
 {
 #if defined(CONFIG_HA)
 	board_h_pmic_init();
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 	board_v1_pmic_init();
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 	board_n1_pmic_init();
+#elif defined(CONFIG_CHAGALL)
+	board_chagall_pmic_init();
 #endif
 }
 

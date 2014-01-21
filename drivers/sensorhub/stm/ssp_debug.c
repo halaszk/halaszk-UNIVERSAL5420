@@ -221,16 +221,17 @@ void reset_mcu(struct ssp_data *data)
 #ifdef CONFIG_SENSORS_SSP_SENSORHUB
 	ssp_sensorhub_report_notice(data, MSG2SSP_AP_STATUS_RESET);
 #endif
-	if( data->uLastAPState!=0 ) ssp_send_cmd(data, data->uLastAPState, 0);
-	if( data->uLastResumeState != 0) ssp_send_cmd(data, data->uLastResumeState, 0);
+	if (data->uLastAPState != 0)
+		ssp_send_cmd(data, data->uLastAPState, 0);
+	if (data->uLastResumeState != 0)
+		ssp_send_cmd(data, data->uLastResumeState, 0);
 }
 
 void sync_sensor_state(struct ssp_data *data)
 {
-	unsigned char uBuf[2] = {0,};
+	unsigned char uBuf[9] = {0,};
 	unsigned int uSensorCnt;
 	int iRet = 0;
-	proximity_open_calibration(data);
 
 	iRet = set_gyro_cal(data);
 	if (iRet < 0)
@@ -242,31 +243,31 @@ void sync_sensor_state(struct ssp_data *data)
 
 	udelay(10);
 
-	for (uSensorCnt = 0; uSensorCnt < (SENSOR_MAX - 1); uSensorCnt++) {
+	for (uSensorCnt = 0; uSensorCnt < (SENSOR_MAX); uSensorCnt++) {
 		if (atomic_read(&data->aSensorEnable) & (1 << uSensorCnt)) {
-			uBuf[1] = (u8)get_msdelay(data->adDelayBuf[uSensorCnt]);
-			uBuf[0] = (u8)get_delay_cmd(uBuf[1]);
-			send_instruction(data, ADD_SENSOR, uSensorCnt, uBuf, 2);
+			s32 dMsDelay = get_msdelay(data->adDelayBuf[uSensorCnt]);
+
+			memcpy(&uBuf[0], &dMsDelay, 4);
+			memcpy(&uBuf[4], &data->batchLatencyBuf[uSensorCnt], 4);
+			uBuf[8] = data->batchOptBuf[uSensorCnt];
+			send_instruction(data, ADD_SENSOR, uSensorCnt, uBuf, 9);
 			udelay(10);
 		}
 	}
 
 	if (data->bProximityRawEnabled == true) {
-		uBuf[0] = 1;
-		uBuf[1] = 20;
-		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, uBuf, 2);
+		s32 dMsDelay = 20;
+		memcpy(&uBuf[0], &dMsDelay, 4);
+		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, uBuf, 4);
 	}
 
 	set_proximity_threshold(data, data->uProxHiThresh,data->uProxLoThresh);
-
 
 	data->bMcuDumpMode = ssp_check_sec_dump_mode();
 	iRet = ssp_send_cmd(data, MSG2SSP_AP_MCU_SET_DUMPMODE,data->bMcuDumpMode);
 	if (iRet < 0) {
 		pr_err("[SSP]: %s - MSG2SSP_AP_MCU_SET_DUMPMODE failed\n", __func__);
 	}
-
-
 }
 
 static void print_sensordata(struct ssp_data *data, unsigned int uSensor)
@@ -275,49 +276,80 @@ static void print_sensordata(struct ssp_data *data, unsigned int uSensor)
 	case ACCELEROMETER_SENSOR:
 	case GYROSCOPE_SENSOR:
 	case GEOMAGNETIC_SENSOR:
-		ssp_dbg(" %u : %d, %d, %d (%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %d, %d, %d (%ums)\n", uSensor,
 			data->buf[uSensor].x, data->buf[uSensor].y,
 			data->buf[uSensor].z,
 			get_msdelay(data->adDelayBuf[uSensor]));
 		break;
 	case PRESSURE_SENSOR:
-		ssp_dbg(" %u : %d, %d (%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %d, %d (%ums)\n", uSensor,
 			data->buf[uSensor].pressure[0],
 			data->buf[uSensor].pressure[1],
 			get_msdelay(data->adDelayBuf[uSensor]));
 		break;
 	case GESTURE_SENSOR:
-		ssp_dbg(" %u : %d %d %d %d (%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %d %d %d %d (%ums)\n", uSensor,
 			data->buf[uSensor].data[0], data->buf[uSensor].data[1],
 			data->buf[uSensor].data[2], data->buf[uSensor].data[3],
 			get_msdelay(data->adDelayBuf[uSensor]));
 		break;
 	case TEMPERATURE_HUMIDITY_SENSOR:
-		ssp_dbg(" %u : %d %d %d(%ums)\n", uSensor,
-			data->buf[uSensor].data[0], data->buf[uSensor].data[1],
-			data->buf[uSensor].data[2], get_msdelay(data->adDelayBuf[uSensor]));
+		ssp_dbg("[SSP] %u : %d %d %d(%ums)\n", uSensor,
+			data->buf[uSensor].x, data->buf[uSensor].y,
+			data->buf[uSensor].z, get_msdelay(data->adDelayBuf[uSensor]));
 		break;
 	case LIGHT_SENSOR:
 #ifdef CONFIG_SENSORS_SSP_MAX88921
-		ssp_dbg(" %u : %u, %u, %u, %u, %u, %u (%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %u, %u, %u, %u, %u, %u (%ums)\n", uSensor,
 			data->buf[uSensor].r, data->buf[uSensor].g,
 			data->buf[uSensor].b, data->buf[uSensor].w,
 			data->buf[uSensor].ir_cmp, data->buf[uSensor].amb_pga,
 			get_msdelay(data->adDelayBuf[uSensor]));
 #else
-		ssp_dbg(" %u : %u, %u, %u, %u (%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %u, %u, %u, %u (%ums)\n", uSensor,
 			data->buf[uSensor].r, data->buf[uSensor].g,
 			data->buf[uSensor].b, data->buf[uSensor].w,
 			get_msdelay(data->adDelayBuf[uSensor]));
 #endif
 		break;
 	case PROXIMITY_SENSOR:
-		ssp_dbg(" %u : %d %d(%ums)\n", uSensor,
+		ssp_dbg("[SSP] %u : %d %d(%ums)\n", uSensor,
 			data->buf[uSensor].prox[0], data->buf[uSensor].prox[1],
 			get_msdelay(data->adDelayBuf[uSensor]));
 		break;
+	case STEP_DETECTOR:
+		ssp_dbg("[SSP] %u : %u(%ums)\n", uSensor,
+			data->buf[uSensor].step_det,
+			get_msdelay(data->adDelayBuf[uSensor]));
+		break;
+	case GAME_ROTATION_VECTOR:
+	case ROTATION_VECTOR:
+		ssp_dbg("[SSP] %u : %d, %d, %d, %d, %d (%ums)\n", uSensor,
+			data->buf[uSensor].quat_a, data->buf[uSensor].quat_b,
+			data->buf[uSensor].quat_c, data->buf[uSensor].quat_d,
+			data->buf[uSensor].acc_rot,
+			get_msdelay(data->adDelayBuf[uSensor]));
+		break;
+	case SIG_MOTION_SENSOR:
+		ssp_dbg("[SSP] %u : %u(%ums)\n", uSensor,
+			data->buf[uSensor].sig_motion,
+			get_msdelay(data->adDelayBuf[uSensor]));
+		break;
+	case GYRO_UNCALIB_SENSOR:
+		ssp_dbg("[SSP] %u : %d, %d, %d, %d, %d, %d (%ums)\n", uSensor,
+			data->buf[uSensor].uncal_x, data->buf[uSensor].uncal_y,
+			data->buf[uSensor].uncal_z, data->buf[uSensor].offset_x,
+			data->buf[uSensor].offset_y, data->buf[uSensor].offset_z,
+			get_msdelay(data->adDelayBuf[uSensor]));
+		break;
+	case STEP_COUNTER:
+		ssp_dbg("[SSP] %u : %u(%ums)\n", uSensor,
+			data->buf[uSensor].step_diff,
+			get_msdelay(data->adDelayBuf[uSensor]));
+		break;
+
 	default:
-		ssp_dbg("Wrong sensorCnt: %u\n", uSensor);
+		ssp_dbg("[SSP] Wrong sensorCnt: %u\n", uSensor);
 		break;
 	}
 }
@@ -349,8 +381,9 @@ static void debug_work_func(struct work_struct *work)
 		pr_err("[SSP]: %s :set_sensor_position delayed \n", __func__);
 	}
 
-	for (uSensorCnt = 0; uSensorCnt < (SENSOR_MAX - 1); uSensorCnt++)
-		if (atomic_read(&data->aSensorEnable) & (1 << uSensorCnt))
+	for (uSensorCnt = 0; uSensorCnt < (SENSOR_MAX); uSensorCnt++)
+		if ((atomic_read(&data->aSensorEnable) & (1 << uSensorCnt))
+			|| data->batchLatencyBuf[uSensorCnt])
 			print_sensordata(data, uSensorCnt);
 
 	if ((atomic_read(&data->aSensorEnable) & SSP_BYPASS_SENSORS_EN_ALL)\
@@ -374,8 +407,10 @@ static void debug_work_func(struct work_struct *work)
 			reset_mcu(data);
 			data->uResetCnt++;
 			wake_unlock(&data->ssp_wake_lock);
-		} else
+		} else {
+			pr_info("[SSP] : %s - data->uResetCnt == LIMIT_RESET_CNT\n", __func__);
 			ssp_enable(data, false);
+		}
 
 		data->uSsdFailCnt = 0;
 		data->uInstFailCnt = 0;

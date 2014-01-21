@@ -59,6 +59,10 @@ static struct switch_dev switch_dock = {
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI
 #include <linux/i2c/synaptics_rmi.h>
 #endif
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C
+#include <linux/i2c/synaptics_rmi.h>
+#endif
+
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MXTS
 #include <linux/i2c/mxts.h>
 #endif
@@ -158,10 +162,10 @@ static ssize_t switch_store_vbus(struct device *dev,
 DEVICE_ATTR(disable_vbus, 0664, switch_show_vbus,
 	    switch_store_vbus);
 
-#ifdef CONFIG_TARGET_LOCALE_KOR
 static void max77803_set_vbus_state(int state);
 struct device *usb_lock;
-static int is_usb_locked;
+int is_usb_locked;
+EXPORT_SYMBOL(is_usb_locked);
 
 static ssize_t switch_show_usb_lock(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -202,7 +206,6 @@ static ssize_t switch_store_usb_lock(struct device *dev,
 
 static DEVICE_ATTR(enable, 0664,
 		   switch_show_usb_lock, switch_store_usb_lock);
-#endif
 
 static int __init sec_switch_init(void)
 {
@@ -216,20 +219,22 @@ static int __init sec_switch_init(void)
 	}
 
 	ret = device_create_file(switch_dev, &dev_attr_disable_vbus);
-	if (ret)
+	if (ret) {
 		pr_err("%s:%s= Failed to create device file(disable_vbus)!\n",
 				__FILE__, __func__);
+		device_remove_file(switch_dev, &dev_attr_disable_vbus);
+	}
 
-#ifdef CONFIG_TARGET_LOCALE_KOR
 	usb_lock = device_create(sec_class, switch_dev,
 				MKDEV(0, 0), NULL, ".usb_lock");
 
 	if (IS_ERR(usb_lock))
 		pr_err("Failed to create device (usb_lock)!\n");
 
-	if (device_create_file(usb_lock, &dev_attr_enable) < 0)
+	if (device_create_file(usb_lock, &dev_attr_enable) < 0) {
 		pr_err("Failed to create device file(.usblock/enable)!\n");
-#endif
+		device_remove_file(usb_lock, &dev_attr_enable);
+	}
 
 	return ret;
 };
@@ -242,7 +247,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	union power_supply_propval value;
 	static enum cable_type_muic previous_cable_type = CABLE_TYPE_NONE_MUIC;
 
-	pr_info("[BATT] CB enabled %d\n", cable_type);
+	pr_info("[BATT] CB enabled %d, prev_cable_type(%d)\n", cable_type, previous_cable_type);
 
 	/* others setting */
 	switch (cable_type) {
@@ -250,6 +255,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_OTG_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
 	case CABLE_TYPE_MHL_MUIC:
+	case CABLE_TYPE_DESKDOCK_MUIC:
 		is_cable_attached = false;
 		break;
 	case CABLE_TYPE_USB_MUIC:
@@ -262,8 +268,9 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 		is_cable_attached = true;
 		break;
 	case CABLE_TYPE_TA_MUIC:
+	case CABLE_TYPE_LANHUB:
 	case CABLE_TYPE_CARDOCK_MUIC:
-	case CABLE_TYPE_DESKDOCK_MUIC:
+	case CABLE_TYPE_DESKDOCK_TA_MUIC:
 	case CABLE_TYPE_SMARTDOCK_MUIC:
 	case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 	case CABLE_TYPE_AUDIODOCK_MUIC:
@@ -276,16 +283,19 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 		return -EINVAL;
 	}
 
-#if defined(CONFIG_MACH_SLP_NAPLES) || defined(CONFIG_MACH_MIDAS) \
-		|| defined(CONFIG_MACH_GC1) || defined(CONFIG_MACH_T0) \
-		|| defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#ifdef SYNAPTICS_RMI_INFORM_CHARGER
+#if defined(CONFIG_V2A)
+	if (0x6 <= system_rev)
+		tsp_charger_infom(is_cable_attached);
+	else
+#endif
+	synaptics_tsp_charger_infom(cable_type);
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) \
+		|| defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
 	tsp_charger_infom(is_cable_attached);
 #endif
 #if defined(CONFIG_MACH_JA)
 	touchkey_charger_infom(is_cable_attached);
-#endif
-#ifdef SYNAPTICS_RMI_INFORM_CHARGER
-	synaptics_tsp_charger_infom(cable_type);
 #endif
 
 	/*  charger setting */
@@ -298,6 +308,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	switch (cable_type) {
 	case CABLE_TYPE_NONE_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
+	case CABLE_TYPE_DESKDOCK_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 		break;
 	case CABLE_TYPE_MHL_VB_MUIC:
@@ -326,7 +337,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 		break;
 	case CABLE_TYPE_TA_MUIC:
 	case CABLE_TYPE_CARDOCK_MUIC:
-	case CABLE_TYPE_DESKDOCK_MUIC:
+	case CABLE_TYPE_DESKDOCK_TA_MUIC:
 	case CABLE_TYPE_SMARTDOCK_MUIC:
 	case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_MAINS;
@@ -336,6 +347,9 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 		break;
 	case CABLE_TYPE_CDP_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_USB_CDP;
+		break;
+	case CABLE_TYPE_LANHUB:
+		current_cable_type = POWER_SUPPLY_TYPE_LAN_HUB;
 		break;
 	default:
 		pr_err("%s: invalid type for charger:%d\n",
@@ -396,14 +410,13 @@ void max77803_muic_usb_cb(u8 usb_mode)
 #ifdef CONFIG_USB_HOST_NOTIFY
 	struct host_notifier_platform_data *host_noti_pdata =
 	    host_notifier_device.dev.platform_data;
+	int cable_type = max77803_muic_get_charging_type();
 #endif
 
-#ifdef CONFIG_TARGET_LOCALE_KOR
 	if (is_usb_locked) {
 		pr_info("%s: usb locked by mdm\n", __func__);
 		return;
 	}
-#endif
 
 	if (usb_mode == USB_CABLE_ATTACHED) {
 #ifdef CONFIG_MFD_MAX77803
@@ -412,7 +425,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 #ifdef CONFIG_HA_3G
 		if(system_rev >= 6)
 			usb30_redriver_en(1);
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 		usb30_redriver_en(1);
 #endif
 		max77803_set_vbus_state(USB_CABLE_ATTACHED);
@@ -422,13 +435,15 @@ void max77803_muic_usb_cb(u8 usb_mode)
 		g_usbvbus = USB_CABLE_DETACHED;
 #endif
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#ifdef CONFIG_HA_3G
 		usb30en = 0;
+#endif
 #endif
 
 #ifdef CONFIG_HA_3G
 		if(system_rev >= 6)
 			usb30_redriver_en(0);
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 		usb30_redriver_en(0);
 #endif
 		max77803_set_vbus_state(USB_CABLE_DETACHED);
@@ -456,7 +471,14 @@ void max77803_muic_usb_cb(u8 usb_mode)
 	} else if (usb_mode == USB_POWERED_HOST_ATTACHED) {
 #ifdef CONFIG_USB_HOST_NOTIFY
 		host_noti_pdata->powered_booster(1);
-		start_usbhostd_wakelock();
+		if (cable_type == CABLE_TYPE_LANHUB)
+		{
+			host_noti_pdata->ndev.mode = NOTIFY_HOST_MODE;
+			if (host_noti_pdata->usbhostd_start)
+				host_noti_pdata->usbhostd_start();
+		}
+		else
+			start_usbhostd_wakelock();
 #endif
 		max77803_check_id_state(0);
 		pr_info("%s - USB_POWERED_HOST_ATTACHED\n", __func__);
@@ -464,7 +486,14 @@ void max77803_muic_usb_cb(u8 usb_mode)
 		max77803_check_id_state(1);
 #ifdef CONFIG_USB_HOST_NOTIFY
 		host_noti_pdata->powered_booster(0);
-		stop_usbhostd_wakelock();
+		if (cable_type == CABLE_TYPE_LANHUB)
+		{
+			host_noti_pdata->ndev.mode = NOTIFY_NONE_MODE;
+			if (host_noti_pdata->usbhostd_stop)
+				host_noti_pdata->usbhostd_stop();
+		}
+		else
+			stop_usbhostd_wakelock();
 #endif
 		pr_info("%s - USB_POWERED_HOST_DETACHED\n", __func__);
 	}
@@ -492,6 +521,7 @@ bool max77803_muic_is_mhl_attached(void)
 
 void max77803_muic_dock_cb(int type)
 {
+	pr_info("%s\n", __func__);
 #ifdef CONFIG_JACK_MON
 	jack_event_handler("cradle", type);
 #endif

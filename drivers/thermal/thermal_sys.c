@@ -850,7 +850,7 @@ static void thermal_zone_device_passive(struct thermal_zone_device *tz,
 
 	if (temp >= trip_temp) {
 		for (count = trip; count > 0; count--) {
-			if (temp > temp_level[count-1]) {
+			if (temp >= temp_level[count - 1]) {
 				list_for_each_entry(instance, &tz->cooling_devices, node) {
 					cdev = instance->cdev;
 					cdev->ops->set_cur_state(cdev, count);

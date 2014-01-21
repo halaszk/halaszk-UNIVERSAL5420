@@ -70,23 +70,6 @@ module_param_named(slave_ttl, w1_max_slave_ttl, int, 0);
 DEFINE_MUTEX(w1_mlock);
 LIST_HEAD(w1_masters);
 
-//---------------------------------------------------------------------
-// Count total security fail
-//
-// int reseult - result of slave node state
-//
-int fail_cnt = 0;
-
-void w1_ds28el15_fail_count(int result)
-{
-	if (result == 0)
-		fail_cnt = 0;
-	else
-		fail_cnt++;
-
-	if (fail_cnt > 100)	fail_cnt = 0;
-}
-
 static int w1_attach_slave_device(struct w1_master *dev, struct w1_reg_num *rn);
 
 static int w1_master_match(struct device *dev, struct device_driver *drv)
@@ -538,6 +521,10 @@ static ssize_t w1_master_attribute_show_verify_mac(struct device *dev, struct de
 	struct list_head *ent, *n;
 	struct w1_slave *sl = NULL;
 
+	pr_info("COVER ACT 1 %s\n", __func__);
+
+	w1_master_search();
+
 	list_for_each_safe(ent, n, &md->slist)
 		sl = list_entry(ent, struct w1_slave, w1_slave_entry);
 
@@ -552,15 +539,16 @@ static ssize_t w1_master_attribute_show_verify_mac(struct device *dev, struct de
 
 static ssize_t w1_master_attribute_show_check_id(struct device *dev, struct device_attribute *attr, char *buf)
 {
+	pr_info("COVER ACT 2 %s\n", __func__);
 	return sprintf(buf, "%d\n", id);
 }
 
 static ssize_t w1_master_attribute_show_check_color(struct device *dev, struct device_attribute *attr, char *buf)
 {
+	pr_info("COVER ACT 2 %s\n", __func__);
 	return sprintf(buf, "%d\n", color);
 }
 /* need to add */
-
 
 #define W1_MASTER_ATTR_RO(_name, _mode)				\
 	struct device_attribute w1_master_attribute_##_name =	\
@@ -626,7 +614,7 @@ static int w1_uevent(struct device *dev, struct kobj_uevent_env *env)
 	struct w1_master *md = NULL;
 	struct w1_slave *sl = NULL;
 	char *event_owner, *name;
-	int err;
+	int err = 0;
 
 	if (dev->driver == &w1_master_driver) {
 		md = container_of(dev, struct w1_master, dev);
@@ -676,7 +664,6 @@ void w1_master_search(void)
 {
 	w1_search_process(master_dev, W1_SEARCH);
 }
-EXPORT_SYMBOL(w1_master_search);
 #endif
 
 static int __w1_attach_slave_device(struct w1_slave *sl)
@@ -925,14 +912,11 @@ void w1_slave_found(struct w1_master *dev, u64 rn)
 	if (sl) {
 		set_bit(W1_SLAVE_ACTIVE, (long *)&sl->flags);
 		printk(KERN_ERR "%s : family id=0x%x\n", __func__, sl->reg_num.family);
-		w1_ds28el15_fail_count(0);
 	} else {
 		printk(KERN_ERR "%s : no slave before, id=0x%x\n", __func__, tmp->family);
 
 		if (rn && tmp->crc == w1_calc_crc8((u8 *)&rn_le, 7))
 			w1_attach_slave_device(dev, tmp);
-
-		w1_ds28el15_fail_count(-1);
 	}
 
 	atomic_dec(&dev->refcnt);
@@ -979,7 +963,6 @@ void w1_search(struct w1_master *dev, u8 search_type, w1_slave_found_callback cb
 		 */
 		if (w1_reset_bus(dev)) {
 			dev_dbg(&dev->dev, "No devices present on the wire.\n");
-			w1_ds28el15_fail_count(-1);
 			break;
 		}
 

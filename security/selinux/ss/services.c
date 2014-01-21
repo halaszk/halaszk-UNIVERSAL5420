@@ -1848,11 +1848,17 @@ int security_load_policy(void *data, size_t len)
 		ss_initialized = 1;
 		seqno = ++latest_granting;
 		selinux_complete_init();
+		printk(KERN_INFO "SELinux: selinux_complete_init done...\n");
 		avc_ss_reset(seqno);
+		printk(KERN_INFO "SELinux: avc_ss_reset(seqno) done...\n");
 		selnl_notify_policyload(seqno);
+		printk(KERN_INFO "SELinux: selnl_notify_policyload done...\n");
 		selinux_status_update_policyload(seqno);
+		printk(KERN_INFO "SELinux: selinux_status_update_policyload done...\n");
 		selinux_netlbl_cache_invalidate();
+		printk(KERN_INFO "SELinux: selinux_netlbl_cache_invalidate done...\n");
 		selinux_xfrm_notify_policyload();
+		printk(KERN_INFO "SELinux: selinux_xfrm_notify_policyload done...\n");
 		return 0;
 	}
 

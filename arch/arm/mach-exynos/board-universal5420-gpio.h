@@ -17,20 +17,24 @@
 
 #if defined(CONFIG_HA)
 extern void board_h_gpio_init(void);
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 extern void board_v1_gpio_init(void);
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 extern void board_n1_gpio_init(void);
+#elif defined(CONFIG_CHAGALL)
+extern void board_chagall_gpio_init(void);
 #endif
 
 void __init exynos5_universal5420_gpio_init(void)
 {
 #if defined(CONFIG_HA)
 	board_h_gpio_init();
-#elif defined(CONFIG_V1A)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 	board_v1_gpio_init();
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 	board_n1_gpio_init();
+#elif defined(CONFIG_CHAGALL)
+	board_chagall_gpio_init();
 #endif
 }
 

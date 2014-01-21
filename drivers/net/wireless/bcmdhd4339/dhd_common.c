@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_common.c 420391 2013-08-27 05:39:38Z $
+ * $Id: dhd_common.c 419132 2013-08-19 21:33:05Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -50,6 +50,9 @@
 #include <proto/bt_amp_hci.h>
 #include <dhd_bta.h>
 #endif
+#ifdef PNO_SUPPORT
+#include <dhd_pno.h>
+#endif
 #ifdef SET_RANDOM_MAC_SOFTAP
 #include <linux/random.h>
 #include <linux/jiffies.h>
@@ -75,8 +78,10 @@ int dhd_msg_level = DHD_ERROR_VAL;
 
 #include <wl_iw.h>
 
+#ifdef WRITE_WLANINFO
 char fw_path[MOD_PARAM_PATHLEN];
 char nv_path[MOD_PARAM_PATHLEN];
+#endif
 
 #ifdef SOFTAP
 char fw_path2[MOD_PARAM_PATHLEN];
@@ -1288,6 +1293,16 @@ wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 		memcpy((void *)(&pvt_data->event.event_type), &temp,
 		       sizeof(pvt_data->event.event_type));
 	}
+	case WLC_E_PFN_NET_FOUND:
+	case WLC_E_PFN_NET_LOST:
+		break;
+	case WLC_E_PFN_BSSID_NET_FOUND:
+	case WLC_E_PFN_BSSID_NET_LOST:
+	case WLC_E_PFN_BEST_BATCHING:
+#ifdef PNO_SUPPORT
+		dhd_pno_event_handler(dhd_pub, event, (void *)event_data);
+#endif
+		break;
 		/* These are what external supplicant/authenticator wants */
 		/* fall through */
 	case WLC_E_LINK:
@@ -2172,208 +2187,6 @@ bool dhd_support_sta_mode(dhd_pub_t *dhd)
 		return TRUE;
 }
 
-
-#if defined(PNO_SUPPORT)
-int
-dhd_pno_clean(dhd_pub_t *dhd)
-{
-	char iovbuf[128];
-	int pfn_enabled = 0;
-	int iov_len = 0;
-	int ret;
-
-	/* Disable pfn */
-	iov_len = bcm_mkiovar("pfn", (char *)&pfn_enabled, 4, iovbuf, sizeof(iovbuf));
-	if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0)) >= 0) {
-		/* clear pfn */
-		iov_len = bcm_mkiovar("pfnclear", 0, 0, iovbuf, sizeof(iovbuf));
-		if (iov_len) {
-			if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf,
-			                            iov_len, TRUE, 0)) < 0) {
-				DHD_ERROR(("%s failed code %d\n", __FUNCTION__, ret));
-			}
-		}
-		else {
-			ret = -1;
-			DHD_ERROR(("%s failed code %d\n", __FUNCTION__, iov_len));
-		}
-	}
-	else
-		DHD_ERROR(("%s failed code %d\n", __FUNCTION__, ret));
-
-	return ret;
-}
-
-int
-dhd_pno_enable(dhd_pub_t *dhd, int pfn_enabled)
-{
-	char iovbuf[128];
-	int ret = -1;
-
-	if ((!dhd) && ((pfn_enabled != 0) || (pfn_enabled != 1))) {
-		DHD_ERROR(("%s error exit\n", __FUNCTION__));
-		return ret;
-	}
-
-#ifndef WL_SCHED_SCAN
-	if (!dhd_support_sta_mode(dhd))
-		return (ret);
-
-	memset(iovbuf, 0, sizeof(iovbuf));
-
-	if ((pfn_enabled) && (dhd_is_associated(dhd, NULL, NULL) == TRUE)) {
-		DHD_ERROR(("%s pno is NOT enable : called in assoc mode , ignore\n", __FUNCTION__));
-		return ret;
-	}
-#endif /* !WL_SCHED_SCAN */
-
-	/* Enable/disable PNO */
-	if ((ret = bcm_mkiovar("pfn", (char *)&pfn_enabled, 4, iovbuf, sizeof(iovbuf))) > 0) {
-		if ((ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR,
-			iovbuf, sizeof(iovbuf), TRUE, 0)) < 0) {
-			DHD_ERROR(("%s failed for error=%d\n", __FUNCTION__, ret));
-			return ret;
-		}
-		else {
-			dhd->pno_enable = pfn_enabled;
-			DHD_TRACE(("%s set pno as %s\n",
-				__FUNCTION__, dhd->pno_enable ? "Enable" : "Disable"));
-		}
-	}
-	else DHD_ERROR(("%s failed err=%d\n", __FUNCTION__, ret));
-
-	return ret;
-}
-
-/* Function to execute combined scan */
-int
-dhd_pno_set(dhd_pub_t *dhd, wlc_ssid_t* ssids_local, int nssid, ushort scan_fr,
-	int pno_repeat, int pno_freq_expo_max)
-{
-	int err = -1;
-	char iovbuf[128];
-	int k, i;
-	wl_pfn_param_t pfn_param;
-	wl_pfn_t	pfn_element;
-	uint len = 0;
-
-	DHD_TRACE(("%s nssid=%d nchan=%d\n", __FUNCTION__, nssid, scan_fr));
-
-	if ((!dhd) || (!ssids_local)) {
-		DHD_ERROR(("%s error exit(%s %s)\n", __FUNCTION__,
-		(!dhd)?"dhd is null":"", (!ssids_local)?"ssid is null":""));
-		err = -1;
-		return err;
-	}
-#ifndef WL_SCHED_SCAN
-	if (!dhd_support_sta_mode(dhd))
-		return err;
-#endif /* !WL_SCHED_SCAN */
-
-	/* Check for broadcast ssid */
-	for (k = 0; k < nssid; k++) {
-		if (!ssids_local[k].SSID_len) {
-			DHD_ERROR(("%d: Broadcast SSID is ilegal for PNO setting\n", k));
-			return err;
-		}
-	}
-/* #define  PNO_DUMP 1 */
-#ifdef PNO_DUMP
-	{
-		int j;
-		for (j = 0; j < nssid; j++) {
-			DHD_ERROR(("%d: scan  for  %s size =%d\n", j,
-				ssids_local[j].SSID, ssids_local[j].SSID_len));
-		}
-	}
-#endif /* PNO_DUMP */
-
-	/* clean up everything */
-	if  ((err = dhd_pno_clean(dhd)) < 0) {
-		DHD_ERROR(("%s failed error=%d\n", __FUNCTION__, err));
-		return err;
-	}
-	memset(iovbuf, 0, sizeof(iovbuf));
-	memset(&pfn_param, 0, sizeof(pfn_param));
-	memset(&pfn_element, 0, sizeof(pfn_element));
-
-	/* set pfn parameters */
-	pfn_param.version = htod32(PFN_VERSION);
-	pfn_param.flags = htod16((PFN_LIST_ORDER << SORT_CRITERIA_BIT));
-
-	/* check and set extra pno params */
-	if ((pno_repeat != 0) || (pno_freq_expo_max != 0)) {
-		pfn_param.flags |= htod16(ENABLE << ENABLE_ADAPTSCAN_BIT);
-		pfn_param.repeat = (uchar) (pno_repeat);
-		pfn_param.exp = (uchar) (pno_freq_expo_max);
-	}
-	/* set up pno scan fr */
-	if (scan_fr  != 0)
-		pfn_param.scan_freq = htod32(scan_fr);
-
-	if (pfn_param.scan_freq > PNO_SCAN_MAX_FW_SEC) {
-		DHD_ERROR(("%s pno freq above %d sec\n", __FUNCTION__, PNO_SCAN_MAX_FW_SEC));
-		return err;
-	}
-	if (pfn_param.scan_freq < PNO_SCAN_MIN_FW_SEC) {
-		DHD_ERROR(("%s pno freq less %d sec\n", __FUNCTION__, PNO_SCAN_MIN_FW_SEC));
-		return err;
-	}
-
-	len = bcm_mkiovar("pfn_set", (char *)&pfn_param, sizeof(pfn_param), iovbuf, sizeof(iovbuf));
-	if ((err = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, len, TRUE, 0)) < 0) {
-				DHD_ERROR(("%s pfn_set failed for error=%d\n",
-					__FUNCTION__, err));
-				return err;
-	}
-
-	/* set all pfn ssid */
-	for (i = 0; i < nssid; i++) {
-
-		pfn_element.infra = htod32(DOT11_BSSTYPE_INFRASTRUCTURE);
-		pfn_element.auth = (DOT11_OPEN_SYSTEM);
-		pfn_element.wpa_auth = htod32(WPA_AUTH_PFN_ANY);
-		pfn_element.wsec = htod32(0);
-		pfn_element.infra = htod32(1);
-		pfn_element.flags = htod32(ENABLE << WL_PFN_HIDDEN_BIT);
-		memcpy((char *)pfn_element.ssid.SSID, ssids_local[i].SSID, ssids_local[i].SSID_len);
-		pfn_element.ssid.SSID_len = ssids_local[i].SSID_len;
-
-		if ((len =
-		bcm_mkiovar("pfn_add", (char *)&pfn_element,
-			sizeof(pfn_element), iovbuf, sizeof(iovbuf))) > 0) {
-			if ((err =
-			dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, len, TRUE, 0)) < 0) {
-				DHD_ERROR(("%s failed for i=%d error=%d\n",
-					__FUNCTION__, i, err));
-				return err;
-			}
-			else
-				DHD_TRACE(("%s set OK with PNO time=%d repeat=%d max_adjust=%d\n",
-					__FUNCTION__, pfn_param.scan_freq,
-					pfn_param.repeat, pfn_param.exp));
-		}
-		else DHD_ERROR(("%s failed err=%d\n", __FUNCTION__, err));
-	}
-
-	/* Enable PNO */
-	/* dhd_pno_enable(dhd, 1); */
-	return err;
-}
-
-int
-dhd_pno_get_status(dhd_pub_t *dhd)
-{
-	int ret = -1;
-
-	if (!dhd)
-		return ret;
-	else
-		return (dhd->pno_enable);
-}
-
-#endif /* OEM_ANDROID && PNO_SUPPORT */
-
 #if defined(KEEP_ALIVE)
 int dhd_keep_alive_onoff(dhd_pub_t *dhd)
 {
@@ -2666,238 +2479,3 @@ wl_iw_parse_channel_list(char** list_str, uint16* channel_list, int channel_num)
 	*list_str = str;
 	return num;
 }
-
-#ifdef DEBUG_BCN_LOSS
-
-char bufdata[2048];
-
-#define	PRVAL(name)	pbuf += sprintf(pbuf, "%s %u ", #name, dtoh32(cnt->name))
-#define	PRVALSIX(name)	pbuf += sprintf(pbuf, "%s %u ", #name, dtoh32(cnt_six->name))
-#define	PRNL()		pbuf += sprintf(pbuf, "\n")
-
-#define WL_CNT_VERSION_SIX 6
-
-int wl_counters_save(dhd_pub_t *dhd, int print_count)
-{
-	char *statsbuf;
-	wl_cnt_t *cnt;
-	wl_cnt_ver_six_t *cnt_six;
-	int err;
-	uint i;
-	char *pbuf;
-	uint16 ver;
-
-	printk("%s : Entered.\n", __FUNCTION__);
-
-	if (strlen(bufdata) && (print_count == 1)) {
-		printk("%s : wl counters at conneted done.\n", __FUNCTION__);
-		for (i = 0; i < 2; i++) {
-			printk("%s \n", &bufdata[1024*i]);
-			if (strlen(&bufdata[1024*i]) == 0) {
-				printk("Done. \n");
-				break;
-			}
-		}
-	}
-	memset(&bufdata, 0, sizeof(bufdata));
-	bcm_mkiovar("counters", 0, 0, bufdata, sizeof(bufdata));
-	err = dhd_wl_ioctl_cmd(dhd, WLC_GET_VAR, bufdata, sizeof(bufdata), FALSE, 0);
-	if (err) {
-		DHD_ERROR(("%s: fail to get counters err = %d\n", __FUNCTION__, err));
-		return (-1);
-	}
-
-	statsbuf = (char *)bufdata;
-
-	ver = *(uint16*)statsbuf;
-
-	cnt_six = (wl_cnt_ver_six_t*)MALLOC(dhd->osh, sizeof(wl_cnt_ver_six_t));
-	if (cnt_six == NULL) {
-		printf("\tCan not allocate %d bytes for counters six struct\n",
-			(int)sizeof(wl_cnt_ver_six_t));
-		return (-1);
-	} else
-		memcpy(cnt_six, bufdata, sizeof(wl_cnt_ver_six_t));
-
-	cnt = (wl_cnt_t*)MALLOC(dhd->osh, sizeof(wl_cnt_t));
-	if (cnt == NULL) {
-		printf("\tCan not allocate %d bytes for counters struct\n",
-			(int)sizeof(wl_cnt_t));
-		MFREE(dhd->osh, cnt_six, sizeof(wl_cnt_ver_six_t));
-		return (-1);
-	} else
-		memcpy(cnt, bufdata, sizeof(wl_cnt_t));
-
-	memset(&bufdata, 0, sizeof(bufdata));
-	pbuf = bufdata;
-
-	/* summary stat counter line */
-	PRVAL(txframe); PRVAL(txbyte); PRVAL(txretrans); PRVAL(txerror);
-	PRVAL(rxframe); PRVAL(rxbyte); PRVAL(rxerror); PRNL();
-
-	PRVAL(txprshort); PRVAL(txdmawar); PRVAL(txnobuf); PRVAL(txnoassoc);
-	PRVAL(txchit); PRVAL(txcmiss); PRNL();
-
-	PRVAL(reset); PRVAL(txserr); PRVAL(txphyerr); PRVAL(txphycrs);
-	PRVAL(txfail); PRVAL(tbtt); PRNL();
-
-	pbuf += sprintf(pbuf, "d11_txfrag %d d11_txmulti %d d11_txretry %d d11_txretrie %d\n",
-		dtoh32(cnt->txfrag), dtoh32(cnt->txmulti), dtoh32(cnt->txretry),
-		dtoh32(cnt->txretrie));
-
-	pbuf += sprintf(pbuf, "d11_txrts %d d11_txnocts %d d11_txnoack %d d11_txfrmsnt %d\n",
-		dtoh32(cnt->txrts), dtoh32(cnt->txnocts), dtoh32(cnt->txnoack),
-		dtoh32(cnt->txfrmsnt));
-
-	PRVAL(rxcrc); PRVAL(rxnobuf); PRVAL(rxnondata); PRVAL(rxbadds);
-	PRVAL(rxbadcm); PRVAL(rxdup); PRVAL(rxfragerr); PRNL();
-
-	PRVAL(rxrunt); PRVAL(rxgiant); PRVAL(rxnoscb); PRVAL(rxbadproto);
-	PRVAL(rxbadsrcmac); PRNL();
-
-	pbuf += sprintf(pbuf, "d11_rxfrag %d d11_rxmulti %d d11_rxundec %d\n",
-		dtoh32(cnt->rxfrag), dtoh32(cnt->rxmulti), dtoh32(cnt->rxundec));
-
-	PRVAL(rxctl); PRVAL(rxbadda); PRVAL(rxfilter); PRNL();
-
-	pbuf += sprintf(pbuf, "rxuflo: ");
-	for (i = 0; i < NFIFO; i++)
-		pbuf += sprintf(pbuf, "%d ", dtoh32(cnt->rxuflo[i]));
-	pbuf += sprintf(pbuf, "\n");
-	PRVAL(txallfrm); PRVAL(txrtsfrm); PRVAL(txctsfrm); PRVAL(txackfrm);
-#if WL_CNT_T_VERSION > 8
-	PRVAL(txback);
-#endif
-
-	PRNL();
-	PRVAL(txdnlfrm); PRVAL(txbcnfrm); PRVAL(txtplunfl); PRVAL(txphyerr); PRNL();
-	pbuf += sprintf(pbuf, "txfunfl: ");
-	for (i = 0; i < NFIFO; i++)
-		pbuf += sprintf(pbuf, "%d ", dtoh32(cnt->txfunfl[i]));
-	pbuf += sprintf(pbuf, "\n");
-
-	/* WPA2 counters */
-	PRNL();
-	if ((cnt->version == WL_CNT_VERSION_SIX) && (cnt->version != WL_CNT_T_VERSION)) {
-		PRVALSIX(tkipmicfaill); PRVALSIX(tkipicverr); PRVALSIX(tkipcntrmsr); PRNL();
-		PRVALSIX(tkipreplay); PRVALSIX(ccmpfmterr); PRVALSIX(ccmpreplay); PRNL();
-		PRVALSIX(ccmpundec); PRVALSIX(fourwayfail); PRVALSIX(wepundec); PRNL();
-		PRVALSIX(wepicverr); PRVALSIX(decsuccess); PRVALSIX(rxundec); PRNL();
-	} else {
-		PRVAL(tkipmicfaill); PRVAL(tkipicverr); PRVAL(tkipcntrmsr); PRNL();
-		PRVAL(tkipreplay); PRVAL(ccmpfmterr); PRVAL(ccmpreplay); PRNL();
-		PRVAL(ccmpundec); PRVAL(fourwayfail); PRVAL(wepundec); PRNL();
-		PRVAL(wepicverr); PRVAL(decsuccess); PRVAL(rxundec); PRNL();
-	}
-	PRNL();
-	PRVAL(rxfrmtoolong); PRVAL(rxfrmtooshrt);
-#if WL_CNT_T_VERSION > 8
-	PRVAL(rxtoolate);
-#endif
-
-	PRVAL(rxinvmachdr); PRVAL(rxbadfcs); PRNL();
-	PRVAL(rxbadplcp); PRVAL(rxcrsglitch);
-	PRVAL(bphy_rxcrsglitch);
-#if WL_CNT_T_VERSION > 8
-	PRVAL(bphy_badplcp);
-#endif
-	PRNL();
-	PRVAL(rxstrt); PRVAL(rxdfrmucastmbss);
-	PRVAL(rxmfrmucastmbss); PRVAL(rxcfrmucast); PRNL();
-	PRVAL(rxrtsucast); PRVAL(rxctsucast);
-	PRVAL(rxackucast);
-#if WL_CNT_T_VERSION > 8
-	PRVAL(rxback);
-#endif
-	PRNL();
-	PRVAL(rxdfrmocast); PRVAL(rxmfrmocast); PRVAL(rxcfrmocast); PRNL();
-	PRVAL(rxrtsocast); PRVAL(rxctsocast);
-	PRVAL(rxdfrmmcast); PRVAL(rxmfrmmcast); PRNL();
-	PRVAL(rxcfrmmcast); PRVAL(rxbeaconmbss);
-	PRVAL(rxdfrmucastobss); PRVAL(rxbeaconobss); PRNL();
-	PRVAL(rxrsptmout); PRVAL(bcntxcancl);
-	PRVAL(rxf0ovfl); PRVAL(rxf1ovfl); PRNL();
-	PRVAL(rxf2ovfl); PRVAL(txsfovfl); PRVAL(pmqovfl); PRNL();
-	PRVAL(rxcgprqfrm); PRVAL(rxcgprsqovfl);
-	PRVAL(txcgprsfail); PRVAL(txcgprssuc); PRNL();
-	PRVAL(prs_timeout); PRVAL(rxnack); PRVAL(frmscons);
-	PRVAL(prs_timeout);
-#if WL_CNT_T_VERSION > 8
-	PRVAL(rxdrop20s);
-	PRVAL(txfbw);
-#endif
-
-	PRNL();
-	PRVAL(txphyerror); PRVAL(txchanrej); PRNL();
-
-	if ((cnt->version == WL_CNT_VERSION_SIX) && (cnt->version != WL_CNT_T_VERSION)) {
-		/* per-rate receive counters */
-		PRVALSIX(rx1mbps); PRVALSIX(rx2mbps); PRVALSIX(rx5mbps5); PRNL();
-		PRVALSIX(rx6mbps); PRVALSIX(rx9mbps); PRVALSIX(rx11mbps); PRNL();
-		PRVALSIX(rx12mbps); PRVALSIX(rx18mbps); PRVALSIX(rx24mbps); PRNL();
-		PRVALSIX(rx36mbps); PRVALSIX(rx48mbps); PRVALSIX(rx54mbps); PRNL();
-
-		PRVALSIX(pktengrxducast); PRVALSIX(pktengrxdmcast); PRNL();
-
-		PRVALSIX(txmpdu_sgi); PRVALSIX(rxmpdu_sgi); PRVALSIX(txmpdu_stbc);
-		PRVALSIX(rxmpdu_stbc); PRNL();
-	} else {
-		if (cnt->version >= 4) {
-			/* per-rate receive counters */
-			PRVAL(rx1mbps); PRVAL(rx2mbps); PRVAL(rx5mbps5); PRNL();
-			PRVAL(rx6mbps); PRVAL(rx9mbps); PRVAL(rx11mbps); PRNL();
-			PRVAL(rx12mbps); PRVAL(rx18mbps); PRVAL(rx24mbps); PRNL();
-			PRVAL(rx36mbps); PRVAL(rx48mbps); PRVAL(rx54mbps); PRNL();
-		}
-
-		if (cnt->version >= 5) {
-			PRVAL(pktengrxducast); PRVAL(pktengrxdmcast); PRNL();
-		}
-
-		if (cnt->version >= 6) {
-			PRVAL(txmpdu_sgi); PRVAL(rxmpdu_sgi); PRVAL(txmpdu_stbc);
-			PRVAL(rxmpdu_stbc); PRNL();
-		}
-
-		if (cnt->version >= 8) {
-			PRVAL(reinit); PRNL();
-			if (cnt->length >= OFFSETOF(wl_cnt_t, cso_passthrough) + sizeof(uint32)) {
-				PRVAL(cso_normal);
-				PRVAL(cso_passthrough);
-				PRNL();
-			}
-			PRVAL(chained); PRVAL(chainedsz1); PRVAL(unchained); PRVAL(maxchainsz);
-			PRVAL(currchainsz); PRNL();
-		}
-#if WL_CNT_T_VERSION > 8
-		if (cnt->version >= 9) {
-			PRVAL(pciereset); PRVAL(cfgrestore); PRNL();
-		}
-#endif
-	}
-
-	pbuf += sprintf(pbuf, "\n");
-
-	if (print_count == 1) {
-		for (i = 0; i < 2; i++) {
-			printk("%s : wl counters at this time.\n", __FUNCTION__);
-			printk("%s \n", &bufdata[1024*i]);
-			if (strlen(&bufdata[1024*i]) == 0) {
-				printk("Done. \n");
-				break;
-			}
-		}
-	}
-
-	if (cnt)
-		MFREE(dhd->osh, cnt, sizeof(wl_cnt_t));
-
-	if (cnt_six)
-		MFREE(dhd->osh, cnt_six, sizeof(wl_cnt_ver_six_t));
-
-
-	printk("%s : Done.\n", __FUNCTION__);
-
-	return (0);
-}
-#endif /* DEBUG_BCN_LOSS */

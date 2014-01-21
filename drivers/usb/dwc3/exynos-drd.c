@@ -322,6 +322,8 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 			pdata->phy_crport_ctrl(pdev, 0x12, 0xA000);
 #ifdef CONFIG_HA_3G
 		pdata->phy_crport_ctrl(pdev, 0x1006, 0xB80); /*rx eq 3*/
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+		pdata->phy_crport_ctrl(pdev, 0x1006, 0xC80); /*rx eq 4*/
 #endif
 	}
 }

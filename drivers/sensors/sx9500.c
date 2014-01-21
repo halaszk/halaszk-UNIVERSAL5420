@@ -34,6 +34,9 @@
 #define MODULE_NAME              "grip_sensor"
 #define CALIBRATION_FILE_PATH    "/efs/grip_cal_data"
 
+#define I2C_M_WR                 0 /* for i2c Write */
+#define I2c_M_RD                 1 /* for i2c Read */
+
 #define IDLE                     0
 #define ACTIVE                   1
 
@@ -50,14 +53,15 @@
 
 #define MAIN_SENSOR              0
 #define REF_SENSOR               1
+#define CSX_STATUS_REG           SX9500_TCHCMPSTAT_TCHSTAT0_FLAG
 
-#define DEFAULT_THRESHOLD        0x11
-#define LIMIT_PROXOFFSET         2550 /* 30pF */
+#define LIMIT_PROXOFFSET                2550 /* 30pF */
+#define LIMIT_PROXUSEFUL                10000
+#define STANDARD_CAP_MAIN               300000
 
-#define STANDARD_CAP_MAIN        200000
-#define DEFAULT_THRESHOLD_GAP    2000
+#define DEFAULT_INIT_TOUCH_THRESHOLD    3000
+#define DEFAULT_NORMAL_TOUCH_THRESHOLD  17
 
-#define	TOUCH_CHECK_THRESHOLD    (STANDARD_CAP_MAIN + DEFAULT_THRESHOLD_GAP)
 #define	TOUCH_CHECK_REF_AMB      0 // 44523
 #define	TOUCH_CHECK_SLOPE        0 // 50
 #define	TOUCH_CHECK_MAIN_AMB     0 // 151282
@@ -65,8 +69,6 @@
 /* CS0, CS1, CS2, CS3 */
 #define TOTAL_BOTTON_COUNT       1
 #define ENABLE_CSX               ((1 << MAIN_SENSOR) | (1 << REF_SENSOR))
-
-#define CSX_STATUS_REG           SX9500_TCHCMPSTAT_TCHSTAT0_FLAG
 
 #define IRQ_PROCESS_CONDITION   (SX9500_IRQSTAT_TOUCH_FLAG	\
 				| SX9500_IRQSTAT_RELEASE_FLAG	\
@@ -77,13 +79,16 @@ struct sx9500_p {
 	struct input_dev *input;
 	struct device *factory_device;
 	struct delayed_work init_work;
+	struct delayed_work irq_work;
 	struct wake_lock grip_wake_lock;
+	struct mutex mode_mutex;
 
 	bool calSuccessed;
 	bool flagDataSkip;
 	u8 touchTh;
 	u8 releaseTh;
-	int calData;
+	int initTh;
+	int calData[3];
 	int touchMode;
 
 	int irq;
@@ -98,30 +103,45 @@ static int sx9500_get_nirq_state(struct sx9500_p *data)
 	return gpio_get_value_cansleep(data->gpioNirq);
 }
 
-static int sx9500_i2c_write(struct sx9500_p *data, u8 addr, u8 val)
+static int sx9500_i2c_write(struct sx9500_p *data, u8 reg_addr, u8 buf)
 {
-	char buffer[2];
 	int ret;
+	struct i2c_msg msg;
+	unsigned char w_buf[2];
 
-	buffer[0] = addr;
-	buffer[1] = val;
+	w_buf[0] = reg_addr;
+	w_buf[1] = buf;
 
-	ret = i2c_master_send(data->client, buffer, 2);
+	msg.addr = data->client->addr;
+	msg.flags = I2C_M_WR;
+	msg.len = 2;
+	msg.buf = (char *)w_buf;
+
+	ret = i2c_transfer(data->client->adapter, &msg, 1);
 	if (ret < 0)
 		pr_err("[SX9500]: %s - i2c write error %d\n", __func__, ret);
 
-	return ret;
+	return 0;
 }
 
-static int sx9500_i2c_read(struct sx9500_p *data, u8 addr, u8 *val)
+static int sx9500_i2c_read(struct sx9500_p *data, u8 reg_addr, u8 *buf)
 {
-	s32 ret;
+	int ret;
+	struct i2c_msg msg[2];
 
-	ret = i2c_smbus_read_byte_data(data->client, addr);
+	msg[0].addr = data->client->addr;
+	msg[0].flags = I2C_M_WR;
+	msg[0].len = 1;
+	msg[0].buf = &reg_addr;
+
+	msg[1].addr = data->client->addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].len = 1;
+	msg[1].buf = buf;
+
+	ret = i2c_transfer(data->client->adapter, msg, 2);
 	if (ret < 0)
 		pr_err("[SX9500]: %s - i2c read error %d\n", __func__, ret);
-	else
-		*val = ret & 0x000000ff;
 
 	return ret;
 }
@@ -233,36 +253,38 @@ static s32 sx9500_get_capMain(struct sx9500_p *data)
 {
 	u8 msByte = 0;
 	u8 lsByte = 0;
-	u16 fullByte = 0;
-	s32 capMain = 0;
-	s32 capRef = 0;
+	u16 offset = 0;
+	s32 capMain = 0, useful = 0;
 
 	/* Calculate out the Main Cap information */
 	sx9500_i2c_write(data, SX9500_REGSENSORSELECT, MAIN_SENSOR);
 	sx9500_i2c_read(data, SX9500_REGUSEMSB, &msByte);
 	sx9500_i2c_read(data, SX9500_REGUSELSB, &lsByte);
 
-	capMain = (s32)msByte;
-	capMain = (capMain << 8) | ((s32)lsByte);
-	if (capMain > 32767)
-		capMain -= 65536;
+	useful = (s32)msByte;
+	useful = (useful << 8) | ((s32)lsByte);
+	if (useful > 32767)
+		useful -= 65536;
 
 	sx9500_i2c_read(data, SX9500_REGOFFSETMSB, &msByte);
 	sx9500_i2c_read(data, SX9500_REGOFFSETLSB, &lsByte);
 
-	fullByte = (u16)msByte;
-	fullByte = (fullByte << 8) | ((u16)lsByte);
+	offset = (u16)msByte;
+	offset = (offset << 8) | ((u16)lsByte);
 
-	msByte = (u8)(fullByte >> 6);
-	lsByte = (u8)(fullByte - (((u16)msByte) << 6));
+	msByte = (u8)(offset >> 6);
+	lsByte = (u8)(offset - (((u16)msByte) << 6));
 
 	capMain = 2 * (((s32)msByte * 3600) + ((s32)lsByte * 225)) +
-		(((s32)capMain * 50000) / (8 * 65536) );
+		(((s32)useful * 50000) / (8 * 65536) );
 
 	/* Calculate out the Reference Cap information */
 	sx9500_i2c_write(data, SX9500_REGSENSORSELECT, REF_SENSOR);
 	sx9500_i2c_read(data, SX9500_REGUSEMSB, &msByte);
 	sx9500_i2c_read(data, SX9500_REGUSELSB, &lsByte);
+
+#if 0 /* Calculate out the difference between the two */
+	s32 capRef = 0;
 
 	capRef = (s32)msByte;
 	capRef = (capRef << 8) | ((s32)lsByte);
@@ -272,10 +294,10 @@ static s32 sx9500_get_capMain(struct sx9500_p *data)
 	sx9500_i2c_read(data, SX9500_REGOFFSETMSB, &msByte);
 	sx9500_i2c_read(data, SX9500_REGOFFSETLSB, &lsByte);
 
-	fullByte = (u16)msByte;
-	fullByte = (fullByte << 8) | ((u16)lsByte);
-	msByte = (u8)(fullByte >> 6);
-	lsByte = (u8)(fullByte - (((u16)msByte) << 6));
+	offset = (u16)msByte;
+	offset = (offset << 8) | ((u16)lsByte);
+	msByte = (u8)(offset >> 6);
+	lsByte = (u8)(offset - (((u16)msByte) << 6));
 
 	capRef = 2 * (((s32)msByte * 3600) + ((s32)lsByte * 225)) +
 		(((s32)capRef * 50000) / (8 * 65536) );
@@ -283,11 +305,11 @@ static s32 sx9500_get_capMain(struct sx9500_p *data)
 	capRef = (capRef - TOUCH_CHECK_REF_AMB) *
 		TOUCH_CHECK_SLOPE + TOUCH_CHECK_MAIN_AMB;
 
-	pr_info("[SX9500]: %s - Calculated Caps Main: %ld Ref: %ld\n",
-		__func__, (long int)capMain, (long int)capRef);
-
-	/* Calculate out the difference between the two */
 	capMain = capMain - capRef;
+#endif
+
+	pr_info("[SX9500]: %s - CapsMain: %ld, useful: %ld, Offset: %u\n",
+		__func__, (long int)capMain, (long int)useful, offset);
 
 	return capMain;
 }
@@ -296,27 +318,20 @@ static void sx9500_touchCheckWithRefSensor(struct sx9500_p *data)
 {
 	s32 capMain;
 	int cnt = 0;
+	s32 threshold = STANDARD_CAP_MAIN + data->initTh + data->calData[0];
 
 	capMain = sx9500_get_capMain(data);
 
-	for (cnt = 0; cnt < TOTAL_BOTTON_COUNT; cnt++) {
-		if (MAIN_SENSOR != cnt) {
-			pr_info("[SX9500]: %s - Looking For: %d cnt: %d\n",
-				__func__, MAIN_SENSOR, cnt);
-			continue;
-		}
-
-		if (data->state[cnt] == IDLE) {
-			if (capMain >= (TOUCH_CHECK_THRESHOLD + data->calData))
-				send_event(data, cnt, ACTIVE);
-			else
-				send_event(data, cnt, IDLE);
-		} else {
-			if (capMain < (TOUCH_CHECK_THRESHOLD + data->calData))
-				send_event(data, cnt, IDLE);
-			else
-				send_event(data, cnt, ACTIVE);
-		}
+	if (data->state[cnt] == IDLE) {
+		if (capMain >= threshold)
+			send_event(data, cnt, ACTIVE);
+		else
+			send_event(data, cnt, IDLE);
+	} else {
+		if (capMain < threshold)
+			send_event(data, cnt, IDLE);
+		else
+			send_event(data, cnt, ACTIVE);
 	}
 }
 
@@ -340,9 +355,9 @@ static int sx9500_save_caldata(struct sx9500_p *data)
 		return ret;
 	}
 
-	ret = cal_filp->f_op->write(cal_filp, (char *)&data->calData,
-		sizeof(int), &cal_filp->f_pos);
-	if (ret != sizeof(int)) {
+	ret = cal_filp->f_op->write(cal_filp, (char *)data->calData,
+		sizeof(int) * 3, &cal_filp->f_pos);
+	if (ret != (sizeof(int) * 3)) {
 		pr_err("[SX9500]: %s - Can't write the cal data to file\n",
 			__func__);
 		ret = -EIO;
@@ -374,28 +389,30 @@ static void sx9500_open_caldata(struct sx9500_p *data)
 			pr_info("[SX9500]: %s - There is no calibration file\n",
 				__func__);
 			/* calibration status init */
-			data->calData = 0;
+			memset(data->calData, 0, sizeof(int) * 3);
 		}
 		set_fs(old_fs);
 		return;
 	}
 
-	ret = cal_filp->f_op->read(cal_filp, (char *)&data->calData,
-		sizeof(int), &cal_filp->f_pos);
-	if (ret != sizeof(int))
+	ret = cal_filp->f_op->read(cal_filp, (char *)data->calData,
+		sizeof(int) * 3, &cal_filp->f_pos);
+	if (ret != (sizeof(int) * 3))
 		pr_err("[SX9500]: %s - Can't read the cal data from file\n",
 			__func__);
 
 	filp_close(cal_filp, current->files);
 	set_fs(old_fs);
 
-	pr_info("[SX9500]: %s - (%d)", __func__, data->calData);
+	pr_info("[SX9500]: %s - (%d, %d, %d)\n", __func__,
+		data->calData[0], data->calData[1], data->calData[2]);
 }
 
 static int sx9500_set_mode(struct sx9500_p *data, unsigned char mode)
 {
 	int ret = -EINVAL;
 
+	mutex_lock(&data->mode_mutex);
 	if (mode == SX9500_MODE_SLEEP) {
 		ret = sx9500_i2c_write(data, SX9500_CPS_CTRL0_REG, 0x20);
 		disable_irq(data->irq);
@@ -403,6 +420,7 @@ static int sx9500_set_mode(struct sx9500_p *data, unsigned char mode)
 	} else if (mode == SX9500_MODE_NORMAL) {
 		ret = sx9500_i2c_write(data, SX9500_CPS_CTRL0_REG,
 			0x20 | ENABLE_CSX);
+		msleep(20);
 
 		sx9500_set_offset_calibration(data);
 		msleep(400);
@@ -410,40 +428,35 @@ static int sx9500_set_mode(struct sx9500_p *data, unsigned char mode)
 		sx9500_touchCheckWithRefSensor(data);
 		enable_irq(data->irq);
 		enable_irq_wake(data->irq);
-
-		/* make sure no interrupts are pending since enabling irq
-		 * will only work on next falling edge */
-		sx9500_read_irqstate(data);
 	}
 
+	/* make sure no interrupts are pending since enabling irq
+	 * will only work on next falling edge */
+	sx9500_read_irqstate(data);
+
 	pr_info("[SX9500]: %s - change the mode : %u\n", __func__, mode);
+
+	mutex_unlock(&data->mode_mutex);
 	return ret;
 }
 
-static int sx9500_do_calibrate(struct sx9500_p *data, bool do_calib)
+static int sx9500_get_useful(struct sx9500_p *data)
 {
-	s32 capMain;
+	u8 msByte = 0;
+	u8 lsByte = 0;
+	s16 fullByte = 0;
 
-	if (do_calib == false) {
-		data->calData = 0;
-		goto exit;
-	}
+	sx9500_i2c_write(data, SX9500_REGSENSORSELECT, MAIN_SENSOR);
+	sx9500_i2c_read(data, SX9500_REGUSEMSB, &msByte);
+	sx9500_i2c_read(data, SX9500_REGUSELSB, &lsByte);
+	fullByte = (s16)((msByte << 8) | lsByte);
 
-	if (atomic_read(&data->enable) == 0)
-		sx9500_set_mode(data, SX9500_MODE_NORMAL);
+	pr_info("[SX9500]: %s - PROXIUSEFUL = %d\n", __func__, fullByte);
 
-	capMain = sx9500_get_capMain(data);
-	data->calData = capMain - STANDARD_CAP_MAIN;
-
-	if (atomic_read(&data->enable) == 0)
-		sx9500_set_mode(data, SX9500_MODE_SLEEP);
-
-exit:
-	pr_info("[SX9500]: %s - (%d)\n", __func__, data->calData);
-	return 0;
+	return (int)fullByte;
 }
 
-static int sx9500_check_offset(struct sx9500_p *data)
+static int sx9500_get_offset(struct sx9500_p *data)
 {
 	u8 msByte = 0;
 	u8 lsByte = 0;
@@ -452,15 +465,58 @@ static int sx9500_check_offset(struct sx9500_p *data)
 	sx9500_i2c_write(data, SX9500_REGSENSORSELECT, MAIN_SENSOR);
 	sx9500_i2c_read(data, SX9500_REGOFFSETMSB, &msByte);
 	sx9500_i2c_read(data, SX9500_REGOFFSETLSB, &lsByte);
-
-	fullByte = ((u16)msByte << 8) | ((u16)lsByte);
+	fullByte = (u16)((msByte << 8) | lsByte);
 
 	pr_info("[SX9500]: %s - PROXIOFFSET = %u\n", __func__, fullByte);
 
-	if ((fullByte >= LIMIT_PROXOFFSET) || (fullByte == 0))
-		return -1;
+	return (int)fullByte;
+}
 
-	return 0;
+static int sx9500_do_calibrate(struct sx9500_p *data, bool do_calib)
+{
+	int ret = 0;
+	s32 capMain;
+
+	if (do_calib == false) {
+		pr_info("[SX9500]: %s - Erase!\n", __func__);
+		goto cal_erase;
+	}
+
+	if (atomic_read(&data->enable) == OFF)
+		sx9500_set_mode(data, SX9500_MODE_NORMAL);
+
+	data->calData[2] = sx9500_get_offset(data);
+	if ((data->calData[2] >= LIMIT_PROXOFFSET)
+		|| (data->calData[2] == 0)) {
+		pr_err("[SX9500]: %s - offset fail(%d)\n", __func__,
+			data->calData[2]);
+		goto cal_fail;
+	}
+
+	data->calData[1] = sx9500_get_useful(data);
+	if (data->calData[1] >= LIMIT_PROXUSEFUL) {
+		pr_err("[SX9500]: %s - useful warning(%d)\n", __func__,
+			data->calData[1]);
+	}
+
+	capMain = sx9500_get_capMain(data);
+	data->calData[0] = capMain - STANDARD_CAP_MAIN;
+
+	if (atomic_read(&data->enable) == OFF)
+		sx9500_set_mode(data, SX9500_MODE_SLEEP);
+
+	goto exit;
+
+cal_fail:
+	if (atomic_read(&data->enable) == OFF)
+		sx9500_set_mode(data, SX9500_MODE_SLEEP);
+	ret = -1;
+cal_erase:
+	memset(data->calData, 0, sizeof(int) * 3);
+exit:
+	pr_info("[SX9500]: %s - (%d, %d, %d)\n", __func__,
+		data->calData[0], data->calData[1], data->calData[2]);
+	return ret;
 }
 
 static void sx9500_set_enable(struct sx9500_p *data, int enable)
@@ -468,18 +524,18 @@ static void sx9500_set_enable(struct sx9500_p *data, int enable)
 	int pre_enable = atomic_read(&data->enable);
 
 	if (enable) {
-		if (pre_enable == 0) {
+		if (pre_enable == OFF) {
 			data->touchMode = INIT_TOUCH_MODE;
 			data->calSuccessed = false;
 
 			sx9500_open_caldata(data);
 			sx9500_set_mode(data, SX9500_MODE_NORMAL);
-			atomic_set(&data->enable, 1);
+			atomic_set(&data->enable, ON);
 		}
 	} else {
-		if (pre_enable == 1) {
+		if (pre_enable == ON) {
 			sx9500_set_mode(data, SX9500_MODE_SLEEP);
-			atomic_set(&data->enable, 0);
+			atomic_set(&data->enable, OFF);
 		}
 	}
 }
@@ -567,7 +623,7 @@ static ssize_t sx9500_sw_reset_show(struct device *dev,
 	int ret = 0;
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
-	if (atomic_read(&data->enable) == 1)
+	if (atomic_read(&data->enable) == ON)
 		sx9500_set_mode(data, SX9500_MODE_SLEEP);
 
 	ret = sx9500_i2c_write(data, SX9500_SOFTRESET_REG, SX9500_SOFTRESET);
@@ -575,7 +631,7 @@ static ssize_t sx9500_sw_reset_show(struct device *dev,
 
 	sx9500_initialize_chip(data);
 
-	if (atomic_read(&data->enable) == 1)
+	if (atomic_read(&data->enable) == ON)
 		sx9500_set_mode(data, SX9500_MODE_NORMAL);
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", ret);
@@ -610,7 +666,7 @@ static ssize_t sx9500_raw_data_show(struct device *dev,
 	s32 capMain;
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
-	if (atomic_read(&data->enable) == 0)
+	if (atomic_read(&data->enable) == OFF)
 		pr_err("[SX9500]: %s - SX9500 was not enabled\n", __func__);
 
 	capMain = sx9500_get_capMain(data);
@@ -632,8 +688,9 @@ static ssize_t sx9500_threshold_show(struct device *dev,
 {
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
+	/* It's for init touch */
 	return snprintf(buf, PAGE_SIZE, "%d\n",
-			TOUCH_CHECK_THRESHOLD + data->calData);
+			STANDARD_CAP_MAIN + data->initTh + data->calData[0]);
 }
 
 static ssize_t sx9500_threshold_store(struct device *dev,
@@ -642,12 +699,13 @@ static ssize_t sx9500_threshold_store(struct device *dev,
 	unsigned long val;
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
+	/* It's for normal touch */
 	if (strict_strtoul(buf, 10, &val)) {
 		pr_err("[SX9500]: %s - Invalid Argument\n", __func__);
 		return -EINVAL;
 	}
 
-	pr_info("[SX9500]: %s - touch threshold %lu\n", __func__, val);
+	pr_info("[SX9500]: %s - normal threshold %lu\n", __func__, val);
 	data->touchTh = data->releaseTh = (u8)val;
 
 	return count;
@@ -689,18 +747,17 @@ static ssize_t sx9500_calibration_show(struct device *dev,
 	int ret;
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
-	if ((data->calSuccessed == false) && (data->calData == 0))
+	if ((data->calSuccessed == false) && (data->calData[0] == 0))
 		ret = CAL_RET_NONE;
-	else if ((data->calSuccessed == false) && (data->calData != 0))
+	else if ((data->calSuccessed == false) && (data->calData[0] != 0))
 		ret = CAL_RET_EXIST;
-	else if ((data->calSuccessed == true) && (data->calData != 0))
+	else if ((data->calSuccessed == true) && (data->calData[0] != 0))
 		ret = CAL_RET_SUCCESS;
 	else
 		ret = CAL_RET_ERROR;
 
-	pr_info("[SX9500]: %s - ret : %d\n", __func__, ret);
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", ret);
+	return snprintf(buf, PAGE_SIZE, "%d,%d,%d\n", ret,
+			data->calData[1], data->calData[2]);
 }
 
 static ssize_t sx9500_calibration_store(struct device *dev,
@@ -719,12 +776,6 @@ static ssize_t sx9500_calibration_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	ret = sx9500_check_offset(data);
-	if (ret < 0) {
-		pr_err("[SX9500]: %s - offset fail(%d)\n", __func__, ret);
-		goto exit;
-	}
-
 	ret = sx9500_do_calibrate(data, do_calib);
 	if (ret < 0) {
 		pr_err("[SX9500]: %s - sx9500_do_calibrate fail(%d)\n",
@@ -736,6 +787,7 @@ static ssize_t sx9500_calibration_store(struct device *dev,
 	if (ret < 0) {
 		pr_err("[SX9500]: %s - sx9500_save_caldata fail(%d)\n",
 			__func__, ret);
+		memset(data->calData, 0, sizeof(int) * 3);
 		goto exit;
 	}
 
@@ -743,7 +795,7 @@ static ssize_t sx9500_calibration_store(struct device *dev,
 
 exit:
 
-	if ((data->calData != 0) && (ret >= 0))
+	if ((data->calData[0] != 0) && (ret >= 0))
 		data->calSuccessed = true;
 	else
 		data->calSuccessed = false;
@@ -833,7 +885,8 @@ static void sx9500_touch_process(struct sx9500_p *data)
 {
 	u8 status = 0;
 	int cnt;
-	s32 capMain, initThd = TOUCH_CHECK_THRESHOLD + data->calData;
+	s32 capMain;
+	s32 threshold = STANDARD_CAP_MAIN + data->initTh + data->calData[0];
 
 	capMain = sx9500_get_capMain(data);
 
@@ -848,7 +901,7 @@ static void sx9500_touch_process(struct sx9500_p *data)
 		} else { /* User released button */
 			if (!(status & (CSX_STATUS_REG << cnt))) {
 				if ((data->touchMode == INIT_TOUCH_MODE)
-					&& (capMain >= initThd))
+					&& (capMain >= threshold))
 					pr_info("[SX9500]: %s - IDLE SKIP\n",
 						__func__);
 				else
@@ -879,19 +932,30 @@ static void sx9500_init_work_func(struct work_struct *work)
 		struct sx9500_p, init_work);
 
 	sx9500_initialize_chip(data);
+
+	/* make sure no interrupts are pending since enabling irq
+	 * will only work on next falling edge */
+	sx9500_read_irqstate(data);
 }
 
-static irqreturn_t sx9500_interrupt_thread(int irq, void *pdata)
+static void sx9500_irq_work_func(struct work_struct *work)
 {
-	struct sx9500_p *data = pdata;
+	struct sx9500_p *data = container_of((struct delayed_work *)work,
+		struct sx9500_p, irq_work);
 
 	if (sx9500_get_nirq_state(data) == 0)
 		sx9500_process_interrupt(data);
 	else
 		pr_err("[SX9500]: %s - nirq read high %d\n",
 			__func__, sx9500_get_nirq_state(data));
+}
+
+static irqreturn_t sx9500_interrupt_thread(int irq, void *pdata)
+{
+	struct sx9500_p *data = pdata;
 
 	wake_lock_timeout(&data->grip_wake_lock, 3 * HZ);
+	schedule_delayed_work(&data->irq_work, msecs_to_jiffies(100));
 
 	return IRQ_HANDLED;
 }
@@ -965,7 +1029,6 @@ static int sx9500_setup_pin(struct sx9500_p *data)
 	if (ret < 0) {
 		pr_err("[SX9500]: %s - failed to set request_threaded_irq %d"
 			" as returning (%d)\n", __func__, data->irq, ret);
-		free_irq(data->irq, data);
 		gpio_free(data->gpioNirq);
 		return ret;
 	}
@@ -981,14 +1044,20 @@ static void sx9500_initialize_variable(struct sx9500_p *data)
 	for (cnt = 0; cnt < TOTAL_BOTTON_COUNT; cnt++)
 		data->state[cnt] = IDLE;
 
-	data->touchTh = DEFAULT_THRESHOLD;
-	data->releaseTh = DEFAULT_THRESHOLD;
 	data->touchMode = INIT_TOUCH_MODE;
 	data->flagDataSkip = false;
 	data->calSuccessed = false;
-	data->calData = 0;
+	memset(data->calData, 0, sizeof(int) * 3);
+	atomic_set(&data->enable, OFF);
 
-	atomic_set(&data->enable, 0);
+	data->initTh = (int)CONFIG_SENSORS_SX9500_INIT_TOUCH_THRESHOLD;
+	pr_info("[SX9500]: %s - Init Touch Threshold : %d\n",
+		__func__, data->initTh);
+
+	data->touchTh = (u8)CONFIG_SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD;
+	data->releaseTh = (u8)CONFIG_SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD;
+	pr_info("[SX9500]: %s - Normal Touch Threshold : %u\n",
+		__func__, data->touchTh);
 }
 
 static int sx9500_probe(struct i2c_client *client,
@@ -1040,6 +1109,9 @@ static int sx9500_probe(struct i2c_client *client,
 	sx9500_initialize_variable(data);
 
 	INIT_DELAYED_WORK(&data->init_work, sx9500_init_work_func);
+	INIT_DELAYED_WORK(&data->irq_work, sx9500_irq_work_func);
+	mutex_init(&data->mode_mutex);
+
 	schedule_delayed_work(&data->init_work, msecs_to_jiffies(300));
 
 	pr_info("[SX9500]: %s - Probe done!\n", __func__);
@@ -1062,10 +1134,11 @@ static int __devexit sx9500_remove(struct i2c_client *client)
 {
 	struct sx9500_p *data = (struct sx9500_p *)i2c_get_clientdata(client);
 
-	if (atomic_read(&data->enable) == 1)
+	if (atomic_read(&data->enable) == ON)
 		sx9500_set_mode(data, SX9500_MODE_SLEEP);
 
 	cancel_delayed_work_sync(&data->init_work);
+	cancel_delayed_work_sync(&data->irq_work);
 	free_irq(data->irq, data);
 	gpio_free(data->gpioNirq);
 
@@ -1074,6 +1147,7 @@ static int __devexit sx9500_remove(struct i2c_client *client)
 	sensors_remove_symlink(&data->input->dev.kobj, data->input->name);
 	sysfs_remove_group(&data->input->dev.kobj, &sx9500_attribute_group);
 	input_unregister_device(data->input);
+	mutex_destroy(&data->mode_mutex);
 
 	kfree(data);
 
@@ -1084,10 +1158,8 @@ static int sx9500_suspend(struct device *dev)
 {
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
-	if (atomic_read(&data->enable) == 1) {
+	if (atomic_read(&data->enable) == ON)
 		pr_info("[SX9500]: %s\n", __func__);
-		disable_irq(data->irq);
-	}
 
 	return 0;
 }
@@ -1096,10 +1168,8 @@ static int sx9500_resume(struct device *dev)
 {
 	struct sx9500_p *data = dev_get_drvdata(dev);
 
-	if (atomic_read(&data->enable) == 1) {
+	if (atomic_read(&data->enable) == ON)
 		pr_info("[SX9500]: %s\n", __func__);
-		enable_irq(data->irq);
-	}
 
 	return 0;
 }

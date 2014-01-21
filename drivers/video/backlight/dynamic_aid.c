@@ -39,6 +39,7 @@ struct dynamic_aid_info {
 	int			ibr_top;
 	int			 *mtp;
 	int			vreg;
+	int			vref_h;
 
 	struct rgb64_t *point_voltages;
 	struct rgb64_t *output_voltages;
@@ -101,7 +102,7 @@ static int calc_point_voltages(struct dynamic_aid_info d_aid)
 				t2 = v0 - vp->rgb[c];
 			} else if (iv == d_aid.iv_max - 1) {
 				t1 = v0;
-				t2 = v0;
+				t2 = v0 - d_aid.vref_h;
 			} else {
 				t1 = vt->rgb[c];
 				t2 = vt->rgb[c] - vp->rgb[c];
@@ -352,7 +353,7 @@ static int calc_gamma(struct dynamic_aid_info d_aid, int ibr, int *result)
 				t2 = d_aid.vreg - m_voltage[iv+1].rgb[c];
 			} else if (iv == d_aid.iv_max - 1) {
 				t1 = d_aid.vreg - m_voltage[iv].rgb[c];
-				t2 = d_aid.vreg;
+				t2 = d_aid.vreg - d_aid.vref_h;
 			} else {
 				t1 = m_voltage[0].rgb[c] - m_voltage[iv].rgb[c];
 				t2 = m_voltage[0].rgb[c] - m_voltage[iv+1].rgb[c];
@@ -429,6 +430,7 @@ int dynamic_aid(struct dynamic_aid_param_t param, int **gamma)
 	d_aid.iv_top = param.iv_tbl[param.iv_max-1]; /* number of top voltage index:  255 */
 	d_aid.mtp = param.mtp;
 	d_aid.vreg = MUL_100(param.vreg);
+	d_aid.vref_h = param.vref_h;
 
 	d_aid.ibr_tbl = (int *)param.ibr_tbl;
 	d_aid.ibr_max = param.ibr_max;

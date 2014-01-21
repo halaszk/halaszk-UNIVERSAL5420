@@ -218,7 +218,6 @@ static void pen_insert_work(struct work_struct *work)
 		wacom_power_on(wac_i2c);
 #endif
 }
-
 static irqreturn_t wacom_pen_detect(int irq, void *dev_id)
 {
 	struct wacom_i2c *wac_i2c = dev_id;
@@ -318,6 +317,9 @@ static void wacom_i2c_set_input_values(struct i2c_client *client,
 	__set_bit(BTN_STYLUS, input_dev->keybit);
 	__set_bit(KEY_UNKNOWN, input_dev->keybit);
 	__set_bit(KEY_PEN_PDCT, input_dev->keybit);
+#ifdef CONFIG_INPUT_BOOSTER
+	__set_bit(KEY_BOOSTER_PEN, input_dev->keybit);
+#endif
 #ifdef WACOM_USE_GAIN
 	__set_bit(ABS_DISTANCE, input_dev->absbit);
 #endif
@@ -327,7 +329,7 @@ static void wacom_i2c_set_input_values(struct i2c_client *client,
 
 	/*softkey*/
 #ifdef WACOM_USE_SOFTKEY
-	__set_bit(KEY_MENU, input_dev->keybit);
+	__set_bit(EPEN_KEY_MENU, input_dev->keybit);
 	__set_bit(KEY_BACK, input_dev->keybit);
 #endif
 }
@@ -382,17 +384,24 @@ struct wacom_i2c *wac_i2c =
 }
 
 #ifdef LCD_FREQ_SYNC
+#ifdef CONFIG_HA
 #define SYSFS_WRITE_LCD	"/sys/class/lcd/panel/ldi_fps"
+#elif defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
+#define SYSFS_WRITE_LCD	"/sys/class/tcon/tcon/psr_hsync"
+#else
+#define SYSFS_WRITE_LCD	""
+#endif
 static void wacom_i2c_sync_lcd_freq(struct wacom_i2c *wac_i2c)
 {
 	int ret = 0;
 	mm_segment_t old_fs;
 	struct file *write_node;
-	char freq[10] = {0, };
+	char freq[12] = {0, };
+	int lcd_freq = wac_i2c->lcd_freq;
 
 	mutex_lock(&wac_i2c->freq_write_lock);
 
-	sprintf(freq, "%d", wac_i2c->lcd_freq);
+	sprintf(freq, "%d", lcd_freq);
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
@@ -437,13 +446,6 @@ static void wacom_i2c_lcd_freq_work(struct work_struct *work)
 	struct wacom_i2c *wac_i2c =
 		container_of(work, struct wacom_i2c, lcd_freq_work);
 
-	if (wac_i2c->lcd_freq_wait == true) {
-		printk(KERN_DEBUG"epen:%s, freq is running\n", __func__);
-		return ;
-	}
-
-	wac_i2c->lcd_freq_wait = true;
-
 	wacom_i2c_sync_lcd_freq(wac_i2c);
 }
 #endif
@@ -466,8 +468,7 @@ static int wacom_i2c_suspend(struct device *dev)
 {
 	struct wacom_i2c *wac_i2c = dev_get_drvdata(dev);
 
-	printk(KERN_DEBUG"%s\n", __func__);
-
+	wac_i2c->pwr_flag = false;
 	if (wac_i2c->input_dev->users)
 		wacom_power_off(wac_i2c);
 
@@ -478,12 +479,9 @@ static int wacom_i2c_resume(struct device *dev)
 {
 	struct wacom_i2c *wac_i2c = dev_get_drvdata(dev);
 
-	printk(KERN_DEBUG"%s\n", __func__);
-
+	wac_i2c->pwr_flag = true;
 	if (wac_i2c->input_dev->users)
 		wacom_power_on(wac_i2c);
-
-	dev_dbg(&wac_i2c->client->dev, "%s\n", __func__);
 
 	return 0;
 }
@@ -760,7 +758,7 @@ static void wacom_i2c_update_work(struct work_struct *work)
 	printk(KERN_DEBUG"epen:%s\n", __func__);
 
 	if (!wac_i2c->update_info.forced) {
-#if defined(CONFIG_SAMSUNG_PRODUCT_SHIP) || defined(CONFIG_V1A)
+#if defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		if (fw_ver_ic == fw_ver_file) {
 #else
 		if (fw_ver_ic >= fw_ver_file) {
@@ -938,7 +936,7 @@ static void wacom_open_test(struct wacom_i2c *wac_i2c)
 {
 	u8 cmd = 0;
 	u8 buf[2] = {0,};
-	int ret = 0, cnt = 30;
+	int ret = 0, retry = 10;
 
 	cmd = WACOM_I2C_STOP;
 	ret = wacom_i2c_send(wac_i2c, &cmd, 1, false);
@@ -946,6 +944,8 @@ static void wacom_open_test(struct wacom_i2c *wac_i2c)
 		printk(KERN_ERR "epen:failed to send stop command\n");
 		return ;
 	}
+	
+	usleep_range(500, 500);
 
 	cmd = WACOM_I2C_GRID_CHECK;
 	ret = wacom_i2c_send(wac_i2c, &cmd, 1, false);
@@ -954,38 +954,43 @@ static void wacom_open_test(struct wacom_i2c *wac_i2c)
 		goto grid_check_error;
 	}
 
+	msleep(150);
+
 	cmd = WACOM_STATUS;
 	do {
-		msleep(50);
-		if (1 == wacom_i2c_send(wac_i2c, &cmd, 1, false)) {
-			if (2 == wacom_i2c_recv(wac_i2c,
-						buf, 2, false)) {
-				switch (buf[0]) {
-				/*
-				*	status value
-				*	0 : data is not ready
-				*	1 : PASS
-				*	2 : Fail (coil function error)
-				*	3 : Fail (All coil function error)
-				*/
-				case 1:
-				case 2:
-				case 3:
-					cnt = 0;
-					break;
-
-				default:
-					break;
-				}
-			}
+		printk(KERN_DEBUG"epen:read status, retry %d\n", retry);
+		ret = wacom_i2c_send(wac_i2c, &cmd, 1, false);
+		if (ret != 1) {
+			printk(KERN_DEBUG"epen:failed to send cmd(ret:%d)\n", ret);
+			continue;
 		}
-	} while (cnt--);
+		usleep_range(500, 500);
+		ret = wacom_i2c_recv(wac_i2c, buf, 2, false);
+		if (ret != 2) {
+			printk(KERN_DEBUG"epen:failed to recv data(ret:%d)\n", ret);
+			continue;
+		}
+		
+		/*
+		*	status value
+		*	0 : data is not ready
+		*	1 : PASS
+		*	2 : Fail (coil function error)
+		*	3 : Fail (All coil function error)
+		*/
+		if (buf[0] == 1) {
+			printk(KERN_DEBUG"epen:Pass\n");
+			break;
+		}
+
+		printk(KERN_DEBUG"epen:buf[0]:%d, buf[1]:%d\n", buf[0], buf[1]);
+		msleep(50);
+	} while (retry--);
 
 	wac_i2c->connection_check = (1 == buf[0]);
 	printk(KERN_DEBUG
-	       "epen:epen_connection : %s %d\n",
+	       "epen:epen_connection : %s buf[1]:%d\n",
 	       (1 == buf[0]) ? "Pass" : "Fail", buf[1]);
-	printk(KERN_DEBUG"epen:buf0 %d buf1 %d\n", buf[0], buf[1]);
 
 grid_check_error:
 	cmd = WACOM_I2C_STOP;
@@ -993,7 +998,6 @@ grid_check_error:
 
 	cmd = WACOM_I2C_START;
 	wacom_i2c_send(wac_i2c, &cmd, 1, false);
-
 }
 
 static ssize_t epen_connection_show(struct device *dev,
@@ -1003,7 +1007,9 @@ struct device_attribute *attr,
 	struct wacom_i2c *wac_i2c = dev_get_drvdata(dev);
 
 	printk(KERN_DEBUG"epen:%s\n", __func__);
+	wacom_enable_irq(wac_i2c, false);
 	wacom_open_test(wac_i2c);
+	wacom_enable_irq(wac_i2c, true);
 
 	printk(KERN_DEBUG
 		"epen:connection_check : %d\n",
@@ -1024,6 +1030,14 @@ static ssize_t epen_saving_mode_store(struct device *dev,
 
 	if (sscanf(buf, "%u", &val) == 1)
 		wac_i2c->battery_saving_mode = !!val;
+
+	printk(KERN_DEBUG"epen:%s, val %d\n",
+		__func__, wac_i2c->battery_saving_mode);
+
+	if (!wac_i2c->pwr_flag) {
+		printk(KERN_DEBUG"epen:pass pwr control\n");
+		return count;
+	}
 
 	if (wac_i2c->battery_saving_mode) {
 		if (wac_i2c->pen_insert)
@@ -1293,6 +1307,7 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	wac_i2c->wac_pdata->resume_platform_hw();
 	msleep(200);
 	wac_i2c->power_enable = true;
+	wac_i2c->pwr_flag = true;
 
 	wacom_i2c_query(wac_i2c);
 
@@ -1369,7 +1384,7 @@ static int wacom_i2c_probe(struct i2c_client *client,
 		ret =
 		    request_threaded_irq(wac_i2c->irq, NULL, wacom_interrupt,
 					 IRQF_DISABLED | EPEN_IRQF_TRIGGER_TYPE |
-					 IRQF_ONESHOT, wac_i2c->name, wac_i2c);
+					 IRQF_ONESHOT, "sec_epen_irq", wac_i2c);
 		if (ret < 0) {
 			printk(KERN_ERR
 			       "epen:failed to request irq(%d) - %d\n",
@@ -1383,7 +1398,7 @@ static int wacom_i2c_probe(struct i2c_client *client,
 					wacom_interrupt_pdct,
 					IRQF_DISABLED | IRQF_TRIGGER_RISING |
 					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-					wac_i2c->name, wac_i2c);
+					"sec_epen_pdct", wac_i2c);
 		if (ret < 0) {
 			printk(KERN_ERR
 				"epen:failed to request irq(%d) - %d\n",
@@ -1412,6 +1427,12 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	input_unregister_device(input);
 	input = NULL;
  err_register_device:
+#ifdef LCD_FREQ_SYNC
+	mutex_destroy(&wac_i2c->freq_write_lock);
+#endif
+	mutex_destroy(&wac_i2c->irq_lock);
+	mutex_destroy(&wac_i2c->update_lock);
+	mutex_destroy(&wac_i2c->lock);
 	input_free_device(input);
  err_alloc_input_dev:
 	kfree(wac_i2c);

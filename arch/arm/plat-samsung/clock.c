@@ -525,7 +525,7 @@ static int clock_rate_show(void *data, u64 *val)
 	struct clk *c = data;
 	unsigned long flags;
 	spin_lock_irqsave(&clocks_lock, flags);
-	*val = c->usage ? clk_get_rate(c) : 0;
+	*val = clk_get_rate(c);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 	return 0;
 }

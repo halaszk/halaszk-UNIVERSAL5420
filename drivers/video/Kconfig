@@ -2080,10 +2080,17 @@ config FB_S5P_MDNIE
         ---help---
         This enables support for Samsung MDNIE feature
 
+config FB_S5P_MDNIE_LITE
+        bool "Samsung MDNIE LITE"
+        depends on FB_S3C
+        default n
+        ---help---
+        This enables support for Samsung MDNIE LITE feature
+
 config FB_DBLC_PWM
         bool "Samsung DBLC PWM"
         depends on FB_S3C
-        default "0"
+        default n
         ---help---
         This enables support for Samsung DBLC feature
 
@@ -2111,11 +2118,24 @@ config FB_S3C_DEBUG_REGWRITE
        ---help---
          Show all register writes via printk(KERN_DEBUG)
 
+config FB_MIC
+	bool "Samsung MIC Support"
+	depends on FB_S3C
+	default n
+	---help---
+	  This enables support for Samsung MIC feature
+
 config FB_EXYNOS_FIMD_SYSMMU_DISABLE
        bool "Support for FIMD Reserved Memory"
        depends on FB_S3C && ARCH_EXYNOS5 && SOC_EXYNOS5410
        default n
        ---help---
+
+config SUPPORT_WQXGA
+	bool "support WQXGA resolution"
+	default n
+	---help---
+	  This enables support for WQXGA resolution device
 
 config S5P_DP
 	tristate "Samsung SoC DP support"
@@ -2130,6 +2150,13 @@ config S5P_DP_PSR
 	default n
 	---help---
 	This enables support for DP Panel Self Refresh.
+
+config S5P_DP_ESD_RECOVERY
+	tristate "Samsung SoC DP ESD recovery support"
+	depends on S5P_DP
+	default n
+	---help---
+	  This enables support for DP ESD recovery.
 
 config FB_S5P_EXTDSP
 	bool "Samsung Virtual Frame Buffer support"

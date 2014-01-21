@@ -25,6 +25,9 @@
 
 struct s2mps11_info {
 	struct device *dev;
+#ifdef CONFIG_SEC_PM
+	struct device *sec_power;
+#endif
 	struct sec_pmic_dev *iodev;
 	int num_regulators;
 	struct regulator_dev **rdev;
@@ -246,7 +249,7 @@ static int s2mps11_get_register(struct regulator_dev *rdev,
 		*reg = S2MPS11_REG_B9CTRL1 + (reg_id - S2MPS11_BUCK9) * 2;
 		break;
 	case S2MPS11_AP_EN32KHZ ... S2MPS11_BT_EN32KHZ:
-		*reg = S2MPS11_REG_CTRL1;
+		*reg = S2MPS11_REG_RTC_CTRL;
 		*pmic_en = 0x01 << (reg_id - S2MPS11_AP_EN32KHZ);
 		return 0;
 	default:
@@ -694,6 +697,50 @@ static struct regulator_desc regulators[] = {
 	},
 };
 
+#ifdef CONFIG_SEC_PM
+extern struct class *sec_class;
+#define MRSTB_EN_BIT BIT(3)
+
+static ssize_t switch_show_manual_reset(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct s2mps11_info *s2mps11 = dev_get_drvdata(dev);
+	unsigned int val;
+
+	sec_reg_read(s2mps11->iodev, S2MPS11_REG_CTRL1, &val);
+	val &= MRSTB_EN_BIT;
+
+	return sprintf(buf, "%d", val ? 1 : 0);
+}
+
+static ssize_t switch_store_manual_reset(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct s2mps11_info *s2mps11 = dev_get_drvdata(dev);
+	unsigned int val, mask;
+	int ret;
+
+	if (!strncmp(buf, "0", 1)) {
+		val = 0;
+	} else if (!strncmp(buf, "1", 1)) {
+		val = MRSTB_EN_BIT;
+	} else {
+		pr_warn("%s: Wrong command:%s\n", __func__, buf);
+		return -EINVAL;
+	}
+
+	mask = MRSTB_EN_BIT;
+	ret = sec_reg_update(s2mps11->iodev, S2MPS11_REG_CTRL1, val, mask);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
+static DEVICE_ATTR(enable_hw_reset, 0664, switch_show_manual_reset,
+		switch_store_manual_reset);
+#endif /* CONFIG_SEC_PM */
+
 static __devinit int s2mps11_pmic_probe(struct platform_device *pdev)
 {
 	struct sec_pmic_dev *iodev = dev_get_drvdata(pdev->dev.parent);
@@ -728,6 +775,21 @@ static __devinit int s2mps11_pmic_probe(struct platform_device *pdev)
 	s2mps11->num_regulators = pdata->num_regulators;
 	platform_set_drvdata(pdev, s2mps11);
 
+#ifdef CONFIG_SEC_PM
+	s2mps11->sec_power= device_create(sec_class, NULL, 0, NULL, "sec_power");
+	if (IS_ERR(s2mps11->sec_power)) {
+		ret = PTR_ERR(s2mps11->sec_power);
+		dev_err(&pdev->dev, "Failed to create sec_power:%d\n", ret);
+		return ret;
+	}
+	dev_set_drvdata(s2mps11->sec_power, s2mps11);
+
+	ret = device_create_file(s2mps11->sec_power, &dev_attr_enable_hw_reset);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to create enable_hw_reset:%d\n", ret);
+		return ret;
+	}
+#endif
 	s2mps11->ramp_delay2 = pdata->buck2_ramp_delay;
 	s2mps11->ramp_delay34 = pdata->buck34_ramp_delay;
 	s2mps11->ramp_delay5 = pdata->buck5_ramp_delay;

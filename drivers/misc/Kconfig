@@ -531,13 +531,27 @@ config MUIC_MAX77803_SUPPORT_CAR_DOCK
 	help
 	  If you say yes here you will get support for the car dock.
 
-config MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION 
-	bool "MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION" 
-	depends on MFD_MAX77803 
-	default y 
-	help 
-	  If you say yes here you will get support for the MHL cable 
-	  detection. 
+config MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION
+	bool "MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION"
+	depends on MFD_MAX77803
+	default y
+	help
+	  If you say yes here you will get support for the MHL cable
+	  detection.
+
+config MUIC_MAX77803_SUPPORT_LANHUB
+	bool "MUIC_MAX77803_SUPPORT_LANHUB"
+	depends on MFD_MAX77803
+	default n
+	help
+	  If you say yes here you will get support for the LANHUB
+
+config MUIC_FULL_DUMP_ENABLE
+	bool "MUIC_FULL_REGISTER_DUMP_ENABLE"
+	depends on MFD_MAX77803
+	default n
+	help
+	  If you say yes here you will get full register dump of max77803
 
 config WL127X_RFKILL
 	tristate "Bluetooth power control driver for TI wl127x"
@@ -552,7 +566,7 @@ config TIMA_LOG
 	default y
 	help
 	  This option enables support for dumping TIMA log.
-	 
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

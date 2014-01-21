@@ -142,8 +142,16 @@ fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_ha_m07.fw cypress/cypress_ha_m09.fw
 fw-shipped-$(CONFIG_EPEN_WACOM_G9PM) += epen/W9001_B887.bin epen/W9001_B911.bin
-fw-shipped-$(CONFIG_EPEN_WACOM_G9PLL) += epen/W9007_B878.bin epen/W9007A_0136.bin
-fw-shipped-$(CONFIG_EPEN_WACOM_G10PM) += epen/W9010_B934.bin epen/W9010_B968.bin
+ifeq ("$(CONFIG_EPEN_WACOM_G9PLL)", "y")
+fw-shipped-$(CONFIG_N1A) += epen/W9007A_LT03.bin
+fw-shipped-$(CONFIG_V1A) += epen/W9007A_V1.bin
+fw-shipped-$(CONFIG_CHAGALL) += epen/W9007A_V1.bin
+endif
+fw-shipped-$(CONFIG_EPEN_WACOM_G10PM) += epen/W9010_HA_B934.bin epen/W9010_HA_B968.bin
+
+ifeq ("$(CONFIG_KEYBOARD_TC300K)", "y")
+fw-shipped-$(CONFIG_CHAGALL) += coreriver/tc300k_chagall.fw
+endif
 
 #for sensorhub
 fw-shipped-$(CONFIG_SENSORS_SSP_STM) += ssp_H_3G.fw ssp_H_3G_rev5.fw
@@ -162,6 +170,12 @@ TSPFIRMWARE_DIRECTORY = firmware/tsp_synaptics
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h_no_tr.fw
+ifdef CONFIG_CHAGALL
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_chagall.fw
+else
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2_g2.fw
+endif
 else
 $(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
 endif

@@ -41,12 +41,18 @@
 
 #include "board-universal5420.h"
 
+#include <linux/i2c-gpio.h>
+
 #ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
 static struct s5p_mfc_qos universal5420_mfc_qos_table[] = {
 	[0] = {
 		.thrd_mb	= 0,
 		.freq_mfc	= 111000,
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+		.freq_int	= 222000,
+#else
 		.freq_int	= 111000,
+#endif
 		.freq_mif	= 200000,
 #ifdef CONFIG_ARM_EXYNOS_IKS_CPUFREQ
 		.freq_cpu	= 0,
@@ -223,6 +229,31 @@ static struct i2c_board_info hs_i2c_devs1[] __initdata = {
 		.platform_data = &s5k6b2_platdata,
 	},
 };
+
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#define SEC_VISION_SWI2C_ID 25
+
+static struct i2c_gpio_platform_data gpio_i2c_data_vision = {
+	.sda_pin = GPIO_VISION_SDA_18V,
+	.scl_pin = GPIO_VISION_SCL_18V,
+	.udelay = 2,
+	.sda_is_open_drain = 0,
+	.scl_is_open_drain = 0,
+};
+
+struct platform_device sec_device_vision = {
+	.name = "i2c-gpio",
+	.id = SEC_VISION_SWI2C_ID,
+	.dev.platform_data = &gpio_i2c_data_vision,
+};
+
+static struct i2c_board_info sec_brdinfo_vision[] __initdata = {
+	{
+		I2C_BOARD_INFO("S5K6B2", 0x35),
+		.platform_data = &s5k6b2_platdata,
+	},
+};
+#endif
 #endif
 
 #ifdef CONFIG_VIDEO_EXYNOS_MIPI_CSIS
@@ -261,7 +292,11 @@ static struct platform_device mipi_csi_fixed_voltage = {
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_LITE
 static struct exynos_isp_info __refdata s5k6b2 = {
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+	.board_info = sec_brdinfo_vision,
+#else
 	.board_info	= hs_i2c_devs1,
+#endif
 	.cam_srclk_name	= "sclk_isp_sensor2",
 	.clk_frequency	= 24000000UL,
 	.bus_type	= CAM_TYPE_MIPI,
@@ -269,12 +304,20 @@ static struct exynos_isp_info __refdata s5k6b2 = {
 	.cam_clk_name	= "aclk_333_432_gscl",
 #ifdef CONFIG_S5K6B2_CSI_C
 	.camif_clk_name	= "gscl_flite0",
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+	.i2c_bus_num	= SEC_VISION_SWI2C_ID,
+#else
 	.i2c_bus_num	= 1,
+#endif
 	.cam_port	= CAM_PORT_A, /* A-Port : 0 */
 #endif
 #ifdef CONFIG_S5K6B2_CSI_D
 	.camif_clk_name	= "gscl_flite1",
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+	.i2c_bus_num	= SEC_VISION_SWI2C_ID,
+#else
 	.i2c_bus_num	= 1,
+#endif
 	.cam_port	= CAM_PORT_B, /* B-Port : 1 */
 #endif
 	.flags		= 0,
@@ -367,7 +410,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 			.flite_id = FLITE_ID_A,
 			.count = 0,
 		},
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
 		{
 			.pin_type = PIN_GPIO,
 			.pin = EXYNOS5420_GPE1(0),
@@ -409,7 +452,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 			.count = 0,
 		},
 		*/
-#if defined(CONFIG_N1A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 		{
 			.pin_type = PIN_GPIO,
 			.pin = EXYNOS5420_GPE0(6),
@@ -445,7 +488,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 			.flite_id = FLITE_ID_A,
 			.count = 0,
 		},
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
 		/* AF_28V */
 		{
 			.pin_type = PIN_REGULATOR,
@@ -697,6 +740,227 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 	}
 };
 
+static struct exynos5_sensor_gpio_info gpio_universal5420_chagall = {
+	.cfg = {
+		/* 13M AVDD_28V */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPE1(0),
+			.name = "CAM_SENSOR_A28V_PM_EN",
+			.value = (1),
+			.act = GPIO_OUTPUT,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M DVDD_1.05_12V */
+		{
+			.pin_type = PIN_REGULATOR,
+			.name = "cam_sensor_core_1.2v",
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* AF_28V */
+		{
+			.pin_type = PIN_REGULATOR,
+			.name = "cam_af_2.8v_pm",
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M HOST_18V */
+		{
+			.pin_type = PIN_REGULATOR,
+			.name = "cam_isp_sensor_io_1.8v",
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M MCLK : CIS_CLK0/XGPIO5 */
+		{
+			/* MIPI-CSI0 */
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPH0(5),
+			.name = "GPIO_CAM_MCLK",
+			.value = (0x2 << 20),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M X SHUT/DOWN */
+		{
+			/* MIPI-CSI0 */
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPE0(5),
+			.name = "GPIO_MAIN_CAM_RESET",
+			.value = (1),
+			.act = GPIO_RESET,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M I2C */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(0),
+			.name = "GPIO_MAIN_CAM_SDA_18V",
+			.value = (0x2 << 0),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(1),
+			.name = "GPIO_MAIN_CAM_SCL_18V",
+			.value = (0x2 << 4),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(2),
+			.name = "GPIO_AF_SDA",
+			.value = (0x2 << 8),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(3),
+			.name = "GPIO_AF_SCL",
+			.value = (0x2<<12),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 13M Flash */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPE0(0),
+			.name = "GPIO_CAM_FLASH_EN",
+			.value = (0x2 << 0),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPE0(1),
+			.name = "GPIO_CAM_FLASH_SET",
+			.value = (0x2 << 4),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* 2M AVDD_28V */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPY7(0),
+			.name = "GPIO_CAM_SENSOR_A28V_VT_EN",
+			.value = (1),
+			.act = GPIO_OUTPUT,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* 2M DVDD_18V */
+		{
+			.pin_type = PIN_REGULATOR,
+			.name = "vt_cam_1.8v",
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* 2M X SHUT/DOWN */
+		{
+			/* MIPI-CSI1 */
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPE0(4),
+			.name = "GPIO_CAM_VT_nRST",
+			.value = (1),
+			.act = GPIO_RESET,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* 2M ID */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPY7(2),
+			.name = "VT_CAM_ID",
+			.value = (0),
+			.act = GPIO_OUTPUT,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* 2M MCLK */
+		{
+			/* MIPI-CSI1 */
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPH0(7),
+			.name = "GPIO_VT_CAM_MCLK",
+			.value = (0x2 << 28),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* 2M I2C */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(4),
+			.name = "GPIO_VT_CAM_SDA_18V",
+			.value = (0x2 << 16),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF0(5),
+			.name = "GPIO_VT_CAM_SCL_18V",
+			.value = (0x2 << 20),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_B,
+			.count = 0,
+		},
+		/* ETC */
+		/* Host use spi controller in image subsystem */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF1(0),
+			.name = "GPIO_CAM_SPI0_SCLK",
+			.value = (0x2 << 0),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		/* chip select is controlled by gpio output */
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF1(1),
+			.name = "GPIO_CAM_SPI0_SSN",
+			.value = (0x1 << 4),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF1(2),
+			.name = "GPIO_CAM_SPI0_MISP",
+			.value = (0x2 << 8),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+		{
+			.pin_type = PIN_GPIO,
+			.pin = EXYNOS5420_GPF1(3),
+			.name = "GPIO_CAM_SPI0_MOSI",
+			.value = (0x2 << 12),
+			.act = GPIO_PULL_NONE,
+			.flite_id = FLITE_ID_A,
+			.count = 0,
+		},
+	}
+};
+
 static struct s3c64xx_spi_csinfo spi3_csi[] = {
 	[0] = {
 		.line		= EXYNOS5420_GPF1(1),
@@ -723,7 +987,11 @@ static struct platform_device *universal5420_media_devices[] __initdata = {
 	&exynos5_device_hs_i2c1,
 #endif
 #if defined (CONFIG_CSI_D) || defined (CONFIG_S5K6B2_CSI_D)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+	&sec_device_vision,
+#else
 	&s3c_device_i2c1,
+#endif
 #endif
 	&exynos_device_md0,
 	&exynos_device_md1,
@@ -763,6 +1031,8 @@ static struct platform_device *universal5420_media_devices[] __initdata = {
 	&s5p_device_cec,
 };
 
+extern unsigned int system_rev;
+
 void __init exynos5_universal5420_media_init(void)
 {
 	s3c_set_platdata(&exynos5_scaler_pd, sizeof(exynos5_scaler_pd),
@@ -795,7 +1065,11 @@ void __init exynos5_universal5420_media_init(void)
 			ARRAY_SIZE(universal5420_media_devices));
 
 	exynos5_gsc_set_ip_ver(IP_VER_GSC_5A);
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+	exynos5_gsc_set_pm_qos_val(160000, 222000);
+#else
 	exynos5_gsc_set_pm_qos_val(160000, 111000);
+#endif
 
 	s3c_set_platdata(&exynos_gsc0_default_data,
 		sizeof(exynos_gsc0_default_data), &exynos5_device_gsc0);
@@ -821,7 +1095,9 @@ void __init exynos5_universal5420_media_init(void)
 #endif
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_LITE
+#if !defined(CONFIG_V1A) && !defined(CONFIG_V2A)
 	s3c_i2c1_set_platdata(NULL);
+#endif
 	universal5420_set_camera_platdata();
 	s3c_set_platdata(&exynos_flite0_default_data,
 			sizeof(exynos_flite0_default_data), &exynos_device_flite0);
@@ -841,8 +1117,15 @@ void __init exynos5_universal5420_media_init(void)
 	clk_add_alias("gscl_wrap2", FIMC_IS_MODULE_NAME, "gscl_wrap2", &exynos5_device_fimc_is.dev);
 
 	dev_set_name(&exynos5_device_fimc_is.dev, FIMC_IS_MODULE_NAME);
-
+#if defined(CONFIG_CHAGALL)
+	if (system_rev == 9) {
+		exynos5_fimc_is_data.gpio_info = &gpio_universal5420;
+	} else {
+		exynos5_fimc_is_data.gpio_info = &gpio_universal5420_chagall;
+	}
+#else
 	exynos5_fimc_is_data.gpio_info = &gpio_universal5420;
+#endif
 
 	exynos5_fimc_is_set_platdata(&exynos5_fimc_is_data);
 

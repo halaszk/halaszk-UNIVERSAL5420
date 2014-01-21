@@ -620,8 +620,11 @@ static void kbase_fence_timeout(unsigned long data)
 		kbase_fence_del_timer(katom);
 		return;
 	}
-	pr_info("kbase_fence_timeout after %d\n", KBASE_FENCE_TIMEOUT);
+	pr_info("Release fence is not signaled on [%p] for %d ms\n", katom->fence, KBASE_FENCE_TIMEOUT);
+
+#ifdef KBASE_FENCE_DUMP
 	kbase_fence_dump(katom->fence);
+#endif
 #ifdef KBASE_FENCE_TIMEOUT_FAKE_SIGNAL
 	if (katom->fence)
 		kbase_fence_wait_callback(katom->fence, &katom->sync_waiter);

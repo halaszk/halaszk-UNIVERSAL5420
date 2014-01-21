@@ -11,10 +11,12 @@
 #define __ASM_ARCH_GPIO_EXYNOS_H __FILE__
 
 #if defined(CONFIG_MACH_UNIVERSAL5420)
-#if defined(CONFIG_V1A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
 #include "gpio-v1a-3g-rev00.h"
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 #include "gpio-n1a-rev00.h"
+#elif defined(CONFIG_CHAGALL)
+#include "gpio-chagall-3g-rev00.h"
 #else
 #include "gpio-ha-3g-rev00.h"
 #endif

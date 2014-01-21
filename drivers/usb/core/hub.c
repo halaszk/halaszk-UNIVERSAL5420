@@ -3722,6 +3722,17 @@ static int hub_handle_remote_wakeup(struct usb_hub *hub, unsigned int port,
 	} else {
 		ret = -ENODEV;
 		hub_port_disable(hub, port, 1);
+#if defined(CONFIG_LINK_DEVICE_HSIC)
+		/* If port2 was not enumerated, clear the USB_PORT_FEAT_POWER,
+		 for getting out of the abnormal remote wakeup interrupt lockup.
+		 */
+		 if (port == 2) {
+			dev_dbg(hub->intfdev,
+				"ENODEV remote wakeup, clear Port%d POWER\n",
+				port);
+			clear_port_feature(hdev, port, USB_PORT_FEAT_POWER);
+		}
+#endif
 	}
 	dev_dbg(hub->intfdev, "resume on port %d, status %d\n",
 			port, ret);

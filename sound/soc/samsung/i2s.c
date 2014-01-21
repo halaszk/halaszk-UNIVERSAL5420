@@ -912,6 +912,10 @@ void i2s_enable(struct snd_soc_dai *dai, int pm_mode)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
+	struct platform_device *pri_pdev = i2s->pri_dai ?
+					i2s->pri_dai->pdev : i2s->pdev;
+	struct s3c_audio_pdata *i2s_pdata = pri_pdev->dev.platform_data;
+
 	unsigned long flags;
 
 	spin_lock_irqsave(&lock, flags);
@@ -940,6 +944,9 @@ void i2s_enable(struct snd_soc_dai *dai, int pm_mode)
 		if (pm_mode == SLEEP) {
 			audss_reg_restore(i2s);
 			i2s_reg_restore(i2s);
+
+			if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pri_pdev))
+				dev_err(&i2s->pdev->dev, "Unable to configure gpio\n");
 		}
 
 		return;

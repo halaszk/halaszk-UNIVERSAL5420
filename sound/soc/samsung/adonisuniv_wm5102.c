@@ -59,8 +59,10 @@ struct wm5102_machine_priv {
 	struct delayed_work mic_work;
 	struct wake_lock jackdet_wake_lock;
 	int aif2mode;
+	int camcorder_eq;
 
 	int aif1rate;
+	int aif2rate;
 };
 static int lhpf1_coeff;
 static int lhpf2_coeff;
@@ -77,12 +79,20 @@ const char *aif2_mode_text[] = {
 	"Slave", "Master"
 };
 
+const char *camcorder_eq_text[] = {
+	"Off", "On"
+};
+
 static const struct soc_enum lhpf_filter_mode_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(lhpf_filter_text), lhpf_filter_text),
 };
 
 static const struct soc_enum aif2_mode_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(aif2_mode_text), aif2_mode_text),
+};
+
+static const struct soc_enum camcorder_eq_enum[] = {
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(camcorder_eq_text), camcorder_eq_text),
 };
 
 static struct {
@@ -372,6 +382,15 @@ static int set_aif2_mode(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct wm5102_machine_priv *priv
 		= snd_soc_card_get_drvdata(codec->card);
+	struct snd_soc_dai *codec_dai = codec->card->rtd[0].codec_dai;
+
+	if((priv->aif2mode == 1) && (ucontrol->value.integer.value[0] == 0)) {
+		int ret;
+		ret = snd_soc_dai_set_pll(codec_dai, WM5102_FLL2, 0, 0, 0);
+		if (ret != 0)
+			dev_err(codec->dev,
+					"Failed to stop FLL2: %d\n", ret);
+	}
 
 	priv->aif2mode = ucontrol->value.integer.value[0];
 
@@ -379,6 +398,68 @@ static int set_aif2_mode(struct snd_kcontrol *kcontrol,
 					 aif2_mode_text[priv->aif2mode]);
 	return  0;
 }
+
+static int get_camcorder_eq(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct wm5102_machine_priv *priv
+		= snd_soc_card_get_drvdata(codec->card);
+
+	ucontrol->value.integer.value[0] = priv->camcorder_eq;
+	return 0;
+}
+
+static int set_camcorder_eq(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct wm5102_machine_priv *priv
+		= snd_soc_card_get_drvdata(codec->card);
+	struct snd_soc_dai *codec_dai = codec->card->rtd[0].codec_dai;
+	int eq_switch = ucontrol->value.integer.value[0];
+	struct regmap *regmap = codec->control_data;
+
+	if(eq_switch) {
+		regmap_update_bits(regmap, ARIZONA_EQ1_1,
+				0xFFFF, 0x614B);
+		regmap_update_bits(regmap, ARIZONA_EQ1_2,
+				0xFFFF, 0x3300);
+
+		regmap_update_bits(regmap, ARIZONA_EQ1_6,
+				0xFFFF, 0x11F3);
+		regmap_update_bits(regmap, ARIZONA_EQ1_7,
+				0xFFFF, 0xF222);
+		regmap_update_bits(regmap, ARIZONA_EQ1_8,
+				0xFFFF, 0x040A);
+		regmap_update_bits(regmap, ARIZONA_EQ1_9,
+				0xFFFF, 0x0872);
+		regmap_update_bits(regmap, ARIZONA_EQ1_10,
+				0xFFFF, 0x0D79);
+		regmap_update_bits(regmap, ARIZONA_EQ1_11,
+				0xFFFF, 0xF404);
+		regmap_update_bits(regmap, ARIZONA_EQ1_12,
+				0xFFFF, 0x040A);
+		regmap_update_bits(regmap, ARIZONA_EQ1_13,
+				0xFFFF, 0x0FE7);
+		regmap_update_bits(regmap, ARIZONA_EQ1_14,
+				0xFFFF, 0x0A84);
+		regmap_update_bits(regmap, ARIZONA_EQ1_15,
+				0xFFFF, 0xF222);
+		regmap_update_bits(regmap, ARIZONA_EQ1_17,
+				0xFFFF, 0x0872);
+	} else {
+		regmap_update_bits(regmap, ARIZONA_EQ1_1,
+				ARIZONA_EQ1_ENA_MASK, 0x0);
+	}
+
+	priv->camcorder_eq = eq_switch;
+
+	dev_info(codec->dev, "%s : %s\n", __func__,
+					 camcorder_eq_text[priv->camcorder_eq]);
+	return  0;
+}
+
 
 static const struct snd_kcontrol_new adonisuniv_codec_controls[] = {
 	SOC_ENUM_EXT("LHPF1 COEFF FILTER", lhpf_filter_mode_enum[0],
@@ -389,6 +470,9 @@ static const struct snd_kcontrol_new adonisuniv_codec_controls[] = {
 
 	SOC_ENUM_EXT("AIF2 Mode", aif2_mode_enum[0],
 		get_aif2_mode, set_aif2_mode),
+
+	SOC_ENUM_EXT("Camcorder EQ", camcorder_eq_enum[0],
+		get_camcorder_eq, set_camcorder_eq),
 };
 
 static const struct snd_kcontrol_new adonisuniv_controls[] = {
@@ -515,15 +599,22 @@ static int adonisuniv_wm5102_aif2_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(rtd->card);
 	int ret;
-	int prate, bclk;
+	int bclk;
 
 	dev_info(codec_dai->dev, "aif2: %dch, %dHz, %dbytes\n",
 						params_channels(params),
 						params_rate(params),
 						params_buffer_bytes(params));
 
-	prate = params_rate(params);
-	switch (prate) {
+	if (priv->aif2rate != params_rate(params)) {
+		ret = snd_soc_dai_set_pll(codec_dai, WM5102_FLL2, 0, 0, 0);
+		if (ret != 0)
+			dev_err(codec_dai->dev,
+					"Failed to stop FLL2: %d\n", ret);
+		priv->aif2rate = params_rate(params);
+	}
+
+	switch (priv->aif2rate) {
 	case 8000:
 		bclk = 256000;
 		break;
@@ -534,7 +625,6 @@ static int adonisuniv_wm5102_aif2_hw_params(struct snd_pcm_substream *substream,
 		dev_warn(codec_dai->dev,
 				"Unsupported LRCLK %d, falling back to 8000Hz\n",
 				(int)params_rate(params));
-		prate = 8000;
 		bclk = 256000;
 	}
 
@@ -768,15 +858,11 @@ static struct snd_soc_dai_driver adonisuniv_ext_dai[] = {
 
 static struct snd_soc_dai_link adonisuniv_dai[] = {
 	{
-		.name = "AdonisUniv_WM5102 Playback",
-		.stream_name = "Sec_Dai",
-		.cpu_dai_name = "samsung-i2s.4",
+		.name = "AdonisUniv_WM5102 Multi Ch",
+		.stream_name = "Pri_Dai",
+		.cpu_dai_name = "samsung-i2s.0",
 		.codec_dai_name = "wm5102-aif1",
-#ifdef CONFIG_SND_SAMSUNG_USE_IDMA
-		.platform_name = "samsung-idma",
-#else
 		.platform_name = "samsung-audio",
-#endif
 		.codec_name = "wm5102-codec",
 		.ops = &adonisuniv_wm5102_aif1_ops,
 	},
@@ -801,11 +887,15 @@ static struct snd_soc_dai_link adonisuniv_dai[] = {
 		.ignore_suspend = 1,
 	},
 	{
-		.name = "AdonisUniv_WM5102 Multi Ch",
-		.stream_name = "Pri_Dai",
-		.cpu_dai_name = "samsung-i2s.0",
+		.name = "AdonisUniv_WM5102 Playback",
+		.stream_name = "Sec_Dai",
+		.cpu_dai_name = "samsung-i2s.4",
 		.codec_dai_name = "wm5102-aif1",
+#ifdef CONFIG_SND_SAMSUNG_USE_IDMA
+		.platform_name = "samsung-idma",
+#else
 		.platform_name = "samsung-audio",
+#endif
 		.codec_name = "wm5102-codec",
 		.ops = &adonisuniv_wm5102_aif1_ops,
 	},

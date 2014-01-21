@@ -471,11 +471,13 @@ struct input_keymap_entry {
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
 /* Dummy touchkey code */
-#define KEY_DUMMY_HOME1		249
-#define KEY_DUMMY_HOME2		250
-#define KEY_DUMMY_MENU		251
-#define KEY_DUMMY_HOME		252
+#define KEY_DUMMY_HOME1	249
+#define KEY_DUMMY_HOME2	250
+#define KEY_DUMMY_MENU	251
+#define KEY_DUMMY_HOME	252
 #define KEY_DUMMY_BACK		253
+
+#define KEY_RECENT			254
 
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
@@ -715,13 +717,20 @@ struct input_keymap_entry {
 #define KEY_CAMERA_RIGHT	0x21a
 
 #define KEY_PEN_PDCT		0x230 /* E-PEN PDCT flag*/
+#ifdef CONFIG_INPUT_BOOSTER
+#define KEY_BOOSTER_PEN		0x231
+#define KEY_BOOSTER_TOUCH	0x232
+#endif
+#ifdef CONFIG_FAST_BOOT
+#define KEY_FAKE_PWR		0x240 /* Fake Power off flag*/
+#endif
 #define BTN_TRIGGER_HAPPY		0x2c0
 #define BTN_TRIGGER_HAPPY1		0x2c0
 #define BTN_TRIGGER_HAPPY2		0x2c1
 #define BTN_TRIGGER_HAPPY3		0x2c2
 #define BTN_TRIGGER_HAPPY4		0x2c3
 #define BTN_TRIGGER_HAPPY5		0x2c4
-#define BTN_TRIGGER_HAPPY6		0x2c5
+#define BTN_TRIGGER_HAPPY6		0x2c5 /* For Samsung S Action Mouse button */
 #define BTN_TRIGGER_HAPPY7		0x2c6
 #define BTN_TRIGGER_HAPPY8		0x2c7
 #define BTN_TRIGGER_HAPPY9		0x2c8

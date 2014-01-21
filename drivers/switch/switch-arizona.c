@@ -1350,6 +1350,8 @@ err_register:
 	pm_runtime_disable(&pdev->dev);
 	switch_dev_unregister(&info->sdev);
 err:
+	mutex_destroy(&info->lock);
+	input_free_device(info->input);
 	return ret;
 }
 

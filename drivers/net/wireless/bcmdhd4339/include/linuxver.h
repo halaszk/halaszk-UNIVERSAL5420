@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linuxver.h 416447 2013-08-05 02:55:34Z $
+ * $Id: linuxver.h 417757 2013-08-12 12:24:45Z $
  */
 
 #ifndef _linuxver_h_
@@ -530,7 +530,7 @@ static inline bool binary_sema_down(tsk_ctl_t *tsk)
 		return TRUE;
 }
 
-static inline bool  binary_sema_up(tsk_ctl_t *tsk)
+static inline bool binary_sema_up(tsk_ctl_t *tsk)
 {
 	bool sem_up = FALSE;
 	unsigned long flags = 0;

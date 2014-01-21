@@ -576,6 +576,8 @@ struct fb_cursor_user {
 /*      PSR pre entry occurred  */
 #define FB_EVENT_PSR_PRE_ENTRY		0xF4
 
+#define FB_EVENT_PSR_WACOM_CHECK		0xF5
+
 enum dp_psr_state {
 	PSR_NONE = 0,
 	PSR_PREPARE,

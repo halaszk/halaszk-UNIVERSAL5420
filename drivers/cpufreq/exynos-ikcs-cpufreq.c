@@ -41,6 +41,10 @@
 #include <mach/asv-exynos.h>
 #include <plat/cpu.h>
 
+#if defined(CONFIG_RTC_DRV_MAX77802)
+extern bool pmic_is_jig_attached;
+#endif
+
 struct lpj_info {
 	unsigned long   ref;
 	unsigned int    freq;
@@ -414,7 +418,7 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 				pm_qos_update_request(&min_int_qos, 400000);
 			} else if ((curr_freq < ARM_INT_SKEW_FREQ_H) &&
 					(target_freq < ARM_INT_SKEW_FREQ_H)) {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 				pm_qos_update_request(&min_int_qos, 222000);
 #else
 				pm_qos_update_request(&min_int_qos, 111000);
@@ -498,7 +502,7 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 			(target_freq < ARM_INT_SKEW_FREQ_H) &&
 			(curr_freq >= ARM_INT_SKEW_FREQ_H)) {
 		if (pm_qos_request_active(&min_int_qos))
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 		pm_qos_update_request(&min_int_qos, 222000);
 #else
 		pm_qos_update_request(&min_int_qos, 111000);
@@ -570,6 +574,9 @@ static int exynos_target(struct cpufreq_policy *policy,
 	unsigned int index;
 	int count, ret = 0;
 	bool do_switch = false;
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+	unsigned int skew_freq = 0;
+#endif
 
 	mutex_lock(&cpufreq_lock);
 
@@ -605,9 +612,31 @@ static int exynos_target(struct cpufreq_policy *policy,
 #ifdef CONFIG_BL_SWITCHER
 	is_bl_switch = false;
 	if (do_switch) {
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+		if (cur == CA7) {
+			skew_freq = exynos_getspeed_cluster(CA15);
+			if (skew_freq >= ARM_INT_SKEW_FREQ) {
+				if (skew_freq > ARM_INT_SKEW_FREQ_H)
+					pm_qos_update_request(&min_int_qos, 400000);
+				else
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+					pm_qos_update_request(&min_int_qos, 222000);
+#else
+					pm_qos_update_request(&min_int_qos, 111000);
+#endif
+			}
+		}
+#endif
+
 		cur = exynos_switch(policy, old_cur);
-		if (old_cur == cur)
+		if (old_cur == cur) {
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+			if (cur == CA7)
+				if (skew_freq >= ARM_INT_SKEW_FREQ)
+					pm_qos_update_request(&min_int_qos, 0);
+#endif
 			goto out;	/* Switching failed, No operation */
+		}
 
 		freqs[cur]->old = exynos_getspeed_cluster(cur);
 		policy->cur = freqs[cur]->old;
@@ -1123,6 +1152,14 @@ static int exynos_min_qos_handler(struct notifier_block *b, unsigned long val, v
 	}
 #endif
 
+	mutex_lock(&cpufreq_lock);
+	if (val <= policy->cur) {
+		cpufreq_cpu_put(policy);
+		mutex_unlock(&cpufreq_lock);
+		goto good;
+	}
+	mutex_unlock(&cpufreq_lock);
+
 	ret = __cpufreq_driver_target(policy, val, CPUFREQ_RELATION_H);
 
 	cpufreq_cpu_put(policy);
@@ -1159,6 +1196,14 @@ static int exynos_max_qos_handler(struct notifier_block *b, unsigned long val, v
 		goto good;
 	}
 #endif
+
+	mutex_lock(&cpufreq_lock);
+	if (val >= policy->cur) {
+		cpufreq_cpu_put(policy);
+		mutex_unlock(&cpufreq_lock);
+		goto good;
+	}
+	mutex_unlock(&cpufreq_lock);
 
 	ret = __cpufreq_driver_target(policy, val, CPUFREQ_RELATION_H);
 
@@ -1222,9 +1267,51 @@ static struct notifier_block fb_block = {
 	.notifier_call = fb_state_change,
 };
 
+struct freq_qos_val {
+	s32 min_freq;
+	s32 max_freq;
+	unsigned long min_timeout_us;
+	unsigned long max_timeout_us;
+};
+
+static void get_boot_freq_qos(struct freq_qos_val *boot_freq_qos)
+{
+#if defined(CONFIG_RTC_DRV_MAX77802)
+	if (pmic_is_jig_attached) {
+		boot_freq_qos->min_freq = 1000000;
+		boot_freq_qos->min_timeout_us = 360000 * 1000;
+		boot_freq_qos->max_freq = 1000000;
+		boot_freq_qos->max_timeout_us = 360000 * 1000;
+	} else {
+		boot_freq_qos->min_freq = 1500000;
+		boot_freq_qos->min_timeout_us = 40000 * 1000;
+		boot_freq_qos->max_freq = 1500000;
+		boot_freq_qos->max_timeout_us = 40000 * 1000;
+	}
+#else
+#if defined(CONFIG_SEC_FACTORY)
+	boot_freq_qos->min_freq = 1000000;
+	boot_freq_qos->min_timeout_us = 360000 * 1000;
+	boot_freq_qos->max_freq = 1000000;
+	boot_freq_qos->max_timeout_us = 360000 * 1000;
+#else
+#if defined(CONFIG_CHAGALL)
+	boot_freq_qos->min_freq = 1200000;
+	boot_freq_qos->max_freq = 1200000;
+#else
+	boot_freq_qos->min_freq = 1700000;
+	boot_freq_qos->max_freq = 1700000;
+#endif
+	boot_freq_qos->min_timeout_us = 40000 * 1000;
+	boot_freq_qos->max_timeout_us = 40000 * 1000;
+#endif
+#endif
+}
+
 static int __init exynos_cpufreq_init(void)
 {
 	int ret = -EINVAL;
+	struct freq_qos_val boot_freq_qos;
 
 	boot_cluster = 0;
 
@@ -1311,8 +1398,6 @@ static int __init exynos_cpufreq_init(void)
 	register_pm_notifier(&exynos_cpufreq_nb);
 	register_reboot_notifier(&exynos_cpufreq_reboot_notifier);
 	exynos_tmu_add_notifier(&exynos_tmu_nb);
-	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MIN, &exynos_min_qos_notifier);
-	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MAX, &exynos_max_qos_notifier);
 
 	if (cpufreq_register_driver(&exynos_driver)) {
 		pr_err("%s: failed to register cpufreq driver\n", __func__);
@@ -1321,6 +1406,9 @@ static int __init exynos_cpufreq_init(void)
 
 	pm_qos_add_request(&min_cpu_qos, PM_QOS_CPU_FREQ_MIN, freq_min[CA7]);
 	pm_qos_add_request(&max_cpu_qos, PM_QOS_CPU_FREQ_MAX, freq_max[CA15]);
+
+	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MIN, &exynos_min_qos_notifier);
+	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MAX, &exynos_max_qos_notifier);
 
 	ret = sysfs_create_group(cpufreq_global_kobject, &iks_attr_group);
 	if (ret) {
@@ -1350,17 +1438,20 @@ static int __init exynos_cpufreq_init(void)
 	pm_qos_add_request(&min_int_qos, PM_QOS_DEVICE_THROUGHPUT, 0);
 #endif
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+	get_boot_freq_qos(&boot_freq_qos);
 	pm_qos_add_request(&boot_max_cpu_qos, PM_QOS_CPU_FREQ_MAX, freq_max[CA15]);
-	pm_qos_update_request_timeout(&boot_max_cpu_qos, 1700000, 40000 * 1000);
 	pm_qos_add_request(&boot_min_cpu_qos, PM_QOS_CPU_FREQ_MIN, 0);
-	pm_qos_update_request_timeout(&boot_min_cpu_qos, 1700000, 40000 * 1000);
+
+#if defined(CONFIG_CHAGALL)
+	pm_qos_update_request(&boot_max_cpu_qos, boot_freq_qos.max_freq);
+	pm_qos_update_request(&boot_min_cpu_qos, boot_freq_qos.min_freq);
 #else
-	pm_qos_add_request(&boot_max_cpu_qos, PM_QOS_CPU_FREQ_MAX, freq_max[CA15]);
-	pm_qos_update_request_timeout(&boot_max_cpu_qos, 1700000, 40000 * 1000);
-	pm_qos_add_request(&boot_min_cpu_qos, PM_QOS_CPU_FREQ_MIN, 0);
-	pm_qos_update_request_timeout(&boot_min_cpu_qos, 1700000, 40000 * 1000);
+	pm_qos_update_request_timeout(&boot_max_cpu_qos, boot_freq_qos.max_freq,
+			boot_freq_qos.max_timeout_us);
+	pm_qos_update_request_timeout(&boot_min_cpu_qos, boot_freq_qos.min_freq,
+			boot_freq_qos.min_timeout_us);
 #endif
+
 	exynos_cpufreq_init_done = true;
 
 	INIT_WORK(&blank_qos_change, change_blank_cpu_qos);

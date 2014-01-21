@@ -63,8 +63,6 @@ static const u8 als_reg_setting[ALS_REG_NUM][2] = {
 struct cm3323_p {
 	struct i2c_client *i2c_client;
 	struct input_dev *input;
-	struct mutex power_lock;
-	struct mutex read_lock;
 	struct hrtimer light_timer;
 	struct workqueue_struct *light_wq;
 	struct work_struct work_light;
@@ -77,69 +75,64 @@ struct cm3323_p {
 	int time_count;
 };
 
-static int cm3323_i2c_read_word(struct cm3323_p *data, u8 command, u16 *val)
+static int cm3323_i2c_read_word(struct cm3323_p *data,
+		unsigned char reg_addr, u16 *buf)
 {
-	int ret = 0;
-	int retry = 3;
+	int ret;
 	struct i2c_msg msg[2];
-	unsigned char buf[2] = {0,};
-	u16 value = 0;
+	unsigned char r_buf[2];
 
-	while (retry--) {
-		/* send slave address & command */
-		msg[0].addr = data->i2c_client->addr;
-		msg[0].flags = I2C_M_WR;
-		msg[0].len = 1;
-		msg[0].buf = &command;
+	msg[0].addr = data->i2c_client->addr;
+	msg[0].flags = I2C_M_WR;
+	msg[0].len = 1;
+	msg[0].buf = &reg_addr;
 
-		/* read word data */
-		msg[1].addr = data->i2c_client->addr;
-		msg[1].flags = I2C_M_RD;
-		msg[1].len = 2;
-		msg[1].buf = buf;
+	msg[1].addr = data->i2c_client->addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].len = 2;
+	msg[1].buf = r_buf;
 
-		ret = i2c_transfer(data->i2c_client->adapter, msg, 2);
+	ret = i2c_transfer(data->i2c_client->adapter, msg, 2);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - i2c read error %d\n", __func__, ret);
 
-		if (ret >= 0) {
-			value = (u16)buf[1];
-			*val = (value << 8) | (u16)buf[0];
-			return ret;
-		}
+		return ret;
 	}
 
-	pr_err("[SENSOR]: %s - i2c transfer error(%d)\n", __func__, ret);
-	return ret;
+	*buf = (u16)r_buf[1];
+	*buf = (*buf << 8) | (u16)r_buf[0];
+
+	return 0;
 }
 
-static int cm3323_i2c_write_byte(struct cm3323_p *data, u8 command, u8 val)
+static int cm3323_i2c_write(struct cm3323_p *data,
+		unsigned char reg_addr, unsigned char buf)
 {
 	int ret = 0;
-	struct i2c_msg msg[1];
-	unsigned char buf[2];
-	int retry = 3;
+	struct i2c_msg msg;
+	unsigned char w_buf[2];
 
-	while (retry--) {
-		buf[0] = command;
-		buf[1] = val;
+	w_buf[0] = reg_addr;
+	w_buf[1] = buf;
 
-		/* send slave address & command */
-		msg->addr = data->i2c_client->addr;
-		msg->flags = I2C_M_WR;
-		msg->len = 2;
-		msg->buf = buf;
+	/* send slave address & command */
+	msg.addr = data->i2c_client->addr;
+	msg.flags = I2C_M_WR;
+	msg.len = 2;
+	msg.buf = (char *)w_buf;
 
-		ret = i2c_transfer(data->i2c_client->adapter, msg, 1);
-		if (ret >= 0)
-			return 0;
+	ret = i2c_transfer(data->i2c_client->adapter, &msg, 1);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - i2c write error %d\n", __func__, ret);
+		return ret;
 	}
 
-	pr_err("[SENSOR]: %s - i2c transfer error(%d)\n", __func__, ret);
-	return ret;
+	return 0;
 }
 
 static void cm3323_light_enable(struct cm3323_p *data)
 {
-	cm3323_i2c_write_byte(data, REG_CS_CONF1, als_reg_setting[0][1]);
+	cm3323_i2c_write(data, REG_CS_CONF1, als_reg_setting[0][1]);
 	hrtimer_start(&data->light_timer, data->poll_delay,
 	      HRTIMER_MODE_REL);
 }
@@ -147,7 +140,7 @@ static void cm3323_light_enable(struct cm3323_p *data)
 static void cm3323_light_disable(struct cm3323_p *data)
 {
 	/* disable setting */
-	cm3323_i2c_write_byte(data, REG_CS_CONF1, als_reg_setting[1][1]);
+	cm3323_i2c_write(data, REG_CS_CONF1, als_reg_setting[1][1]);
 
 	hrtimer_cancel(&data->light_timer);
 	cancel_work_sync(&data->work_light);
@@ -170,15 +163,12 @@ static enum hrtimer_restart cm3323_light_timer_func(struct hrtimer *timer)
 
 static void cm3323_work_func_light(struct work_struct *work)
 {
-	struct cm3323_p *data = container_of(work, struct cm3323_p,
-						    work_light);
+	struct cm3323_p *data = container_of(work, struct cm3323_p, work_light);
 
-	mutex_lock(&data->read_lock);
 	cm3323_i2c_read_word(data, REG_RED, &data->color[0]);
 	cm3323_i2c_read_word(data, REG_GREEN, &data->color[1]);
 	cm3323_i2c_read_word(data, REG_BLUE, &data->color[2]);
 	cm3323_i2c_read_word(data, REG_WHITE, &data->color[3]);
-	mutex_unlock(&data->read_lock);
 
 	input_report_rel(data->input, REL_RED, data->color[0] + 1);
 	input_report_rel(data->input, REL_GREEN, data->color[1] + 1);
@@ -186,14 +176,15 @@ static void cm3323_work_func_light(struct work_struct *work)
 	input_report_rel(data->input, REL_WHITE, data->color[3] + 1);
 	input_sync(data->input);
 
-	if ((ktime_to_ms(data->poll_delay) * (int64_t)data->time_count)
-		>= ((int64_t)LIGHT_LOG_TIME * MSEC_PER_SEC)) {
+	if ((ktime_to_ns(data->poll_delay) * (int64_t)data->time_count)
+		>= ((int64_t)LIGHT_LOG_TIME * NSEC_PER_SEC)) {
 		pr_info("[SENSOR]: %s - r = %u g = %u b = %u w = %u\n",
 			__func__, data->color[0], data->color[1],
 			data->color[2], data->color[3]);
 		data->time_count = 0;
-	} else
+	} else {
 		data->time_count++;
+	}
 }
 
 /* sysfs */
@@ -219,9 +210,8 @@ static ssize_t cm3323_poll_delay_store(struct device *dev,
 		return ret;
 	}
 
-	mutex_lock(&data->power_lock);
-	if (new_delay != ktime_to_ms(data->poll_delay)) {
-		data->poll_delay = ns_to_ktime(new_delay * NSEC_PER_MSEC);
+	if (new_delay != ktime_to_ns(data->poll_delay)) {
+		data->poll_delay = ns_to_ktime(new_delay);
 		if (data->power_state & LIGHT_ENABLED) {
 			cm3323_light_disable(data);
 			cm3323_light_enable(data);
@@ -229,7 +219,6 @@ static ssize_t cm3323_poll_delay_store(struct device *dev,
 		pr_info("[SENSOR]: %s - poll_delay = %lld\n",
 			__func__, new_delay);
 	}
-	mutex_unlock(&data->power_lock);
 
 	return size;
 }
@@ -248,7 +237,6 @@ static ssize_t light_enable_store(struct device *dev,
 	}
 
 	pr_info("[SENSOR]: %s - new_value = %u\n", __func__, enable);
-	mutex_lock(&data->power_lock);
 	if (enable && !(data->power_state & LIGHT_ENABLED)) {
 		data->power_state |= LIGHT_ENABLED;
 		cm3323_light_enable(data);
@@ -256,7 +244,6 @@ static ssize_t light_enable_store(struct device *dev,
 		cm3323_light_disable(data);
 		data->power_state &= ~LIGHT_ENABLED;
 	}
-	mutex_unlock(&data->power_lock);
 
 	return size;
 }
@@ -336,7 +323,7 @@ static int cm3323_setup_reg(struct cm3323_p *data)
 	int ret = 0;
 
 	/* ALS initialization */
-	ret = cm3323_i2c_write_byte(data,
+	ret = cm3323_i2c_write(data,
 			als_reg_setting[0][0],
 			als_reg_setting[0][1]);
 	if (ret < 0) {
@@ -346,7 +333,7 @@ static int cm3323_setup_reg(struct cm3323_p *data)
 	}
 
 	/* turn off */
-	cm3323_i2c_write_byte(data, REG_CS_CONF1, 0x01);
+	cm3323_i2c_write(data, REG_CS_CONF1, 0x01);
 	return ret;
 }
 
@@ -416,9 +403,6 @@ static int cm3323_probe(struct i2c_client *client,
 	data->i2c_client = client;
 	i2c_set_clientdata(client, data);
 
-	mutex_init(&data->power_lock);
-	mutex_init(&data->read_lock);
-
 	/* Check if the device is there or not. */
 	ret = cm3323_setup_reg(data);
 	if (ret < 0) {
@@ -462,13 +446,20 @@ exit_create_light_workqueue:
 	input_unregister_device(data->input);
 exit_input_init:
 exit_setup_reg:
-	mutex_destroy(&data->read_lock);
-	mutex_destroy(&data->power_lock);
 	kfree(data);
 exit_kzalloc:
 exit:
 	pr_err("[SENSOR]: %s - Probe fail!\n", __func__);
 	return ret;
+}
+
+static void cm3323_shutdown(struct i2c_client *client)
+{
+	struct cm3323_p *data = i2c_get_clientdata(client);
+
+	pr_info("[SENSOR]: %s\n", __func__);
+	if (data->power_state & LIGHT_ENABLED)
+		cm3323_light_disable(data);
 }
 
 static int __devexit cm3323_remove(struct i2c_client *client)
@@ -481,10 +472,6 @@ static int __devexit cm3323_remove(struct i2c_client *client)
 
 	/* destroy workqueue */
 	destroy_workqueue(data->light_wq);
-
-	/* lock destroy */
-	mutex_destroy(&data->read_lock);
-	mutex_destroy(&data->power_lock);
 
 	/* sysfs destroy */
 	sensors_unregister(data->light_dev, sensor_attrs);
@@ -500,11 +487,6 @@ static int __devexit cm3323_remove(struct i2c_client *client)
 
 static int cm3323_suspend(struct device *dev)
 {
-	/* We disable power only if proximity is disabled.  If proximity
-	   is enabled, we leave power on because proximity is allowed
-	   to wake up device.  We remove power without changing
-	   cm3323->power_state because we use that state in resume.
-	 */
 	struct cm3323_p *data = dev_get_drvdata(dev);
 
 	if (data->power_state & LIGHT_ENABLED)
@@ -540,6 +522,7 @@ static struct i2c_driver cm3323_i2c_driver = {
 		.pm = &cm3323_pm_ops
 	},
 	.probe = cm3323_probe,
+	.shutdown = cm3323_shutdown,
 	.remove = __devexit_p(cm3323_remove),
 	.id_table = cm3323_device_id,
 };

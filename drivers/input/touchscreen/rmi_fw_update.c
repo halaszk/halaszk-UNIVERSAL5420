@@ -220,7 +220,7 @@ static struct bin_attribute dev_attr_data = {
 	.write = fwu_sysfs_store_image,
 };
 
-static struct device_attribute attrs[] = {
+static struct device_attribute fwu_sysfs_attrs[] = {
 	__ATTR(doreflash, S_IWUSR | S_IWGRP,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_do_reflash_store),
@@ -1493,25 +1493,25 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 		goto exit_free_mem;
 	}
 
-	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
+	for (attr_count = 0; attr_count < ARRAY_SIZE(fwu_sysfs_attrs); attr_count++) {
 		retval = sysfs_create_file(&rmi4_data->input_dev->dev.kobj,
-				&attrs[attr_count].attr);
+				&fwu_sysfs_attrs[attr_count].attr);
 		if (retval < 0) {
 			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
 					"%s: Failed to create sysfs attributes\n",
 					__func__);
 			retval = -ENODEV;
-			goto exit_remove_attrs;
+			goto exit_remove_fwu_sysfs_attrs;
 		}
 	}
 
 	return 0;
 
-exit_remove_attrs:
+exit_remove_fwu_sysfs_attrs:
 	attr_count_num = (int)attr_count;
 	for (attr_count_num--; attr_count_num >= 0; attr_count_num--) {
 		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
-			&attrs[attr_count].attr);
+			&fwu_sysfs_attrs[attr_count].attr);
 }
 
 sysfs_remove_bin_file(&rmi4_data->input_dev->dev.kobj, &dev_attr_data);
@@ -1532,9 +1532,9 @@ static void synaptics_rmi4_fwu_remove(struct synaptics_rmi4_data *rmi4_data)
 
 	sysfs_remove_bin_file(&rmi4_data->input_dev->dev.kobj, &dev_attr_data);
 
-	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
+	for (attr_count = 0; attr_count < ARRAY_SIZE(fwu_sysfs_attrs); attr_count++) {
 		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
-				&attrs[attr_count].attr);
+				&fwu_sysfs_attrs[attr_count].attr);
 	}
 
 	kfree(fwu->fn_ptr);

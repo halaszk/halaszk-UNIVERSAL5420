@@ -56,6 +56,11 @@
 #else
 #include "f_mtp.c"
 #endif
+
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC
+#include "f_conn_gadget.c"
+#endif
+
 #include "f_accessory.c"
 #define USB_ETH_RNDIS y
 #include "f_rndis.c"
@@ -72,9 +77,11 @@ static const char longname[] = "Gadget Android";
 
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 static int composite_string_index;
+#ifdef CONFIG_HA_3G
 u8    usb30en;
 extern int exynos_ss_udc_set_speedlimit(struct usb_gadget *gadget,enum usb_device_speed speed);
 int exynos_ss_udc_get_ss_host_available(struct usb_gadget *gadget);
+#endif
 #endif
 
 
@@ -504,6 +511,42 @@ static void adb_closed_callback(void)
 	mutex_unlock(&dev->mutex);
 }
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC
+struct conn_gadget_data {
+	bool opened;
+	bool enabled;
+};
+
+static int conn_gadget_function_init(struct android_usb_function *f,
+	struct usb_composite_dev *cdev)
+{
+	f->config = kzalloc(sizeof(struct conn_gadget_data), GFP_KERNEL);
+
+	if (!f->config)
+		return -ENOMEM;
+
+	return conn_gadget_setup();
+}
+
+static void conn_gadget_function_cleanup(struct android_usb_function *f)
+{
+	conn_gadget_cleanup();
+	kfree(f->config);
+}
+
+static int conn_gadget_function_bind_config(struct android_usb_function *f,
+	struct usb_configuration *c)
+{
+	return conn_gadget_bind_config(c);
+}
+
+static struct android_usb_function conn_gadget_function = {
+	.name = "conn_gadget",
+	.init = conn_gadget_function_init,
+	.cleanup = conn_gadget_function_cleanup,
+	.bind_config = conn_gadget_function_bind_config,
+};
+#endif /* CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC */
 
 #define MAX_ACM_INSTANCES 4
 struct acm_function_config {
@@ -1267,6 +1310,9 @@ static struct android_usb_function *supported_functions[] = {
 	&diag_function,
 	&dm_function,
 #endif
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC
+		&conn_gadget_function,
+#endif
 	NULL
 };
 
@@ -1552,6 +1598,17 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				/* Samsung KIES needs fixed bcdDevice number */
 				cdev->desc.bcdDevice = cpu_to_le16(0x0400);
 			}
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC
+			if (!strcmp(f->name, "conn_gadget")) {
+				if(cdev->desc.bcdDevice == cpu_to_le16(0x0400)) {
+					printk(KERN_DEBUG "usb: conn_gadget + kies (bcdDevice=0xC00)\n");
+					cdev->desc.bcdDevice = cpu_to_le16(0x0C00);
+				} else {
+					printk(KERN_DEBUG "usb: conn_gadget only (bcdDevice=0x800)\n");
+					cdev->desc.bcdDevice = cpu_to_le16(0x0800);
+				}
+			}
+#endif
 			if (is_ncm_ready(f->name))
 				set_ncm_device_descriptor(&cdev->desc);
 		}
@@ -1706,6 +1763,7 @@ bcdUSB_show(struct device *pdev, struct device_attribute *attr, char *buf)
 	else
 		return sprintf(buf, "%04x\n", device_desc.bcdUSB);
 }
+#ifdef CONFIG_HA_3G
 static ssize_t
 usb30en_show(struct device *pdev, struct device_attribute *attr, char *buf)
 {
@@ -1737,7 +1795,7 @@ usb30en_store (struct device *pdev, struct device_attribute *attr,const char *bu
 
 			udelay(500);
 			if (android_find_mtp_mode_enabled(dev)) {
-				printk(KERN_DEBUG "usb: [%s:%d] usb gadget disconnect and reconnect - use mutex\n",
+				printk(KERN_DEBUG "usb: [%s:%d] usb gadget disconnect and reconnect\n",
 				   __func__, __LINE__);
 				mutex_lock(&dev->mutex);
 				android_disable(dev);
@@ -1801,17 +1859,18 @@ macos_show(struct device *pdev, struct device_attribute *attr, char *buf)
 	}
 	return sprintf(buf, "%d\n", value);
 }
-
+#endif
 static DEVICE_ATTR(bcdUSB, S_IRUGO | S_IWUSR, bcdUSB_show, NULL);
 
 static DEVICE_ATTR(functions, S_IRUGO | S_IWUSR, functions_show,
 						 functions_store);
 static DEVICE_ATTR(enable, S_IRUGO | S_IWUSR, enable_show, enable_store);
 static DEVICE_ATTR(state, S_IRUGO, state_show, NULL);
+#ifdef CONFIG_HA_3G
 static DEVICE_ATTR(usb30en,S_IRUGO | S_IWUSR, usb30en_show, usb30en_store);
 static DEVICE_ATTR(macos,S_IRUGO | S_IWUSR, macos_show, NULL);
 static DEVICE_ATTR(ss_host_available,S_IRUGO | S_IWUSR, ss_host_available_show, NULL);
-
+#endif
 static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_idVendor,
 	&dev_attr_idProduct,
@@ -1826,9 +1885,11 @@ static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_enable,
 	&dev_attr_state,
 	&dev_attr_bcdUSB,
+#ifdef CONFIG_HA_3G
 	&dev_attr_usb30en,
 	&dev_attr_macos,
 	&dev_attr_ss_host_available,
+#endif
 	NULL
 };
 

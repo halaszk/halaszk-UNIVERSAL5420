@@ -20,8 +20,15 @@
 #include "fimc-is-device-ischain.h"
 #include "fimc-is-device-flite.h"
 
-#define SENSOR_MAX_ENUM 100
+#define SENSOR_MAX_ENUM			100
 #define SENSOR_DEFAULT_FRAMERATE	30
+
+#define SENSOR_SSTREAM_MASK		0x0000000F
+#define SENSOR_SSTREAM_SHIFT		0
+#define SENSOR_INSTANT_MASK		0x0FFF0000
+#define SENSOR_INSTANT_SHIFT		16
+#define SENSOR_NOBLOCK_MASK		0xF0000000
+#define SENSOR_NOBLOCK_SHIFT		28
 
 enum fimc_is_sensor_output_entity {
 	FIMC_IS_SENSOR_OUTPUT_NONE = 0,
@@ -77,6 +84,10 @@ struct fimc_is_device_sensor {
 	struct fimc_is_enum_sensor	enum_sensor[SENSOR_MAX_ENUM];
 	struct fimc_is_enum_sensor	*active_sensor;
 
+	u32				instant_cnt;
+	int				instant_ret;
+	wait_queue_head_t		instant_wait;
+	struct work_struct		instant_work;
 	unsigned long			state;
 	spinlock_t			slock_state;
 
@@ -110,7 +121,9 @@ int fimc_is_sensor_buffer_queue(struct fimc_is_device_sensor *device,
 int fimc_is_sensor_buffer_finish(struct fimc_is_device_sensor *device,
 	u32 index);
 
-int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device);
+int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device,
+	u32 instant_cnt,
+	u32 nonblock);
 int fimc_is_sensor_front_stop(struct fimc_is_device_sensor *device);
 int fimc_is_sensor_back_start(struct fimc_is_device_sensor *device,
 	struct fimc_is_video_ctx *vctx);

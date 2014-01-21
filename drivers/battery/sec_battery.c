@@ -1309,15 +1309,18 @@ static bool sec_bat_check_fullcharged(
 			break;
 
 	case SEC_BATTERY_FULLCHARGED_FG_CURRENT:
-		if (battery->current_avg <
+		if ((battery->current_now > 0 && battery->current_now <
+			battery->pdata->charging_current[
+			battery->cable_type].full_check_current_1st) &&
+			(battery->current_avg > 0 && battery->current_avg <
 			(battery->charging_mode ==
 			SEC_BATTERY_CHARGING_1ST ?
-				battery->pdata->charging_current[
+			battery->pdata->charging_current[
 			battery->cable_type].full_check_current_1st :
 			battery->pdata->charging_current[
-			battery->cable_type].full_check_current_2nd)) {
-			battery->full_check_cnt++;
-			dev_dbg(battery->dev,
+			battery->cable_type].full_check_current_2nd))) {
+				battery->full_check_cnt++;
+				dev_dbg(battery->dev,
 				"%s: Full Check Current (%d)\n",
 				__func__,
 				battery->full_check_cnt);
@@ -1528,7 +1531,7 @@ static void sec_bat_get_battery_info(
 	value.intval = 0;
 	psy_do_property("sec-fuelgauge", get,
 		POWER_SUPPLY_PROP_CAPACITY, value);
-#ifdef CONFIG_MACH_J_CHN_CTC
+#if defined(CONFIG_MACH_J_CHN_CTC)
 	if (battery->status == POWER_SUPPLY_STATUS_DISCHARGING) {
 		if ((battery->capacity > 0) && (battery->capacity < 100)
 					&& (battery->capacity < value.intval))
@@ -1537,6 +1540,13 @@ static void sec_bat_get_battery_info(
 		else
 			battery->capacity = value.intval;
 	}
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+	/* if the battery status was full, and SOC wasn't 100% yet,
+		then ignore FG SOC, and report (previous SOC +1)% */
+	if (battery->status != POWER_SUPPLY_STATUS_FULL)
+		battery->capacity = value.intval;
+	else if (battery->capacity != 100)
+		battery->capacity++;
 #else
 	battery->capacity = value.intval;
 #endif
@@ -1783,6 +1793,10 @@ static void sec_bat_monitor_work(
 		container_of(work, struct sec_battery_info,
 		monitor_work.work);
 
+#ifdef CONFIG_FAST_BOOT
+	bool low_batt_power_off = false;
+#endif
+
 	dev_dbg(battery->dev, "%s: Start\n", __func__);
 
 /*#if !defined(ANDROID_ALARM_ACTIVATED)
@@ -1829,12 +1843,27 @@ static void sec_bat_monitor_work(
 
 continue_monitor:
 	dev_info(battery->dev,
-		"%s: Status(%s), mode(%s), Health(%s), Cable(%d), siop_level(%d)\n",
+		"%s: Status(%s), mode(%s), Health(%s), Cable(%d), Vendor(%s), siop_level(%d)\n",
 		__func__,
 		sec_bat_status_str[battery->status],
 		sec_bat_charging_mode_str[battery->charging_mode],
 		sec_bat_health_str[battery->health],
-		battery->cable_type, battery->siop_level);
+		battery->cable_type, battery->pdata->vendor, battery->siop_level);
+
+#ifdef CONFIG_FAST_BOOT
+	dev_info(battery->dev, "%s: status=%d, soc=%d, fake_shut_down=%d\n", __func__,
+		battery->status, battery->capacity, fake_shut_down);
+
+	if (fake_shut_down) {
+		if ((battery->status ==
+			POWER_SUPPLY_STATUS_DISCHARGING)
+			&& (battery->capacity == 0))
+			low_batt_power_off = true;
+
+			dev_info(battery->dev, "%s: fake_shut_down mode, skip updating status\n", __func__);
+		goto skip_updating_status;
+	}
+#endif
 
 	power_supply_changed(&battery->psy_bat);
 
@@ -1844,6 +1873,25 @@ continue_monitor:
 		wake_lock_timeout(&battery->monitor_wake_lock, HZ * 5);
 	else
 		wake_unlock(&battery->monitor_wake_lock);
+
+#ifdef CONFIG_FAST_BOOT
+skip_updating_status:
+	if (((battery->cable_type == POWER_SUPPLY_TYPE_MAINS)
+		|| (battery->cable_type == POWER_SUPPLY_TYPE_USB)
+		|| (battery->cable_type == POWER_SUPPLY_TYPE_USB_CDP))
+		&& (fake_shut_down) && (!battery->dup_power_off)
+		&& (!battery->suspend_check)) {
+		dev_info(battery->dev, "%s: Resetting the device in fake shutdown mode"\
+			"(TA/USB inserted !!!)\n", __func__);
+		battery->dup_power_off = true;
+		kernel_power_off();
+	} else if (low_batt_power_off == true) {
+		dev_info(battery->dev, "%s: Power off the device in fake shutdown mode"\
+			"(soc==0, discharging !!!)\n", __func__);
+
+		kernel_power_off();
+	}
+#endif
 
 	dev_dbg(battery->dev, "%s: End\n", __func__);
 
@@ -1967,8 +2015,8 @@ static void sec_bat_cable_work(struct work_struct *work)
 	queue_delayed_work(battery->monitor_wqueue, &battery->monitor_work,
 					msecs_to_jiffies(500));
 end_of_cable_work:
-	if (battery->cable_type == POWER_SUPPLY_TYPE_BATTERY)
-		wake_unlock(&battery->cable_wake_lock);
+	wake_unlock(&battery->cable_wake_lock);
+
 	dev_dbg(battery->dev, "%s: End\n", __func__);
 }
 
@@ -2237,6 +2285,9 @@ ssize_t sec_bat_store_attrs(
 		if (battery->pdata->check_cable_callback() ==
 			POWER_SUPPLY_TYPE_BATTERY) {
 			union power_supply_propval value;
+			battery->voltage_now = 1234;
+			battery->voltage_avg = 1234;
+			power_supply_changed(&battery->psy_bat);
 
 			value.intval =
 				SEC_FUELGAUGE_CAPACITY_TYPE_RESET;
@@ -2649,17 +2700,24 @@ static int sec_bat_get_property(struct power_supply *psy,
 			if ((battery->pdata->cable_check_type &
 			     SEC_BATTERY_CABLE_CHECK_NOUSBCHARGE) &&
 			     !battery->pdata->is_lpm()) {
-				switch (battery->cable_type) {
-				case POWER_SUPPLY_TYPE_USB:
-				case POWER_SUPPLY_TYPE_USB_DCP:
-				case POWER_SUPPLY_TYPE_USB_CDP:
-				case POWER_SUPPLY_TYPE_USB_ACA:
-					val->intval =
-						POWER_SUPPLY_STATUS_DISCHARGING;
-					return 0;
-				}
+					switch (battery->cable_type) {
+					case POWER_SUPPLY_TYPE_USB:
+					case POWER_SUPPLY_TYPE_USB_DCP:
+					case POWER_SUPPLY_TYPE_USB_CDP:
+					case POWER_SUPPLY_TYPE_USB_ACA:
+						val->intval =
+							POWER_SUPPLY_STATUS_DISCHARGING;
+						return 0;
+					}
 			}
-			val->intval = battery->status;
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+			if (battery->status == POWER_SUPPLY_STATUS_FULL &&
+				battery->capacity != 100) {
+				val->intval = POWER_SUPPLY_STATUS_CHARGING;
+				pr_info("%s: forced full-charged sequence progressing\n", __func__);
+			} else
+#endif
+				val->intval = battery->status;
 		}
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
@@ -2686,10 +2744,24 @@ static int sec_bat_get_property(struct power_supply *psy,
 		val->intval = battery->pdata->technology;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+#ifdef CONFIG_SEC_FACTORY
+		psy_do_property("sec-fuelgauge", get,
+				POWER_SUPPLY_PROP_VOLTAGE_NOW, value);
+		battery->voltage_now = value.intval;
+		dev_err(battery->dev,
+			"%s: voltage now(%d)\n", __func__, battery->voltage_now);
+#endif
 		/* voltage value should be in uV */
 		val->intval = battery->voltage_now * 1000;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_AVG:
+#ifdef CONFIG_SEC_FACTORY
+		psy_do_property("sec-fuelgauge", get,
+				POWER_SUPPLY_PROP_VOLTAGE_AVG, value);
+		battery->voltage_avg = value.intval;
+		dev_err(battery->dev,
+			"%s: voltage avg(%d)\n", __func__, battery->voltage_avg);
+#endif
 		/* voltage value should be in uV */
 		val->intval = battery->voltage_avg * 1000;
 		break;
@@ -2707,11 +2779,15 @@ static int sec_bat_get_property(struct power_supply *psy,
 		val->intval = battery->charging_mode;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+		val->intval = battery->capacity;
+#else
 		/* In full-charged status, SOC is always 100% */
 		if (battery->status == POWER_SUPPLY_STATUS_FULL)
 			val->intval = 100;
 		else
 			val->intval = battery->capacity;
+#endif
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = battery->temperature;
@@ -2781,6 +2857,7 @@ static int sec_ac_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_TYPE_UARTOFF:
 	case POWER_SUPPLY_TYPE_WPC:
 	case POWER_SUPPLY_TYPE_UNKNOWN:
+	case POWER_SUPPLY_TYPE_LAN_HUB:
 		val->intval = 1;
 		break;
 	default:
@@ -2825,6 +2902,25 @@ no_cable_check:
 
 	return IRQ_HANDLED;
 }
+
+#ifdef CONFIG_FAST_BOOT
+int fsd_notifier_call(struct notifier_block *nb,
+			unsigned long cmd, void *_param)
+{
+	struct sec_battery_info *battery = container_of(nb, struct sec_battery_info,
+						 fsd_notifier_block);
+
+	pr_info("%s: fsd_check = %lu\n", __func__, cmd);
+
+	cancel_delayed_work_sync(&battery->monitor_work);
+
+	wake_lock(&battery->monitor_wake_lock);
+	queue_delayed_work(battery->monitor_wqueue,
+		&battery->monitor_work, 0);
+
+	return 0;
+}
+#endif
 
 static int __devinit sec_battery_probe(struct platform_device *pdev)
 {
@@ -2881,6 +2977,14 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 	battery->charging_fullcharged_time = 0;
 	battery->siop_level = 100;
 	battery->wc_enable = 1;
+
+#ifdef CONFIG_FAST_BOOT
+	battery->dup_power_off = false;
+	battery->suspend_check = false;
+#endif
+
+	if (battery->pdata->check_batt_id)
+		battery->pdata->check_batt_id();
 
 #if defined(ANDROID_ALARM_ACTIVATED)
 	alarm_init(&battery->event_termination_alarm,
@@ -2959,17 +3063,22 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 				sec_bat_alarm);
 #endif
 			break;
-	
+
 		default:
 			break;
 		}
+
+#ifdef CONFIG_FAST_BOOT
+	battery->fsd_notifier_block.notifier_call = fsd_notifier_call;
+	register_fake_shut_down_notifier(&battery->fsd_notifier_block);
+#endif
 
 	/* init power supplier framework */
 	ret = power_supply_register(&pdev->dev, &battery->psy_usb);
 	if (ret) {
 		dev_err(battery->dev,
 			"%s: Failed to Register psy_usb\n", __func__);
-		goto err_supply_unreg_bat;
+		goto err_workqueue;
 	}
 
 	ret = power_supply_register(&pdev->dev, &battery->psy_ac);
@@ -2983,13 +3092,13 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(battery->dev,
 			"%s: Failed to Register psy_bat\n", __func__);
-		goto err_workqueue;
+		goto err_supply_unreg_ac;
 	}
 
 	if (!battery->pdata->bat_gpio_init()) {
 		dev_err(battery->dev,
 			"%s: Failed to Initialize GPIO\n", __func__);
-		goto err_supply_unreg_ac;
+		goto err_supply_unreg_bat;
 	}
 
 	if (battery->pdata->bat_irq) {
@@ -3000,7 +3109,7 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_err(battery->dev,
 				"%s: Failed to Request IRQ\n", __func__);
-			goto err_supply_unreg_ac;
+			goto err_supply_unreg_bat;
 		}
 
 		ret = enable_irq_wake(battery->pdata->bat_irq);
@@ -3041,12 +3150,12 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 err_req_irq:
 	if (battery->pdata->bat_irq)
 		free_irq(battery->pdata->bat_irq, battery);
+err_supply_unreg_bat:
+	power_supply_unregister(&battery->psy_bat);
 err_supply_unreg_ac:
 	power_supply_unregister(&battery->psy_ac);
 err_supply_unreg_usb:
 	power_supply_unregister(&battery->psy_usb);
-err_supply_unreg_bat:
-	power_supply_unregister(&battery->psy_bat);
 err_workqueue:
 	destroy_workqueue(battery->monitor_wqueue);
 err_wake_lock:
@@ -3076,6 +3185,10 @@ static int __devexit sec_battery_remove(struct platform_device *pdev)
 	default:
 		break;
 	}
+
+#ifdef CONFIG_FAST_BOOT
+	unregister_fake_shut_down_notifier(&battery->fsd_notifier_block);
+#endif
 
 	alarm_cancel(&battery->event_termination_alarm);
 	flush_workqueue(battery->monitor_wqueue);
@@ -3136,6 +3249,14 @@ static int sec_battery_prepare(struct device *dev)
 
 static int sec_battery_suspend(struct device *dev)
 {
+#ifdef CONFIG_FAST_BOOT
+	struct sec_battery_info *battery = dev_get_drvdata(dev);
+	dev_info(battery->dev, "%s\n", __func__);
+
+	if (fake_shut_down)
+		battery->suspend_check = true;
+#endif
+
 	return 0;
 }
 
@@ -3154,6 +3275,20 @@ static void sec_battery_complete(struct device *dev)
 	wake_lock(&battery->monitor_wake_lock);
 	queue_delayed_work(battery->monitor_wqueue,
 		&battery->monitor_work, 0);
+
+#ifdef CONFIG_FAST_BOOT
+		if (((battery->cable_type == POWER_SUPPLY_TYPE_MAINS)
+			|| (battery->cable_type == POWER_SUPPLY_TYPE_USB)
+			|| (battery->cable_type == POWER_SUPPLY_TYPE_USB_CDP))
+			&& (fake_shut_down) && (!battery->dup_power_off)) {
+			dev_info(battery->dev,"%s: Resetting the device in fake shutdown mode"\
+				"(TA/USB inserted !!!)\n", __func__);
+			battery->dup_power_off = true;
+			kernel_power_off();
+		}
+
+		battery->suspend_check = false;
+#endif
 
 	dev_dbg(battery->dev, "%s: End\n", __func__);
 

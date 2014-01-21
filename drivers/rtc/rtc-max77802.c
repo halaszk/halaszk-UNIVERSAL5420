@@ -24,6 +24,9 @@
 #include <linux/reboot.h>
 #endif
 
+bool pmic_is_jig_attached;
+EXPORT_SYMBOL(pmic_is_jig_attached);
+
 /* RTC Control Register */
 #define BCD_EN_SHIFT			0
 #define BCD_EN_MASK			(1 << BCD_EN_SHIFT)
@@ -91,6 +94,21 @@ static inline int max77802_rtc_calculate_wday(u8 shifted)
 		counter++;
 	}
 	return counter;
+}
+
+static bool max77802_rtc_is_jigonb_low(struct max77802_rtc_info *info)
+{
+	int ret;
+	u8 val;
+
+	ret = max77802_read_reg(info->max77802->i2c, MAX77802_REG_STATUS1, &val);
+	if (ret < 0) {
+		pr_err("%s: fail to read status1 reg(%d)\n",
+			__func__, ret);
+		return false;
+	}
+
+	return !!(val & MAX77802_STATUS1_JIGONB_MASK);
 }
 
 static void max77802_rtc_data_to_tm(u8 *data, struct rtc_time *tm,
@@ -696,7 +714,14 @@ static int __devinit max77802_rtc_probe(struct platform_device *pdev)
 		goto err_rtc;
 	}
 
+	if (max77802->jigon_ops & MAX77802_JIGONB_CPULOCK)
+		pmic_is_jig_attached = max77802_rtc_is_jigonb_low(info);
+
 #ifdef MAX77802_RTC_WTSR_SMPL
+	/* Disable SMPL when JIGONB is low with JIGONB_SMPL_DISABLE option */
+	if ((max77802->jigon_ops & MAX77802_JIGONB_SMPL_DISABLE)
+		&& max77802_rtc_is_jigonb_low(info))
+		max77802->wtsr_smpl &= ~(MAX77802_SMPL_ENABLE);
 	if (max77802->wtsr_smpl & MAX77802_WTSR_ENABLE)
 		max77802_rtc_enable_wtsr(info, true);
 	if (max77802->wtsr_smpl & MAX77802_SMPL_ENABLE)
@@ -741,6 +766,7 @@ static int __devinit max77802_rtc_probe(struct platform_device *pdev)
 
 	goto out;
 err_rtc:
+	mutex_destroy(&info->lock);
 	kfree(info);
 	return ret;
 out:

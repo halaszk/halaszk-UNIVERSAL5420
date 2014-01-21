@@ -24,7 +24,9 @@
 #ifdef CONFIG_SEC_DEBUG_TSP_LOG
 #include <mach/sec_debug.h>
 #endif
-
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
+#endif
 /*#define dev_dbg(dev, fmt, arg...) dev_info(dev, fmt, ##arg)*/
 
 #ifdef CONFIG_SEC_DEBUG_TSP_LOG
@@ -65,7 +67,10 @@
 
 #define SYNAPTICS_DEVICE_NAME	"SYNAPTICS"
 
+#if !defined(CONFIG_INPUT_BOOSTER)
 #define TSP_BOOSTER
+#endif
+
 #ifdef TSP_BOOSTER
 #include <linux/pm_qos.h>
 #define TOUCH_BOOSTER_OFF_TIME	500
@@ -83,6 +88,14 @@ static unsigned int TOUCH_BOOSTER_CPU_FRQ_3 = 650000;
 static unsigned int TOUCH_BOOSTER_MIF_FRQ_3 = 667000;
 static unsigned int TOUCH_BOOSTER_INT_FRQ_3 = 333000;
 
+static unsigned int TOUCH_BOOSTER_CPU_FRQ_9 = 1900000;
+static unsigned int TOUCH_BOOSTER_CPU_FRQ_9_T = 1500000;
+static unsigned int TOUCH_BOOSTER_MIF_FRQ_9 = 800000;
+static unsigned int TOUCH_BOOSTER_INT_FRQ_9 = 400000;
+
+#define TOUCH_BOOSTER_OFF_TIME_9 1000
+#define TOUCH_BOOSTER_CHG_TIME_9 500
+
 module_param_named(qos_cpu_freq_level_1, TOUCH_BOOSTER_CPU_FRQ_1, uint, S_IWUSR | S_IRUGO);
 module_param_named(qos_mif_freq_level_1, TOUCH_BOOSTER_MIF_FRQ_1, uint, S_IWUSR | S_IRUGO);
 module_param_named(qos_int_freq_level_1, TOUCH_BOOSTER_INT_FRQ_1, uint, S_IWUSR | S_IRUGO);
@@ -92,6 +105,10 @@ module_param_named(qos_int_freq_level_2, TOUCH_BOOSTER_INT_FRQ_2, uint, S_IWUSR 
 module_param_named(qos_cpu_freq_level_3, TOUCH_BOOSTER_CPU_FRQ_3, uint, S_IWUSR | S_IRUGO);
 module_param_named(qos_mif_freq_level_3, TOUCH_BOOSTER_MIF_FRQ_3, uint, S_IWUSR | S_IRUGO);
 module_param_named(qos_int_freq_level_3, TOUCH_BOOSTER_INT_FRQ_3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_level_9, TOUCH_BOOSTER_CPU_FRQ_9, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_level_9_t, TOUCH_BOOSTER_CPU_FRQ_9_T, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_level_9, TOUCH_BOOSTER_MIF_FRQ_9, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_level_9, TOUCH_BOOSTER_INT_FRQ_9, uint, S_IWUSR | S_IRUGO);
 
 #endif
 
@@ -311,6 +328,13 @@ struct synaptics_rmi4_fn_full_addr {
 	unsigned short data_base;
 };
 
+struct synaptics_rmi4_f12_extra_data {
+	unsigned char data1_offset;
+	unsigned char data15_offset;
+	unsigned char data15_size;
+	unsigned char data15_data[(F12_FINGERS_TO_SUPPORT + 7) / 8];
+};
+
 /*
  * struct synaptics_rmi4_fn - function handler data structure
  * @fn_number: function number
@@ -330,13 +354,13 @@ struct synaptics_rmi4_fn {
 	unsigned char num_of_data_sources;
 	unsigned char num_of_data_points;
 	unsigned char size_of_data_register_block;
-	unsigned char data1_offset;
 	unsigned char intr_reg_num;
 	unsigned char intr_mask;
 	struct synaptics_rmi4_fn_full_addr full_addr;
 	struct list_head link;
 	int data_size;
 	void *data;
+	void *extra;
 };
 
 /*
@@ -474,7 +498,8 @@ struct synaptics_rmi4_data {
 	unsigned short f01_cmd_base_addr;
 	unsigned short f01_ctrl_base_addr;
 	unsigned short f01_data_base_addr;
-	unsigned short f12_ctrl11_addr;
+	unsigned short f12_ctrl11_addr;		/* for setting jitter level*/
+	unsigned short f12_ctrl15_addr;		/* for getting finger amplitude threshold */
 	unsigned short f34_ctrl_base_addr;
 	int irq;
 	int sensor_max_x;
@@ -559,6 +584,7 @@ enum BOOST_LEVEL {
 	TSP_BOOSTER_LEVEL1,
 	TSP_BOOSTER_LEVEL2,
 	TSP_BOOSTER_LEVEL3,
+	TSP_BOOSTER_LEVEL9 = 9,
 	TSP_BOOSTER_LEVEL_MAX,
 };
 

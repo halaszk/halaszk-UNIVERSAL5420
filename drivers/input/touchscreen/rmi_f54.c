@@ -62,6 +62,23 @@
 #define COMMAND_FORCE_CAL 2
 #define COMMAND_FORCE_UPDATE 4
 
+#define CONTROL_42_SIZE 2
+#define CONTROL_43_54_SIZE 13
+#define CONTROL_55_56_SIZE 2
+#define CONTROL_58_SIZE 1
+#define CONTROL_59_SIZE 2
+#define CONTROL_60_62_SIZE 3
+#define CONTROL_63_SIZE 1
+#define CONTROL_64_67_SIZE 4
+#define CONTROL_68_73_SIZE 8
+#define CONTROL_74_SIZE 2
+#define CONTROL_76_SIZE 1
+#define CONTROL_77_78_SIZE 2
+#define CONTROL_79_83_SIZE 5
+#define CONTROL_84_85_SIZE 2
+#define CONTROL_86_SIZE 1
+#define CONTROL_87_SIZE 1
+
 #define HIGH_RESISTANCE_DATA_SIZE 6
 #define FULL_RAW_CAP_MIN_MAX_DATA_SIZE 4
 #define TREX_DATA_SIZE 7
@@ -364,8 +381,9 @@ enum f54_report_types {
 	F54_TREX_OPENS = 24,
 	F54_TREX_TO_GND = 25,
 	F54_TREX_SHORTS = 26,
-	F54_ABS_RAW_CAP = 38,
-	F54_ABS_DELTA_CAP = 40,
+	F54_ABS_CAP = 38,
+	F54_ABS_DELTA = 40,
+	F54_ABS_ADC = 42,
 	INVALID_REPORT_TYPE = -1,
 };
 
@@ -430,15 +448,41 @@ struct f54_query {
 			unsigned char has_status:1;
 			unsigned char has_slew_metric:1;
 
-			/* queries 10 11 */
-			unsigned char f54_query10;
-			unsigned char f54_query11;
+			/* query 10 */
+			unsigned char has_h_blank:1;
+			unsigned char has_v_blank:1;
+			unsigned char has_long_h_blank:1;
+			unsigned char has_startup_fast_relaxation:1;
+			unsigned char has_esd_control:1;
+			unsigned char has_noise_mitigation2:1;
+			unsigned char has_noise_state:1;
+			unsigned char has_energy_ratio_relaxation:1;
+
+			/* query 11 */
+			unsigned char has_excessive_noise_reporting:1;
+			unsigned char has_slew_option:1;
+			unsigned char has_two_overhead_bursts:1;
+			unsigned char has_query13:1;
+			unsigned char has_one_overhead_burst:1;
+			unsigned char f54_query11_b5:1;
+			unsigned char has_ctrl88:1;
+			unsigned char has_query15:1;
 
 			/* query 12 */
 			unsigned char number_of_sensing_frequencies:4;
 			unsigned char f54_query12_b4__7:4;
+
+			/* query 13 */
+			unsigned char has_ctrl86:1;
+			unsigned char has_ctrl87:1;
+			unsigned char has_ctrl87_sub0:1;
+			unsigned char has_ctrl87_sub1:1;
+			unsigned char has_ctrl87_sub2:1;
+			unsigned char has_cidim:1;
+			unsigned char has_noise_mitigation_enhancement:1;
+			unsigned char has_rail_im:1;
 		} __packed;
-		unsigned char data[14];
+		unsigned char data[15];
 	};
 };
 
@@ -528,8 +572,8 @@ struct f54_control_4__6 {
 struct f54_control_7 {
 	union {
 		struct {
-			unsigned char cbc_cap:2;
-			unsigned char cbc_polarity:2;
+			unsigned char cbc_cap:3;
+			unsigned char cbc_polarity:1;
 			unsigned char cbc_tx_carrier_selection:1;
 			unsigned char f54_ctrl7_b5__7:3;
 		} __packed;
@@ -878,6 +922,25 @@ struct f54_control_57 {
 	};
 };
 
+struct f54_control_88 {
+	union {
+		struct {
+			unsigned char tx_low_reference_polarity:1;
+			unsigned char tx_high_reference_polarity:1;
+			unsigned char abs_low_reference_polarity:1;
+			unsigned char abs_polarity:1;
+			unsigned char cbc_polarity:1;
+			unsigned char cbc_tx_carrier_selection:1;
+			unsigned char charge_pump_enable:1;
+			unsigned char cbc_abs_auto_servo:1;
+		} __packed;
+		struct {
+			unsigned char data[1];
+			unsigned short address;
+		} __packed;
+	};
+};
+
 struct f54_control {
 	struct f54_control_0 *reg_0;
 	struct f54_control_1 *reg_1;
@@ -911,6 +974,7 @@ struct f54_control {
 	struct f54_control_40 *reg_40;
 	struct f54_control_41 *reg_41;
 	struct f54_control_57 *reg_57;
+	struct f54_control_88 *reg_88;
 };
 
 #ifdef FACTORY_MODE
@@ -920,9 +984,6 @@ struct f54_control {
 #define CMD_PARAM_NUM 8
 #define CMD_RESULT_STR_LEN 728
 #define FT_CMD(name, func) .cmd_name = name, .cmd_func = func
-#define F12_CTRL9_ADDR 0X0011
-#define F34_CTRL0_0_ADDR 0x0007
-#define F34_CTRL0_3_ADDR 0x000a
 
 enum CMD_STATUS {
 	CMD_STATUS_WAITING = 0,
@@ -1233,6 +1294,9 @@ show_prototype(noise_control_1)
 show_prototype(noise_control_2)
 show_prototype(noise_control_3)
 show_store_prototype(no_signal_clarity)
+show_store_prototype(cbc_cap_0d)
+show_store_prototype(cbc_polarity_0d)
+show_store_prototype(cbc_tx_carrier_selection_0d)
 
 static ssize_t synaptics_rmi4_f54_data_read(struct file *data_file,
 		struct kobject *kobj, struct bin_attribute *attributes,
@@ -1425,6 +1489,13 @@ static struct attribute *attrs_reg_41[] = {
 	NULL,
 };
 
+static struct attribute *attrs_reg_57[] = {
+	attrify(cbc_cap_0d),
+	attrify(cbc_polarity_0d),
+	attrify(cbc_tx_carrier_selection_0d),
+	NULL,
+};
+
 static struct attribute_group attrs_ctrl_regs[] = {
 	GROUP(attrs_reg_0),
 	GROUP(attrs_reg_1),
@@ -1451,6 +1522,7 @@ static struct attribute_group attrs_ctrl_regs[] = {
 	GROUP(attrs_reg_37),
 	GROUP(attrs_reg_38__40),
 	GROUP(attrs_reg_41),
+	GROUP(attrs_reg_57),
 };
 
 static bool attrs_ctrl_regs_exist[ARRAY_SIZE(attrs_ctrl_regs)];
@@ -1489,8 +1561,9 @@ static bool is_report_type_valid(enum f54_report_types report_type)
 	case F54_TREX_OPENS:
 	case F54_TREX_TO_GND:
 	case F54_TREX_SHORTS:
-	case F54_ABS_RAW_CAP:
-	case F54_ABS_DELTA_CAP:
+	case F54_ABS_CAP:
+	case F54_ABS_DELTA:
+	case F54_ABS_ADC:
 		return true;
 		break;
 	default:
@@ -1571,9 +1644,12 @@ static void set_report_size(void)
 	case F54_TREX_SHORTS:
 		f54->report_size = TREX_DATA_SIZE;
 		break;
-	case F54_ABS_RAW_CAP:
-	case F54_ABS_DELTA_CAP:
+	case F54_ABS_CAP:
+	case F54_ABS_DELTA:
 		f54->report_size = 4 * (rx + tx);
+		break;
+	case F54_ABS_ADC:
+		f54->report_size = 2 * (rx + tx);
 		break;
 	default:
 		f54->report_size = 0;
@@ -1646,6 +1722,8 @@ static int do_preparation(void)
 	unsigned char timeout_count;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
+	mutex_lock(&f54->control_mutex);
+
 	if (f54->query.touch_controller_family == 1) {
 		value = 0;
 		retval = f54->fn_ptr->write(rmi4_data,
@@ -1656,10 +1734,36 @@ static int do_preparation(void)
 			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
 					"%s: Failed to disable CBC\n",
 					__func__);
+			mutex_unlock(&f54->control_mutex);
+			return retval;
+		}
+	} else if (f54->query.has_ctrl88 == 1) {
+		retval = f54->fn_ptr->read(rmi4_data,
+				f54->control.reg_88->address,
+				f54->control.reg_88->data,
+				sizeof(f54->control.reg_88->data));
+		if (retval < 0) {
+			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
+					"%s: Failed to disable CBC (read ctrl88)\n",
+					__func__);
+			mutex_unlock(&f54->control_mutex);
+			return retval;
+		}
+		f54->control.reg_88->cbc_polarity = 0;
+		f54->control.reg_88->cbc_tx_carrier_selection = 0;
+		retval = f54->fn_ptr->write(rmi4_data,
+				f54->control.reg_88->address,
+				f54->control.reg_88->data,
+				sizeof(f54->control.reg_88->data));
+		if (retval < 0) {
+			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
+					"%s: Failed to disable CBC (write ctrl88)\n",
+					__func__);
+			mutex_unlock(&f54->control_mutex);
 			return retval;
 		}
 	}
-#if 0	/* Below codes are just needed for 0D */
+	/* check this code to using S5000 and S5050 */
 	if (f54->query.has_0d_acquisition_control) {
 		value = 0;
 		retval = f54->fn_ptr->write(rmi4_data,
@@ -1670,10 +1774,11 @@ static int do_preparation(void)
 			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
 					"%s: Failed to disable 0D CBC\n",
 					__func__);
+			mutex_unlock(&f54->control_mutex);
 			return retval;
 		}
 	}
-#endif
+
 	if (f54->query.has_signal_clarity) {
 		value = 1;
 		retval = f54->fn_ptr->write(rmi4_data,
@@ -1684,9 +1789,12 @@ static int do_preparation(void)
 			tsp_debug_err(true, &rmi4_data->i2c_client->dev,
 					"%s: Failed to disable signal clarity\n",
 					__func__);
+			mutex_unlock(&f54->control_mutex);
 			return retval;
 		}
 	}
+
+	mutex_unlock(&f54->control_mutex);
 
 	command = (unsigned char)COMMAND_FORCE_UPDATE;
 
@@ -1857,6 +1965,7 @@ static void print_raw_hex_report(void)
 	case F54_FULL_RAW_CAP_RX_COUPLING_COMP:
 	case F54_SENSOR_SPEED:
 	case F54_ADC_RANGE:
+	case F54_ABS_ADC:
 		for (ii = 0; ii < f54->report_size; ii += 2) {
 			pr_info("%03d: 0x%02x%02x\n",
 					ii / 2,
@@ -1864,8 +1973,8 @@ static void print_raw_hex_report(void)
 					f54->report_data[ii]);
 		}
 		break;
-	case F54_ABS_RAW_CAP:
-	case F54_ABS_DELTA_CAP:
+	case F54_ABS_CAP:
+	case F54_ABS_DELTA:
 		for (ii = 0; ii < f54->report_size; ii += 4) {
 			pr_info("%03d: 0x%02x%02x%02x%02x\n",
 					ii / 4,
@@ -1965,6 +2074,7 @@ static void free_control_mem(void)
 	kfree(control.reg_39);
 	kfree(control.reg_40);
 	kfree(control.reg_41);
+	kfree(control.reg_57);
 
 	return;
 }
@@ -2250,14 +2360,6 @@ static bool synaptics_skip_firmware_update(struct synaptics_rmi4_data *rmi4_data
 		return false;
 	}
 
-#if defined(CONFIG_SEC_TSP_FACTORY) && defined(USE_TSP_FACTORY_FW)
-	if ((!rmi4_data->board->bootmode)) {
-		tsp_debug_info(true, &rmi4_data->i2c_client->dev, "%s: Do not need to update factory FW\n",
-			__func__);
-		return true;
-	}
-#endif
-
 #ifdef SYNAPTICS_WORKAROUND_FOR_H_PROJECT
 	/*
 	 * Force update for no TR OCTA with 0x04 firmware(it is temporary firmware).
@@ -2289,13 +2391,8 @@ int synaptics_rmi4_fw_update_on_probe(struct synaptics_rmi4_data *rmi4_data)
 	unsigned char *fw_data = NULL;
 	char fw_path[SYNAPTICS_MAX_FW_PATH];
 
-#ifdef CONFIG_SEC_TSP_FACTORY
-	snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-		"%s", rmi4_data->board->fac_firmware_name);
-#else
 	snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
 		"%s", rmi4_data->board->firmware_name);
-#endif
 
 	tsp_debug_info(true, &rmi4_data->i2c_client->dev, "%s: Load firmware : %s\n",
 				__func__, fw_path);
@@ -2613,21 +2710,42 @@ static void get_config_ver(void)
 
 static void get_threshold(void)
 {
-	unsigned char threshold;
+	unsigned char SaturationCap_LSB;
+	unsigned char SaturationCap_MSB;
+	unsigned char FingerAmplitudeThreshold;
+	unsigned int SaturationCap;
+	unsigned int threshold_integer;
+	unsigned int threshold_fraction;
 	struct factory_data *data = f54->factory_data;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
 	f54->fn_ptr->read(rmi4_data,
-			F12_CTRL9_ADDR,
-			&threshold,
-			sizeof(threshold));
+	   rmi4_data->f12_ctrl15_addr,
+	   &FingerAmplitudeThreshold,
+	   sizeof(FingerAmplitudeThreshold));
+	f54->fn_ptr->read(rmi4_data,
+	   f54->control.reg_2->address,
+	   &SaturationCap_LSB,
+	   sizeof(SaturationCap_LSB));
+	f54->fn_ptr->read(rmi4_data,
+	   f54->control.reg_2->address + 1,
+	   &SaturationCap_MSB,
+	   sizeof(SaturationCap_MSB));
+
+	SaturationCap = (SaturationCap_LSB & 0xFF) | ((SaturationCap_MSB & 0xFF) <<8);
+	threshold_integer = (FingerAmplitudeThreshold * SaturationCap)/256;
+	threshold_fraction = ((FingerAmplitudeThreshold * SaturationCap * 1000)/256)%1000;
+
+	tsp_debug_err(true, &rmi4_data->i2c_client->dev,
+				"%s: FingerAmp : %d, Satruration cap : %d\n",
+				__func__, FingerAmplitudeThreshold, SaturationCap);
 
 	set_default_result(data);
-	sprintf(data->cmd_buff, "%03d", threshold);
+	sprintf(data->cmd_buff, "%u.%u",
+		threshold_integer, threshold_fraction);
+
 	set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-
 	data->cmd_state = CMD_STATUS_OK;
-
 	return;
 }
 
@@ -2801,17 +2919,6 @@ static void run_rawcap_read(void)
 
 	set_default_result(data);
 
-#if defined(USE_TSP_FACTORY_FW)
-	if (f54->rmi4_data->ic_revision_of_ic != 0xBF) {
-		tsp_debug_info(true, &f54->rmi4_data->i2c_client->dev,
-				"%s: this is not Factory FW.\n", __func__);
-		sprintf(data->cmd_buff, "%s", "Not Factory Firmware");
-		set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-		data->cmd_state = CMD_STATUS_NOT_APPLICABLE;
-		return;
-	}
-#endif
-
 	if (rmi4_data->touch_stopped) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [ERROR] Touch is stopped\n",
 			__func__);
@@ -2915,17 +3022,6 @@ static void run_delta_read(void)
 
 	set_default_result(data);
 
-#if defined(USE_TSP_FACTORY_FW)
-	if (f54->rmi4_data->ic_revision_of_ic != 0xBF) {
-		tsp_debug_info(true, &f54->rmi4_data->i2c_client->dev,
-				"%s: this is not Factory FW.\n", __func__);
-		sprintf(data->cmd_buff, "%s", "Not Factory Firmware");
-		set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-		data->cmd_state = CMD_STATUS_NOT_APPLICABLE;
-		return;
-	}
-#endif
-
 	if (rmi4_data->touch_stopped) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [ERROR] Touch is stopped\n",
 			__func__);
@@ -2981,17 +3077,6 @@ static void run_abscap_read(void)
 
 	set_default_result(data);
 
-#if defined(USE_TSP_FACTORY_FW)
-	if (f54->rmi4_data->ic_revision_of_ic != 0xBF) {
-		tsp_debug_info(true, &f54->rmi4_data->i2c_client->dev,
-				"%s: this is not Factory FW.\n", __func__);
-		sprintf(data->cmd_buff, "%s", "Not Factory Firmware");
-		set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-		data->cmd_state = CMD_STATUS_NOT_APPLICABLE;
-		return;
-	}
-#endif
-
 	if (rmi4_data->touch_stopped) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [ERROR] Touch is stopped\n",
 			__func__);
@@ -3001,7 +3086,7 @@ static void run_abscap_read(void)
 		return;
 	}
 
-	if (!synaptics_rmi4_f54_get_report_type(F54_ABS_RAW_CAP)) {
+	if (!synaptics_rmi4_f54_get_report_type(F54_ABS_CAP)) {
 		data->cmd_state = CMD_STATUS_FAIL;
 		return;
 	}
@@ -3047,17 +3132,6 @@ static void run_absdelta_read(void)
 
 	set_default_result(data);
 
-#if defined(USE_TSP_FACTORY_FW)
-	if (f54->rmi4_data->ic_revision_of_ic != 0xBF) {
-		tsp_debug_info(true, &f54->rmi4_data->i2c_client->dev,
-				"%s: this is not Factory FW.\n", __func__);
-		sprintf(data->cmd_buff, "%s", "Not Factory Firmware");
-		set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-		data->cmd_state = CMD_STATUS_NOT_APPLICABLE;
-		return;
-	}
-#endif
-
 	if (rmi4_data->touch_stopped) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [ERROR] Touch is stopped\n",
 			__func__);
@@ -3067,7 +3141,7 @@ static void run_absdelta_read(void)
 		return;
 	}
 
-	if (!synaptics_rmi4_f54_get_report_type(F54_ABS_DELTA_CAP)) {
+	if (!synaptics_rmi4_f54_get_report_type(F54_ABS_DELTA)) {
 		data->cmd_state = CMD_STATUS_FAIL;
 		return;
 	}
@@ -3108,17 +3182,6 @@ static void run_trx_short_test(void)
 	unsigned char command = 0x01;
 
 	set_default_result(data);
-
-#if defined(USE_TSP_FACTORY_FW)
-	if (f54->rmi4_data->ic_revision_of_ic != 0xBF) {
-		tsp_debug_info(true, &f54->rmi4_data->i2c_client->dev,
-				"%s: this is not Factory FW.\n", __func__);
-		sprintf(data->cmd_buff, "%s", "Not Factory Firmware");
-		set_cmd_result(data, data->cmd_buff, strlen(data->cmd_buff));
-		data->cmd_state = CMD_STATUS_NOT_APPLICABLE;
-		return;
-	}
-#endif
 
 	if (rmi4_data->touch_stopped) {
 		tsp_debug_err(true, &rmi4_data->i2c_client->dev, "%s: [ERROR] Touch is stopped\n",
@@ -4164,6 +4227,9 @@ show_store_func_unsigned(control, reg_32__35, rx_high_edge_comp)
 show_store_func_unsigned(control, reg_32__35, tx_low_edge_comp)
 show_store_func_unsigned(control, reg_32__35, tx_high_edge_comp)
 show_store_func_unsigned(control, reg_41, no_signal_clarity)
+show_store_func_unsigned(control, reg_57, cbc_cap_0d)
+show_store_func_unsigned(control, reg_57, cbc_polarity_0d)
+show_store_func_unsigned(control, reg_57, cbc_tx_carrier_selection_0d)
 
 show_replicated_func_unsigned(control, reg_15, sensor_rx_assignment)
 show_replicated_func_unsigned(control, reg_16, sensor_tx_assignment)
@@ -4744,6 +4810,108 @@ static int synaptics_rmi4_f54_set_ctrl(void)
 	}
 	reg_num++;
 
+	/* control 42 */
+	if (f54->query.has_variance_metric == 1)
+		reg_addr += CONTROL_42_SIZE;
+
+	/* controls 43 44 45 46 47 48 49 50 51 52 53 54 */
+	if (f54->query.has_multi_metric_state_machine == 1)
+		reg_addr += CONTROL_43_54_SIZE;
+
+	/* controls 55 56 */
+	if (f54->query.has_0d_relaxation_control == 1)
+		reg_addr += CONTROL_55_56_SIZE;
+
+	/* control 57 */
+	if (f54->query.has_0d_acquisition_control == 1) {
+		attrs_ctrl_regs_exist[reg_num] = true;
+		control->reg_57 = kzalloc(sizeof(*(control->reg_57)),
+				GFP_KERNEL);
+		if (!control->reg_57)
+			goto exit_no_mem;
+		control->reg_57->address = reg_addr;
+		reg_addr += sizeof(control->reg_57->data);
+	}
+	reg_num++;
+
+	/* control 58 */
+	if (f54->query.has_0d_acquisition_control == 1)
+		reg_addr += CONTROL_58_SIZE;
+
+	/* control 59 */
+	if (f54->query.has_h_blank == 1)
+		reg_addr += CONTROL_59_SIZE;
+
+	/* controls 60 61 62 */
+	if ((f54->query.has_h_blank == 1) ||
+			(f54->query.has_v_blank == 1) ||
+			(f54->query.has_long_h_blank == 1))
+		reg_addr += CONTROL_60_62_SIZE;
+
+	/* control 63 */
+	if ((f54->query.has_h_blank == 1) ||
+			(f54->query.has_v_blank == 1) ||
+			(f54->query.has_long_h_blank == 1) ||
+			(f54->query.has_slew_metric == 1) ||
+			(f54->query.has_slew_option == 1) ||
+			(f54->query.has_noise_mitigation2 == 1))
+		reg_addr += CONTROL_63_SIZE;
+
+	/* controls 64 65 66 67 */
+	if (f54->query.has_h_blank == 1)
+		reg_addr += CONTROL_64_67_SIZE * 7;
+	else if ((f54->query.has_v_blank == 1) ||
+			(f54->query.has_long_h_blank == 1))
+		reg_addr += CONTROL_64_67_SIZE;
+
+	/* controls 68 69 70 71 72 73 */
+	if ((f54->query.has_h_blank == 1) ||
+			(f54->query.has_v_blank == 1) ||
+			(f54->query.has_long_h_blank == 1))
+		reg_addr += CONTROL_68_73_SIZE;
+
+	/* control 74 */
+	if (f54->query.has_slew_metric == 1)
+		reg_addr += CONTROL_74_SIZE;
+
+	/* control 75 */
+	if (f54->query.has_enhanced_stretch == 1)
+		reg_addr += num_of_sensing_freqs;
+
+	/* control 76 */
+	if (f54->query.has_startup_fast_relaxation == 1)
+		reg_addr += CONTROL_76_SIZE;
+
+	/* controls 77 78 */
+	if (f54->query.has_esd_control == 1)
+		reg_addr += CONTROL_77_78_SIZE;
+
+	/* controls 79 80 81 82 83 */
+	if (f54->query.has_noise_mitigation2 == 1)
+		reg_addr += CONTROL_79_83_SIZE;
+
+	/* controls 84 85 */
+	if (f54->query.has_energy_ratio_relaxation == 1)
+		reg_addr += CONTROL_84_85_SIZE;
+
+	/* control 86 */
+	if ((f54->query.has_query13 == 1) && (f54->query.has_ctrl86 == 1))
+		reg_addr += CONTROL_86_SIZE;
+
+	/* control 87 */
+	if ((f54->query.has_query13 == 1) && (f54->query.has_ctrl87 == 1))
+		reg_addr += CONTROL_87_SIZE;
+
+	/* control 88 */
+	if (f54->query.has_ctrl88 == 1) {
+		control->reg_88 = kzalloc(sizeof(*(control->reg_88)),
+				GFP_KERNEL);
+		if (!control->reg_88)
+			goto exit_no_mem;
+		control->reg_88->address = reg_addr;
+		reg_addr += sizeof(control->reg_88->data);
+	}
+
 	return 0;
 
 exit_no_mem:
@@ -5108,6 +5276,8 @@ static int synaptics_rmi4_f54_init(struct synaptics_rmi4_data *rmi4_data)
 	INIT_WORK(&f54->timeout_work, timeout_set_status);
 #endif
 
+	f54->status = STATUS_IDLE;
+
 	return 0;
 
 #ifdef FACTORY_MODE
@@ -5135,6 +5305,7 @@ exit_free_control:
 
 exit_free_f54:
 	kfree(f54);
+	f54 = NULL;
 
 exit:
 	return retval;
@@ -5151,7 +5322,7 @@ static void synaptics_rmi4_f54_remove(struct synaptics_rmi4_data *rmi4_data)
 	destroy_workqueue(f54->status_workqueue);
 
 #ifdef FACTORY_MODE
-	sysfs_remove_group(f54->attr_dir, &cmd_attr_group);
+	sysfs_remove_group(&f54->factory_data->fac_dev_ts->kobj, &cmd_attr_group);
 	kfree(f54->factory_data->trx_short);
 	kfree(f54->factory_data->abscap_data);
 	kfree(f54->factory_data->absdelta_data);
@@ -5169,6 +5340,7 @@ static void synaptics_rmi4_f54_remove(struct synaptics_rmi4_data *rmi4_data)
 
 	kfree(f54->fn_ptr);
 	kfree(f54);
+	f54 = NULL;
 
 	return;
 }

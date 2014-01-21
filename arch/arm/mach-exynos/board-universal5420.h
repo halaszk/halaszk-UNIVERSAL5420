@@ -29,11 +29,7 @@ void exynos5_universal5420_power_init(void);
 void exynos5_universal5420_clock_init(void);
 void exynos5_universal5420_mmc_init(void);
 void exynos5_universal5420_usb_init(void);
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
-void exynos5_vienna_battery_init(void);
-#else
 void exynos5_universal5420_battery_init(void);
-#endif
 void exynos5_universal5420_audio_init(void);
 void exynos5_universal5420_input_init(void);
 void exynos5_universal5420_display_init(void);

@@ -52,10 +52,18 @@
 
 /* Data Register */
 #define BMG160_CHIP_ID_REG                 0x00
+
+#ifdef CONFIG_SENSORS_BMI058
+#define BMG160_RATE_X_LSB_ADDR             0x04
+#define BMG160_RATE_X_MSB_ADDR             0x05
+#define BMG160_RATE_Y_LSB_ADDR             0x02
+#define BMG160_RATE_Y_MSB_ADDR             0x03
+#else
 #define BMG160_RATE_X_LSB_ADDR             0x02
 #define BMG160_RATE_X_MSB_ADDR             0x03
 #define BMG160_RATE_Y_LSB_ADDR             0x04
 #define BMG160_RATE_Y_MSB_ADDR             0x05
+#endif
 #define BMG160_RATE_Z_LSB_ADDR             0x06
 #define BMG160_RATE_Z_MSB_ADDR             0x07
 #define BMG160_TEMP_ADDR                   0x08
@@ -148,4 +156,10 @@
 #define BMG160_SET_BITSLICE(regvar, bitname, val)\
 		((regvar & ~bitname##__MSK) |\
 		((val << bitname##__POS) & bitname##__MSK))
+
+enum {
+	OFF = 0,
+	ON = 1
+};
+
 #endif

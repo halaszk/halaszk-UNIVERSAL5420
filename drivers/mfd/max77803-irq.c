@@ -168,9 +168,21 @@ static struct irq_chip max77803_irq_chip = {
 	.irq_unmask		= max77803_irq_unmask,
 };
 
-#if defined(CONFIG_N1A_3G) || defined(CONFIG_N1A_WIFI)
+#if !defined(CONFIG_HA)
 extern int max77803_muic_interruptmask_check(void);
 #endif
+/* WA for V1 MUIC RESET */
+#if defined(CONFIG_V1A)
+static irqreturn_t muic_reset_irq_thread(int irq, void *data)
+{
+	pr_info("MUIC chip was RESET, I will unmask the REG\n");
+	max77803_muic_interruptmask_check();
+
+	return IRQ_HANDLED;
+}
+#endif
+/* WA for V1 MUIC RESET */
+
 static irqreturn_t max77803_irq_thread(int irq, void *data)
 {
 	struct max77803_dev *max77803 = data;
@@ -181,8 +193,8 @@ static irqreturn_t max77803_irq_thread(int irq, void *data)
 	int i;
 	pr_debug("%s: irq gpio pre-state(0x%02x)\n", __func__,
 				gpio_get_value(max77803->irq_gpio));
-
-#if defined(CONFIG_N1A_3G) || defined(CONFIG_N1A_WIFI)
+/* to know the WA's effect */
+#if !defined(CONFIG_HA)
 	// [[  workaround for MUIC reset
 	max77803_muic_interruptmask_check();
 	// workaround for MUIC reset ]]
@@ -291,6 +303,18 @@ int max77803_irq_init(struct max77803_dev *max77803)
 	int cur_irq;
 	int ret;
 	u8 i2c_data;
+	/* WA for V1 MUIC RESET */
+#if defined(CONFIG_V1A)
+	int mr_irq = -1;
+
+	if (max77803->muic_reset_irq != -1) {
+		pr_info("%s : muic reset pin is not allocated\n", __func__);
+		mr_irq = gpio_to_irq(max77803->muic_reset_irq);
+	}
+
+	pr_info("%s : mr_irq : %d\n",__func__, mr_irq);
+#endif
+	/* WA for V1 MUIC RESET */
 
 	if (!max77803->irq_gpio) {
 		dev_warn(max77803->dev, "No interrupt specified.\n");
@@ -376,6 +400,25 @@ int max77803_irq_init(struct max77803_dev *max77803)
 			max77803->irq, ret);
 		return ret;
 	}
+
+	/* WA for V1 MUIC RESET */
+#if defined(CONFIG_V1A)
+	if (max77803->muic_reset_irq == -1) {
+		pr_info("%s : muic reset pin is not allocated\n", __func__);
+	} else {
+		pr_info("%s : muic reset pin enable\n", __func__);
+		ret = request_threaded_irq(mr_irq, NULL, muic_reset_irq_thread,
+					   IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+					   "max77803-irq", max77803);
+
+		if (ret) {
+			dev_err(max77803->dev, "Failed to request reset IRQ %d: %d\n",
+				mr_irq, ret);
+			return ret;
+		}
+	}
+#endif
+	/* WA for V1 MUIC RESET */
 
 	return 0;
 }

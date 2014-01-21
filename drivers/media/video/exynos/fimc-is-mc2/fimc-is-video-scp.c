@@ -513,7 +513,6 @@ static int fimc_is_scp_video_s_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	unsigned long flags;
-	u32 crange;
 	struct fimc_is_video_ctx *vctx = file->private_data;
 	struct fimc_is_device_ischain *device;
 	struct fimc_is_framemgr *framemgr;

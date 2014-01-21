@@ -298,11 +298,7 @@ struct max77802_dev {
 	int irq_masks_cur[MAX77802_IRQ_GROUP_NR];
 	int irq_masks_cache[MAX77802_IRQ_GROUP_NR];
 	int wtsr_smpl;
-
-/* #ifdef CONFIG_HIBERNATION */
-#if 0
-	u8 reg_dump[MAX77802_REG_PMIC_END];
-#endif
+	int jigon_ops;
 };
 
 enum max77802_types {

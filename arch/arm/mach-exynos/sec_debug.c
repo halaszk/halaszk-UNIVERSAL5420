@@ -73,9 +73,6 @@ struct sched_log {
 
 #ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
 #define AUX_LOG_CPU_CLOCK_SWITCH_MAX 128
-#define AUX_LOG_RUNTIME_PM_MAX 128
-#define AUX_LOG_PM_MAX 1024
-#define AUX_LOG_NOTIFY_FAIL_MAX 64
 #define AUX_LOG_LENGTH 128
 
 struct auxiliary_info {
@@ -87,9 +84,6 @@ struct auxiliary_info {
 /* This structure will be modified if some other items added for log */
 struct auxiliary_log {
 	struct auxiliary_info CpuClockSwitchLog[AUX_LOG_CPU_CLOCK_SWITCH_MAX];
-	struct auxiliary_info RuntimePmLog[AUX_LOG_RUNTIME_PM_MAX];
-	struct auxiliary_info PmLog[AUX_LOG_PM_MAX];
-	struct auxiliary_info NotifyFailLog[AUX_LOG_NOTIFY_FAIL_MAX];
 };
 
 #else
@@ -278,9 +272,6 @@ static unsigned long long gExcpIrqExitTime[NR_CPUS];
 static struct auxiliary_log gExcpAuxLog	__cacheline_aligned;
 static struct auxiliary_log *gExcpAuxLogPtr;
 static atomic_t gExcpAuxCpuClockSwitchLogIdx = ATOMIC_INIT(-1);
-static atomic_t gExcpAuxRuntimePmLogIdx = ATOMIC_INIT(-1);
-static atomic_t gExcpAuxPmLogIdx = ATOMIC_INIT(-1);
-static atomic_t gExcpAuxNotifyFailLogIdx = ATOMIC_INIT(-1);
 #endif
 
 static int bStopLogging;
@@ -934,7 +925,7 @@ void sec_debug_irq_last_exit_log(void)
 void sec_debug_aux_log(int idx, char *fmt, ...)
 {
 	va_list args;
-	char buf[128];
+	char buf[AUX_LOG_LENGTH];
 	unsigned i;
 	int cpu = raw_smp_processor_id();
 
@@ -944,38 +935,15 @@ void sec_debug_aux_log(int idx, char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
+	buf[AUX_LOG_LENGTH-1]='\0';
 
 	switch (idx) {
-	case SEC_DEBUG_AUXLOG_CPU_CLOCK_SWITCH_CHANGE:
+	case SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE:
 		i = atomic_inc_return(&gExcpAuxCpuClockSwitchLogIdx)
 			& (AUX_LOG_CPU_CLOCK_SWITCH_MAX - 1);
 		(*gExcpAuxLogPtr).CpuClockSwitchLog[i].time = cpu_clock(cpu);
 		(*gExcpAuxLogPtr).CpuClockSwitchLog[i].cpu = cpu;
 		strncpy((*gExcpAuxLogPtr).CpuClockSwitchLog[i].log,
-			buf, AUX_LOG_LENGTH);
-		break;
-	case SEC_DEBUG_AUXLOG_RUNTIME_PM_CHANGE:
-		i = atomic_inc_return(&gExcpAuxRuntimePmLogIdx)
-			& (AUX_LOG_RUNTIME_PM_MAX - 1);
-		(*gExcpAuxLogPtr).RuntimePmLog[i].time = cpu_clock(cpu);
-		(*gExcpAuxLogPtr).RuntimePmLog[i].cpu = cpu;
-		strncpy((*gExcpAuxLogPtr).RuntimePmLog[i].log,
-			buf, AUX_LOG_LENGTH);
-		break;
-	case SEC_DEBUG_AUXLOG_PM_CHANGE:
-		i = atomic_inc_return(&gExcpAuxPmLogIdx)
-			& (AUX_LOG_PM_MAX - 1);
-		(*gExcpAuxLogPtr).PmLog[i].time = cpu_clock(cpu);
-		(*gExcpAuxLogPtr).PmLog[i].cpu = cpu;
-		strncpy((*gExcpAuxLogPtr).PmLog[i].log,
-			buf, AUX_LOG_LENGTH);
-		break;
-	case SEC_DEBUG_AUXLOG_NOTIFY_FAIL:
-		i = atomic_inc_return(&gExcpAuxNotifyFailLogIdx)
-			& (AUX_LOG_NOTIFY_FAIL_MAX - 1);
-		(*gExcpAuxLogPtr).NotifyFailLog[i].time = cpu_clock(cpu);
-		(*gExcpAuxLogPtr).NotifyFailLog[i].cpu = cpu;
-		strncpy((*gExcpAuxLogPtr).NotifyFailLog[i].log,
 			buf, AUX_LOG_LENGTH);
 		break;
 	default:

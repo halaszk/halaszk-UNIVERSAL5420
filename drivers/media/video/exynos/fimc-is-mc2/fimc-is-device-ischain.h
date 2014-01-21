@@ -319,6 +319,8 @@ int fimc_is_itf_process_stop(struct fimc_is_device_ischain *device,
 	u32 group);
 int fimc_is_itf_force_stop(struct fimc_is_device_ischain *device,
 	u32 group);
+int fimc_is_itf_map(struct fimc_is_device_ischain *device,
+	u32 group, u32 shot_addr, u32 shot_size);
 int fimc_is_itf_i2c_lock(struct fimc_is_device_ischain *this,
 			int i2c_clk, bool lock);
 

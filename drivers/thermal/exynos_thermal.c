@@ -749,6 +749,10 @@ int exynos_gpu_add_notifier(struct notifier_block *n)
 
 void exynos_gpu_call_notifier(enum gpu_noti_state_t cur_state)
 {
+	if (is_suspending) {
+		cur_state = GPU_COLD;
+	}
+
 	if (cur_state!=gpu_old_state) {
 		pr_info("gpu temperature state %d to %d \n", gpu_old_state, cur_state);
 		blocking_notifier_call_chain(&exynos_gpu_notifier, cur_state, &cur_state);
@@ -1228,6 +1232,7 @@ static int exynos_pm_notifier(struct notifier_block *notifier,
 		exynos_tmu_call_notifier(TMU_COLD);
 		exynos_tmu_call_notifier(tmu_old_state);
 		exynos_check_mif_noti_state(MEM_TH_TEMP2 - 1);
+		exynos_gpu_call_notifier(GPU_COLD);
 		break;
 	case PM_POST_SUSPEND:
 		is_suspending = false;
