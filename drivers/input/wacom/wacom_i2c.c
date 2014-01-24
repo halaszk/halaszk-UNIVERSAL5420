@@ -1042,9 +1042,9 @@ static ssize_t epen_saving_mode_store(struct device *dev,
 	}
 
 //	if (wac_i2c->battery_saving_mode) {
-		if (wac_i2c->pen_insert) {
+	if (wac_i2c->pen_insert)
 			wacom_power_off(wac_i2c);
-	} else {
+	 else
 		wacom_power_on(wac_i2c);
 	return count;
 }
