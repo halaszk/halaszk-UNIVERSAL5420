@@ -98,8 +98,9 @@ static void wacom_power_on(struct wacom_i2c *wac_i2c)
 	}
 
 #ifdef BATTERY_SAVING_MODE
-	if (wac_i2c->battery_saving_mode
-		&& wac_i2c->pen_insert)
+	//if (wac_i2c->battery_saving_mode
+	//	&& wac_i2c->pen_insert)
+	  if (wac_i2c->pen_insert)
 		goto out_power_on;
 #endif
 
@@ -212,7 +213,8 @@ static void pen_insert_work(struct work_struct *work)
 
 #ifdef BATTERY_SAVING_MODE
 	if (wac_i2c->pen_insert) {
-		if (wac_i2c->battery_saving_mode)
+// Always disable digitizer when pen is inserted
+//		if (wac_i2c->battery_saving_mode)
 			wacom_power_off(wac_i2c);
 	} else
 		wacom_power_on(wac_i2c);
@@ -1039,10 +1041,10 @@ static ssize_t epen_saving_mode_store(struct device *dev,
 		return count;
 	}
 
-	if (wac_i2c->battery_saving_mode) {
-		if (wac_i2c->pen_insert)
+//	if (wac_i2c->battery_saving_mode) {
+		if (wac_i2c->pen_insert) {
 			wacom_power_off(wac_i2c);
-	} else
+	} else {
 		wacom_power_on(wac_i2c);
 	return count;
 }
