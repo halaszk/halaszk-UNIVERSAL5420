@@ -59,7 +59,7 @@ void end_swap_bio_write(struct bio *bio, int err)
 		 * Also clear PG_reclaim to avoid rotate_reclaimable_page()
 		 */
 		set_page_dirty(page);
-#if ! defined(CONFIG_VNSWAP) || ! defined(CONFIG_ZSWAP)
+#ifndef CONFIG_VNSWAP || !CONFIG_ZSWAP
 		printk(KERN_ALERT "Write-error on swap-device (%u:%u:%Lu)\n",
 				imajor(bio->bi_bdev->bd_inode),
 				iminor(bio->bi_bdev->bd_inode),
