@@ -129,16 +129,16 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{962500, 420, 71, 80, 0, 800000, 400000, 250000},
 	{1000000, 480, 81, 85, 0, 800000, 400000, 650000},
 	{1037500, 533, 86, 90, 0, 800000, 400000, 1200000},
-	{1050000, 600, 91, 93, 0, 800000, 400000, 1400000},
-        {1075000, 667, 94, 96, 0, 800000, 400000, 1600000},
-        {1100000, 733, 97, 99, 0, 800000, 400000, 1800000},
+	{1050000, 600, 91, 93, 0, 800000, 600000, 1400000},
+        {1075000, 667, 94, 96, 0, 800000, 600000, 1600000},
+        {1100000, 733, 97, 99, 0, 800000, 600000, 1800000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
 
 unsigned int dvfs_step_min = 0;
 unsigned int dvfs_step_max = 10;
-unsigned int dvfs_step_max_minus1 = 480;
+unsigned int dvfs_step_max_minus1 = 667;
 unsigned int cur_gpu_freq = 0;
 
 #ifdef CONFIG_MALI_T6XX_DVFS
