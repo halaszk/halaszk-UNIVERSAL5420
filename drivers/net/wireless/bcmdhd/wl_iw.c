@@ -2303,7 +2303,15 @@ wl_iw_set_power(
 
 	WL_TRACE(("%s: SIOCSIWPOWER\n", dev->name));
 
+#ifdef CONFIG_BCMDHD_WIFI_PM
+	if (wifi_pm == 1) {
+	pm = vwrq->disabled ? PM_OFF : PM_FAST;
+	else
 	pm = vwrq->disabled ? PM_OFF : PM_MAX;
+	}
+#else
+	pm = vwrq->disabled ? PM_OFF : PM_MAX;
+#endif
 
 	pm = htod32(pm);
 	if ((error = dev_wlc_ioctl(dev, WLC_SET_PM, &pm, sizeof(pm))))

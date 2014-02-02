@@ -4677,12 +4677,9 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	/* Delete pm_enable_work */
 	wl_add_remove_pm_enable_work(wl, FALSE, WL_HANDLER_PEND);
 
-#if !defined(SUPPORT_PM2_ONLY)
 	/* android has special hooks to change pm when kernel suspended */
 	pm = enabled ? ((dhd->in_suspend) ? PM_MAX : PM_FAST) : PM_OFF;
-#else
-	pm = enabled ? PM_FAST : PM_OFF;
-#endif /* SUPPORT_PM2_ONLY */
+
 	if (_net_info->pm_block) {
 		WL_ERR(("%s:Do not enable the power save for pm_block %d\n",
 			dev->name, _net_info->pm_block));
