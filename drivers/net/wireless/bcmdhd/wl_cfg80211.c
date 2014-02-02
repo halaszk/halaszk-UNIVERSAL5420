@@ -4658,9 +4658,9 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	s32 err = 0;
 	struct wl_priv *wl = wiphy_priv(wiphy);
 	struct net_info *_net_info = wl_get_netinfo_by_netdev(wl, dev);
-#if !defined(SUPPORT_PM2_ONLY)
+//#if !defined(SUPPORT_PM2_ONLY)
 	dhd_pub_t *dhd = (dhd_pub_t *)(wl->pub);
-#endif /* (OEM_ANDROID) */
+//#endif /* (OEM_ANDROID) */
 	RETURN_EIO_IF_NOT_UP(wl);
 	WL_DBG(("Enter\n"));
 #if defined(WL_ENABLE_P2P_IF)
