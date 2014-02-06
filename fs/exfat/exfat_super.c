@@ -1340,8 +1340,7 @@ static ssize_t exfat_direct_IO(int rw, struct kiocb *iocb,
 #ifdef CONFIG_AIO_OPTIMIZATION
 					struct iov_iter *iter, loff_t offset)
 #else
-					   const struct iovec *iov,
-					   loff_t offset, unsigned long nr_segs)
+					   const struct iovec *iov, loff_t offset, unsigned long nr_segs)
 #endif
 {
 	struct inode *inode = iocb->ki_filp->f_mapping->host;
@@ -1364,10 +1363,10 @@ static ssize_t exfat_direct_IO(int rw, struct kiocb *iocb,
 #else
 	ret = blockdev_direct_IO(rw, iocb, inode, iov,
 					offset, nr_segs, exfat_get_block);
+#endif
 #else
         ret = blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
 					offset, nr_segs, exfat_get_block, NULL);
-#endif
 #endif
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,34)
