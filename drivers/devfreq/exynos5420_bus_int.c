@@ -858,9 +858,9 @@ static int exynos5420_init_int_table(struct busfreq_data_int *data)
 	/* will add code for ASV information setting function in here */
 
 	for (i = 0; i < ARRAY_SIZE(int_bus_opp_list); i++) {
-		asv_volt = get_match_volt(ID_INT, int_bus_opp_list[i].freq);
+//		asv_volt = get_match_volt(ID_INT, int_bus_opp_list[i].freq);
 
-		if (!asv_volt)
+//		if (!asv_volt)
 			asv_volt = int_bus_opp_list[i].volt;
 
 		pr_info("INT %luKhz ASV is %duV\n", int_bus_opp_list[i].freq, asv_volt);
