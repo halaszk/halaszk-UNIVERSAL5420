@@ -80,8 +80,8 @@
  *     dentry2->d_lock
  */
 
-#define DEFAULT_VFS_CACHE_PRESSURE 50
-#define DEFAULT_VFS_SUSPEND_CACHE_PRESSURE 10
+#define DEFAULT_VFS_CACHE_PRESSURE 60
+#define DEFAULT_VFS_SUSPEND_CACHE_PRESSURE 20
 int sysctl_vfs_cache_pressure __read_mostly, resume_cache_pressure;
 int sysctl_vfs_suspend_cache_pressure __read_mostly, suspend_cache_pressure;
 
