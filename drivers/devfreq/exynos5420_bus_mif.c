@@ -730,9 +730,9 @@ static int exynos5420_mif_table(struct busfreq_data_mif *data)
 	/* will add code for ASV information setting function in here */
 
 	for (i = 0; i < ARRAY_SIZE(mif_bus_opp_list); i++) {
-	//	asv_volt = get_match_volt(ID_MIF, mif_bus_opp_list[i].clk);
+		asv_volt = get_match_volt(ID_MIF, mif_bus_opp_list[i].clk);
 
-	//	if (!asv_volt)
+		if (!asv_volt)
 			asv_volt = mif_bus_opp_list[i].volt;
 
 		pr_info("MIF %luKhz ASV is %duV\n", mif_bus_opp_list[i].clk, asv_volt);
