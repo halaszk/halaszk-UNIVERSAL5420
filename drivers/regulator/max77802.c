@@ -237,7 +237,7 @@ unsigned int max77802_opmode_reg[][3] = {
 	{0x3, 0x2, 0x1}, /* LDO32 */
 	{0x3, 0x2, 0x1},
 	{0x3, 0x2, 0x1},
-	{0x0, 0x0, 0x0}, /* LDO35 */
+	{0x3, 0x2, 0x1}, /* LDO35 */
 	/* BUCK1 ... BUCK10 */
 	{0x3, 0x1, 0x1}, /* BUCK1 */
 	{0x3, 0x1, 0x1},
@@ -554,9 +554,9 @@ static int max77802_set_voltage(struct regulator_dev *rdev,
 		break;
 	case MAX77802_BUCK1:
 	case MAX77802_BUCK6:
-	if (org < i)
-		udelay(DIV_ROUND_UP(desc->step * (i - org),
-			max77802->ramp_delay * 1000));
+		if (org < i)
+			udelay(DIV_ROUND_UP(desc->step * (i - org),
+						max77802->ramp_delay * 1000));
 	break;
 	case MAX77802_BUCK5:
 	case MAX77802_BUCK7 ... MAX77802_BUCK10:
@@ -789,44 +789,6 @@ static __devinit int max77802_pmic_probe(struct platform_device *pdev)
 	max77802->buck4_gpiodvs = false;
 	max77802->buck6_gpiodvs = false;
 
-	for (i = 0; i < 3; i++) {
-		if (gpio_is_valid(pdata->buck12346_gpio_dvs[i].gpio)) {
-			max77802->buck12346_gpios_dvs_label[i] =
-				kasprintf(GFP_KERNEL, "MAX77802 DVS%d", i);
-			max77802->buck12346_gpios_dvs[i] =
-				pdata->buck12346_gpio_dvs[i].gpio;
-			err = gpio_request(pdata->buck12346_gpio_dvs[i].gpio,
-					max77802->buck12346_gpios_dvs_label[i]);
-			if (err)
-				pr_warn(
-				"failed to request MAX77802 DVS%d\n", i);
-			gpio_direction_output(pdata->buck12346_gpio_dvs[i].gpio,
-				pdata->buck12346_gpio_dvs[i].data);
-		} else {
-			dev_info(&pdev->dev, "GPIO MAX77686 DVS%d ignored (%d)\n",
-				 i, pdata->buck12346_gpio_dvs[i].gpio);
-		}
-	}
-	for (i = 0; i < 5; i++) {
-		if (gpio_is_valid(pdata->buck12346_gpio_selb[i])) {
-			max77802->buck12346_gpios_selb_label[i] =
-				kasprintf(GFP_KERNEL, "MAX77802 SELB%d", i);
-			max77802->buck12346_gpios_selb[i] =
-				pdata->buck12346_gpio_selb[i];
-			err = gpio_request(pdata->buck12346_gpio_selb[i],
-					max77802->buck12346_gpios_selb_label[i]);
-			if (err)
-				pr_warn(
-				"failed to request MAX77802 SELB%d\n", i);
-			gpio_direction_output(pdata->buck12346_gpio_selb[i], 0);
-		} else {
-			dev_info(&pdev->dev, "GPIO MAX77686 SELB%d ignored (%d)\n",
-				 i, pdata->buck12346_gpio_selb[i]);
-		}
-	}
-
-	max77802->buck12346_gpioindex = 0;
-
 	for (i = 0; i < 8; i++) {
 		ret = max77802_get_voltage_proper_val(
 				&buck16_dvs_voltage_map_desc,
@@ -893,6 +855,44 @@ static __devinit int max77802_pmic_probe(struct platform_device *pdev)
 		max77802_write_reg(i2c, MAX77802_REG_BUCK6DVS1 + i,
 				   max77802->buck6_vol[i]);
 	}
+
+	for (i = 0; i < 3; i++) {
+		if (gpio_is_valid(pdata->buck12346_gpio_dvs[i].gpio)) {
+			max77802->buck12346_gpios_dvs_label[i] =
+				kasprintf(GFP_KERNEL, "MAX77802 DVS%d", i);
+			max77802->buck12346_gpios_dvs[i] =
+				pdata->buck12346_gpio_dvs[i].gpio;
+			err = gpio_request(pdata->buck12346_gpio_dvs[i].gpio,
+					max77802->buck12346_gpios_dvs_label[i]);
+			if (err)
+				pr_warn(
+				"failed to request MAX77802 DVS%d\n", i);
+			gpio_direction_output(pdata->buck12346_gpio_dvs[i].gpio,
+				pdata->buck12346_gpio_dvs[i].data);
+		} else {
+			dev_info(&pdev->dev, "GPIO MAX77686 DVS%d ignored (%d)\n",
+				 i, pdata->buck12346_gpio_dvs[i].gpio);
+		}
+	}
+	for (i = 0; i < 5; i++) {
+		if (gpio_is_valid(pdata->buck12346_gpio_selb[i])) {
+			max77802->buck12346_gpios_selb_label[i] =
+				kasprintf(GFP_KERNEL, "MAX77802 SELB%d", i);
+			max77802->buck12346_gpios_selb[i] =
+				pdata->buck12346_gpio_selb[i];
+			err = gpio_request(pdata->buck12346_gpio_selb[i],
+					max77802->buck12346_gpios_selb_label[i]);
+			if (err)
+				pr_warn(
+				"failed to request MAX77802 SELB%d\n", i);
+			gpio_direction_output(pdata->buck12346_gpio_selb[i], 0);
+		} else {
+			dev_info(&pdev->dev, "GPIO MAX77686 SELB%d ignored (%d)\n",
+				 i, pdata->buck12346_gpio_selb[i]);
+		}
+	}
+
+	max77802->buck12346_gpioindex = 0;
 
 	if (pdata->has_full_constraints)
 		regulator_has_full_constraints();

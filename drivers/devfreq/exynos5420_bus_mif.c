@@ -37,6 +37,11 @@
 #include <plat/clock.h>
 
 #include "noc_probe.h"
+#include <mach/sec_debug.h>
+#include <linux/sysfs_helpers.h>
+#ifdef CONFIG_EXYNOS5_CPUFREQ
+#include <mach/cpufreq.h>
+#endif
 
 #define SET_DREX_TIMING
 
@@ -54,7 +59,7 @@ static bool en_profile = false;
 #define BP_CONTORL_ENABLE	0x1
 #define BRBRSVCON_ENABLE	0x33
 
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 #define QOS_TIMEOUT_VAL0	0x0
 #define QOS_TIMEOUT_VAL1	0x80
 #else
@@ -116,7 +121,7 @@ enum mif_bus_idx {
 	LV_5,
 	LV_6,
 	LV_7,
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	LV_8,
 #endif
 	LV_END,
@@ -138,7 +143,7 @@ struct mif_bus_opp_table mif_bus_opp_list[] = {
 	{LV_5, 266000,  875000, 0},
 	{LV_6, 200000,  875000, 0},
 	{LV_7, 160000,  875000, 0},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_8, 133000,  875000, 0},
 #endif
 };
@@ -256,7 +261,7 @@ void exynos5_update_media_layers(enum devfreq_media_type media_type, unsigned in
 			enabled_fimc_lite ? "enabled" : "disabled",
 			num_mixer_layers, num_fimd1_layers, num_total_layers);
 
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	if (!enabled_fimc_lite && num_mixer_layers) {
 		media_qos_freq = mif_bus_opp_list[LV_4].clk;
 		goto out;
@@ -264,7 +269,7 @@ void exynos5_update_media_layers(enum devfreq_media_type media_type, unsigned in
 #endif
 
 	switch (num_total_layers) {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	case NUM_LAYERS_5:
 		if (enabled_fimc_lite)
 			media_qos_freq = mif_bus_opp_list[LV_0].clk;
@@ -486,6 +491,10 @@ static void exynos5_mif_set_freq(struct busfreq_data_mif *data,
 	int i, target_idx = LV_0;
 	unsigned long tmp_clk;
 
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+			"old:%7d new:%7d (MIF)",
+			old_freq, target_freq);
+
 	/*
 	 * Find setting value with target frequency
 	 */
@@ -501,7 +510,7 @@ static void exynos5_mif_set_freq(struct busfreq_data_mif *data,
 		data->bp_enabled = true;
 	}
 
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	tmp_clk = mif_bus_opp_list[LV_6].clk;
 #else
 	tmp_clk = mif_bus_opp_list[LV_5].clk;
@@ -549,7 +558,7 @@ static void exynos5_mif_set_freq(struct busfreq_data_mif *data,
 
 	clk_disable(data->fout_spll);
 
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	tmp_clk = mif_bus_opp_list[LV_6].clk;
 #else
 	tmp_clk = mif_bus_opp_list[LV_5].clk;
@@ -738,6 +747,31 @@ static int exynos5420_mif_table(struct busfreq_data_mif *data)
 
 	return 0;
 }
+
+ssize_t hlpr_get_mif_volt_table(char *buf)
+{
+       unsigned int i, len = 0;
+
+        for (i = 0; i < LV_END; i++) {
+               len += sprintf(buf + len, "%ld %ld\n", mif_bus_opp_list[i].clk, mif_bus_opp_list[i].volt);
+       }
+
+       return len;
+}
+
+void hlpr_set_mif_volt_table(int mif_table[])
+{
+        unsigned int i;
+        int u = 0;
+
+        for (i = 0; i < LV_END; i++)
+        {
+                mif_bus_opp_list[i].volt = mif_table[u];
+                pr_alert("SET MIF VOLTAGE TABLE %d - %lu - %lu", i, mif_bus_opp_list[i].clk, mif_bus_opp_list[i].volt);
+                u++;
+	}
+}
+
 
 struct nocp_info nocp_mem0_0 = {
 	.name		= "mem0_0",

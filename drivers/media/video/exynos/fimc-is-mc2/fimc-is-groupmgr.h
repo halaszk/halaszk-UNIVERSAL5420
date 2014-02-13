@@ -87,6 +87,7 @@ struct fimc_is_group {
 
 	u32				id; /* group id */
 	u32				instance; /* device instance */
+	u32				pcount; /* program count */
 	u32				fcount; /* frame count */
 	atomic_t			scount; /* shot count */
 	atomic_t			rcount; /* request count */
@@ -148,10 +149,13 @@ int fimc_is_group_start(struct fimc_is_groupmgr *groupmgr,
 	struct fimc_is_frame *frame);
 int fimc_is_group_done(struct fimc_is_groupmgr *groupmgr,
 	struct fimc_is_group *group,
-	struct fimc_is_frame *ldr_frame);
+	struct fimc_is_frame *ldr_frame,
+	u32 done_state);
 
 int fimc_is_gframe_cancel(struct fimc_is_groupmgr *groupmgr,
 	struct fimc_is_group *group, u32 target_fcount);
+
+#define PROGRAM_COUNT(count) (group->pcount = count)
 
 #define GET_GROUP_FRAMEMGR(group) \
 	(((group) && (group)->leader.vctx) ? (&(group)->leader.vctx->q_src.framemgr) : NULL)

@@ -104,6 +104,8 @@ struct max77803_platform_data {
 	int irq_base;
 	int irq_gpio;
 	int wc_irq_gpio;
+	/* WA for V1 MUIC RESET */
+	int muic_reset_irq;
 	int wakeup;
 	struct max77803_muic_data *muic;
 	bool (*is_default_uart_path_cp) (void);

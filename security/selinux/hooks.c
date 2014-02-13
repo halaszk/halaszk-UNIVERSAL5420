@@ -415,6 +415,7 @@ static int sb_finish_set_opts(struct super_block *sb)
 
 	/* Initialize the root inode. */
 	rc = inode_doinit_with_dentry(root_inode, root);
+	printk(KERN_DEBUG "SELinux: end of inode_doinit_with_dentry \n");
 
 	/* Initialize any other inodes associated with the superblock, e.g.
 	   inodes created prior to initial policy load or inodes created
@@ -438,6 +439,7 @@ next_inode:
 		list_del_init(&isec->list);
 		goto next_inode;
 	}
+	printk(KERN_DEBUG "SELinux: end of list_entry \n");
 	spin_unlock(&sbsec->isec_lock);
 out:
 	return rc;

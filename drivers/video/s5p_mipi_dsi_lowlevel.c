@@ -668,3 +668,56 @@ void s5p_mipi_dsi_enable_main_standby(struct mipi_dsim_device *dsim,
 	reg |= enable << 31;
 	writel(reg, dsim->reg_base + S5P_DSIM_MDRESOL);
 }
+
+#ifdef CONFIG_FB_MIC
+unsigned int s5p_mipi_dsi_calc_bs_size(struct mipi_dsim_device *dsim)
+{
+	struct mipi_dsim_lcd_config *lcd_config = dsim->pd->dsim_lcd_config;
+	u32 temp1, temp2, bs_size;
+
+	temp1 = lcd_config->lcd_size.width / 4 * 2;
+	temp2 = lcd_config->lcd_size.width % 4;
+	bs_size = temp1 + temp2;
+
+	return bs_size;
+}
+
+static void s5p_mipi_dsi_enable_mic(struct mipi_dsim_device *dsim, bool enable)
+{
+	unsigned int reg = 0;
+	reg = readl(dsim->reg_base + S5P_DSIM_MIC_CTRL);
+
+	if (enable)
+		reg |= DSIM_MIC_CTRL_EN;
+	else
+		reg &= ~DSIM_MIC_CTRL_EN;
+
+	writel(reg, dsim->reg_base + S5P_DSIM_MIC_CTRL);
+}
+
+static void s5p_mipi_dsi_set_mic_on_h_size(struct mipi_dsim_device *dsim)
+{
+	unsigned int bs_size;
+
+	bs_size = s5p_mipi_dsi_calc_bs_size(dsim);
+	writel(bs_size, dsim->reg_base + S5P_DSIM_MIC_ON_H);
+}
+
+static void s5p_mipi_dsi_set_mic_on_hfp(struct mipi_dsim_device *dsim)
+{
+	struct mipi_dsim_lcd_config *lcd_config = dsim->pd->dsim_lcd_config;
+	u32 hfp_2d, bs_size;
+
+	bs_size = s5p_mipi_dsi_calc_bs_size(dsim);
+	hfp_2d = lcd_config->rgb_timing.right_margin + bs_size;
+
+	writel(hfp_2d, dsim->reg_base + S5P_DSIM_MIC_ON_HFP);
+}
+
+void s5p_mipi_dsi_config_mic(struct mipi_dsim_device *dsim)
+{
+	s5p_mipi_dsi_enable_mic(dsim, true);
+	s5p_mipi_dsi_set_mic_on_h_size(dsim);
+	s5p_mipi_dsi_set_mic_on_hfp(dsim);
+}
+#endif

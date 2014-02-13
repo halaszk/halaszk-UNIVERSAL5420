@@ -16,7 +16,15 @@ config SENSORS_BMI055
 	default n
 	help
 	  If you say yes here you get support for Bosch-Sensortec's
-	  BMA254 Acceleration & Gyroscope Sensor.
+	  BMI055 Acceleration & Gyroscope Sensor.
+
+config SENSORS_BMI058
+	tristate "BMI058 Combo Sensor Driver"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for Bosch-Sensortec's
+	  BMI058 Acceleration & Gyroscope Sensor.
 
 config SENSORS_AK8963C
 	tristate "AK8963C compass support"
@@ -25,6 +33,14 @@ config SENSORS_AK8963C
 	help
 	  If you say yes here you get support for Asahi Kasei's
 	  orientation sensor AK8963.
+
+config SENSORS_AK09911C
+	tristate "AK09911C compass support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for Asahi Kasei's
+	  orientation sensor AK09911C.
 
 config SENSORS_CM3323
 	depends on I2C
@@ -44,6 +60,22 @@ config SENSORS_SX9500
 	help
 	  Say Y here if you use sx9500.
 	  This option enables grip sensors using
-	  SamTech cm3323 device driver.
+	  SemTech sx9500 device driver.
 
-	  Say N here if you do not use cm3323.
+	  Say N here if you do not use sx9500.
+
+config SENSORS_SX9500_INIT_TOUCH_THRESHOLD
+	int "SX9500 Grip sensor threshold for init touch"
+	depends on SENSORS_SX9500
+	default "3000"
+	help
+	  This value is the standard of init touch using
+	  SemTech sx9500 device driver.
+
+config SENSORS_SX9500_NORMAL_TOUCH_THRESHOLD
+	int "SX9500 Grip sensor threshold for normal touch"
+	depends on SENSORS_SX9500
+	default "17"
+	help
+	  This value is the standard of normal touch using
+	  SemTech sx9500 device driver.

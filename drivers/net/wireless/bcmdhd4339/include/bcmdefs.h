@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmdefs.h 416231 2013-08-02 07:38:34Z $
+ * $Id: bcmdefs.h 424298 2013-09-17 06:38:13Z $
  */
 
 #ifndef	_bcmdefs_h_
@@ -54,11 +54,8 @@
 #define	BCMNMIATTACHDATA(_data)	_data
 #define CONST	const
 
-
 #undef BCM47XX_CA9
-#ifdef __ARM_ARCH_7A__
-#define BCM47XX_CA9
-#endif 
+
 #ifndef BCMFASTPATH
 #if defined(BCM47XX_CA9)
 #define BCMFASTPATH		__attribute__ ((__section__ (".text.fastpath")))

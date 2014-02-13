@@ -845,7 +845,9 @@ static int fg_read_temp(struct i2c_client *client)
 	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	u8 data[2] = {0, 0};
 	int temper = 0;
+#if 0
 	int i;
+#endif
 
 	if (fg_check_battery_present(client)) {
 		if (fg_i2c_read(client, TEMPERATURE_REG, data, 2) < 0) {
@@ -863,7 +865,7 @@ static int fg_read_temp(struct i2c_client *client)
 			temper = data[1] & 0x7f;
 			temper *= 1000;
 			temper += data[0] * 39 / 10;
-
+#if 0
 			/* Adjust temperature */
 			for (i = 0; i < TEMP_RANGE_MAX_NUM-1; i++) {
 				if ((temper >= get_battery_data(fuelgauge).
@@ -876,15 +878,27 @@ static int fg_read_temp(struct i2c_client *client)
 						100) -
 						get_battery_data(fuelgauge).
 						temp_adjust_table[i][OFFSET];
+					break;
 				}
 			}
 			if (i == TEMP_RANGE_MAX_NUM-1)
 				dev_dbg(&client->dev,
 					"%s : No adjustment for temperature\n",
 					__func__);
+#endif
 		}
 	} else
 		temper = 20000;
+
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+	/* temperature compensation: HW tunning value*/
+	if (temper >= 52100 && temper <= 53500)
+		temper += 2000;
+	else if (temper >= 53600 && temper <= 56000)
+		temper += 3000;
+	else if (temper >= 56100)
+		temper += 4000;
+#endif
 
 	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
 		dev_info(&client->dev, "%s: TEMPERATURE(%d), data(0x%04x)\n",
@@ -931,6 +945,8 @@ static int fg_read_soc(struct i2c_client *client)
 	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	u8 data[2];
 	int soc;
+	int rep_soc;
+	int vf_soc;
 
 	if (fg_i2c_read(client, SOCREP_REG, data, 2) < 0) {
 		dev_err(&client->dev, "%s: Failed to read SOCREP\n", __func__);
@@ -938,14 +954,19 @@ static int fg_read_soc(struct i2c_client *client)
 	}
 
 	soc = ((data[1] * 100) + (data[0] * 100 / 256)) / 10;
+	rep_soc = min(soc, 1000);
+	vf_soc = fg_read_vfsoc(client);
 
-	dev_dbg(&client->dev, "%s: raw capacity (%d)\n", __func__, soc);
+	dev_dbg(&client->dev, "%s: raw capacity (0.1%%) (%d)\n", __func__, soc);
 
-	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
+	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT)) {
 		dev_dbg(&client->dev, "%s: raw capacity (%d), data(0x%04x)\n",
 			__func__, soc, (data[1]<<8) | data[0]);
+		dev_dbg(&client->dev, "%s: RepSOC (%d), VFSOC (%d)\n",
+			__func__, rep_soc/10, vf_soc/10);
+	}
 
-	return min(soc, 1000);
+	return rep_soc;
 }
 
 /* soc should be 0.01% unit */
@@ -1254,15 +1275,8 @@ void fg_low_batt_compensation(struct i2c_client *client, u32 level)
 		__func__, level);
 
 	read_val = fg_read_register(client, FULLCAP_REG);
-	if (read_val < 0)
-		return;
-
-	if (read_val > 2)	/* 3% compensation */
-		/* RemCapREP (05h) = FullCap(10h) x 0.0301 */
-		temp = read_val * (level*100 + 1) / 10000;
-	else				/* 1% compensation */
-		/* RemCapREP (05h) = FullCap(10h) x 0.0090 */
-		temp = read_val * (level*90) / 10000;
+	/* RemCapREP (05h) = FullCap(10h) x 0.0090 */
+	temp = read_val * (level*90) / 10000;
 	fg_write_register(client, REMCAP_REP_REG, (u16)temp);
 }
 
@@ -1318,7 +1332,6 @@ static void fg_read_model_data(struct i2c_client *client)
 			}
 		}
 	} while (relock_check);
-
 }
 #endif
 
@@ -1750,15 +1763,17 @@ static void add_low_batt_comp_cnt(struct i2c_client *client,
 void prevent_early_poweroff(struct i2c_client *client,
 	int vcell, int *fg_soc)
 {
+	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	int soc = 0;
 	int read_val;
 
-	soc = get_fuelgauge_value(client, FG_LEVEL);
+	soc = fg_read_soc(client);
 
-	if (soc > POWER_OFF_SOC_HIGH_MARGIN)
+	/* No need to write REMCAP_REP in below normal cases */
+	if (soc > POWER_OFF_SOC_HIGH_MARGIN || vcell > get_battery_data(fuelgauge).low_battery_comp_voltage)
 		return;
 
-	dev_info(&client->dev, "%s: soc=%d%%, vcell=%d\n", __func__,
+	dev_info(&client->dev, "%s: soc=%d, vcell=%d\n", __func__,
 		soc, vcell);
 
 	if (vcell > POWER_OFF_VOLTAGE_HIGH_MARGIN) {
@@ -1768,7 +1783,7 @@ void prevent_early_poweroff(struct i2c_client *client,
 		(u16)(read_val * 13 / 1000));
 		msleep(200);
 		*fg_soc = fg_read_soc(client);
-		dev_info(&client->dev, "%s : new soc=%d, vcell=%d\n",
+		dev_info(&client->dev, "%s: new soc=%d, vcell=%d\n",
 			__func__, *fg_soc, vcell);
 	}
 }
@@ -1842,7 +1857,7 @@ int low_batt_compensation(struct i2c_client *client,
 				low_battery_table[i-1][RANGE]) &&
 				(fg_min_current < get_battery_data(fuelgauge).
 				low_battery_table[i][RANGE])) {
-				if (fg_soc >= 2 && fg_vcell <
+				if (fg_soc >= 10 && fg_vcell <
 					get_low_batt_threshold(client,
 					i, fg_min_current, 1)) {
 					add_low_batt_comp_cnt(
@@ -1890,16 +1905,21 @@ static bool is_booted_in_low_battery(struct i2c_client *client)
 static bool fuelgauge_recovery_handler(struct i2c_client *client)
 {
 	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
+#if 0
 	int current_soc;
 	int avsoc;
 	int temperature;
+#endif
 
-	if (fuelgauge->info.soc >= LOW_BATTERY_SOC_REDUCE_UNIT) {
+	if (fuelgauge->info.soc < LOW_BATTERY_SOC_REDUCE_UNIT) {
+		fuelgauge->info.is_low_batt_alarm = false;
+	} else {
 		dev_err(&client->dev,
 			"%s: Reduce the Reported SOC by 1%%\n",
 			__func__);
+#if 0
 		current_soc =
-			get_fuelgauge_value(client, FG_LEVEL);
+			get_fuelgauge_value(client, FG_LEVEL) / 10;
 
 		if (current_soc) {
 			dev_info(&client->dev,
@@ -1927,6 +1947,12 @@ static bool fuelgauge_recovery_handler(struct i2c_client *client)
 					"%s: Waiting for recovery (AvSOC:%d)\n",
 					__func__, avsoc);
 		}
+#endif
+		fuelgauge->info.soc -=
+			LOW_BATTERY_SOC_REDUCE_UNIT;
+		dev_err(&client->dev,
+			"%s: New Reduced RepSOC (%d)\n",
+			__func__, fuelgauge->info.soc);
 	}
 
 	return fuelgauge->info.is_low_batt_alarm;
@@ -1946,8 +1972,10 @@ static int get_fuelgauge_soc(struct i2c_client *client)
 	int fullcap_check_interval;
 
 	if (fuelgauge->info.is_low_batt_alarm)
-		if (fuelgauge_recovery_handler(client))
+		if (fuelgauge_recovery_handler(client)) {
+			fg_soc = fuelgauge->info.soc;
 			goto return_soc;
+		}
 
 #if defined(ANDROID_ALARM_ACTIVATED)
 	current_time = alarm_get_elapsed_realtime();
@@ -2137,7 +2165,6 @@ bool sec_hal_fg_init(struct i2c_client *client)
 					__func__);
 			}
 		}
-
 	}
 
 	INIT_DELAYED_WORK(&fuelgauge->info.full_comp_work,
@@ -2187,17 +2214,25 @@ bool sec_hal_fg_fuelalert_process(void *irq_data, bool is_fuel_alerted)
 	int overcurrent_limit_in_soc;
 	int current_soc =
 		get_fuelgauge_value(fuelgauge->client, FG_LEVEL);
+#if defined(FUELALERT_CHECK_VOLTAGE_FEATURE)
+	int fg_vcell = get_fuelgauge_value(fuelgauge->client, FG_VOLTAGE);
+#endif
 
-	if (fuelgauge->info.soc <= STABLE_LOW_BATTERY_DIFF)
+	psy_do_property("battery", get,
+		POWER_SUPPLY_PROP_STATUS, value);
+	if (value.intval == POWER_SUPPLY_STATUS_CHARGING)
+		return true;
+
+	if ((int)fuelgauge->info.soc - current_soc <= STABLE_LOW_BATTERY_DIFF)
 		overcurrent_limit_in_soc = STABLE_LOW_BATTERY_DIFF_LOWBATT;
 	else
 		overcurrent_limit_in_soc = STABLE_LOW_BATTERY_DIFF;
 
-	if ((fuelgauge->info.soc - current_soc) >
+	if (((int)fuelgauge->info.soc - current_soc) >
 		overcurrent_limit_in_soc) {
 		dev_info(&fuelgauge->client->dev,
 			"%s: Abnormal Current Consumption jump by %d units\n",
-			__func__, ((fuelgauge->info.soc - current_soc)));
+			__func__, (((int)fuelgauge->info.soc - current_soc)));
 		dev_info(&fuelgauge->client->dev,
 			"%s: Last Reported SOC (%d).\n",
 			__func__, fuelgauge->info.soc);
@@ -2209,11 +2244,16 @@ bool sec_hal_fg_fuelalert_process(void *irq_data, bool is_fuel_alerted)
 			return true;
 	}
 
-	psy_do_property("battery", get,
-		POWER_SUPPLY_PROP_STATUS, value);
-
 	if (value.intval ==
 			POWER_SUPPLY_STATUS_DISCHARGING) {
+#if defined(FUELALERT_CHECK_VOLTAGE_FEATURE)
+		if (fg_vcell >= POWER_OFF_VOLTAGE_HIGH_MARGIN) {
+			dev_info(&fuelgauge->client->dev,
+				"%s: skip setting battery level as 0 (voltage: %d)\n",
+				__func__, fg_vcell);
+			return true;
+		}
+#endif
 		dev_err(&fuelgauge->client->dev,
 			"Set battery level as 0, power off.\n");
 		fuelgauge->info.soc = 0;
@@ -2323,7 +2363,7 @@ bool sec_hal_fg_get_property(struct i2c_client *client,
 		if (val->intval == SEC_FUELGAUGE_CAPACITY_TYPE_RAW)
 			val->intval = get_fuelgauge_value(client, FG_RAW_SOC);
 		else
-		val->intval = get_fuelgauge_soc(client);
+			val->intval = get_fuelgauge_soc(client);
 		break;
 		/* Battery Temperature */
 	case POWER_SUPPLY_PROP_TEMP:

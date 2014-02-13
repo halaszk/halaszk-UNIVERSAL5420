@@ -690,6 +690,8 @@ static void __iomem *exynos5420_pwr_reg_mscl[] = {
 	EXYNOS5420_CMU_RESET_MSC_SYS_PWR_REG,
 };
 
+static struct clk *clk_g3d;
+static struct clk *clk_g3d_parent;
 #ifdef CONFIG_S5P_DEV_DP
 static struct clk *clk_400_disp1;
 static struct clk *clk_400_disp1_parent;
@@ -889,6 +891,18 @@ static int exynos5420_pm_domain_maudio_post_power_off(struct exynos_pm_domain *d
 	return 0;
 }
 
+static int exynos5420_pm_domain_g3d_post_power_on(struct exynos_pm_domain *domain)
+{
+	clk_set_parent(clk_g3d, clk_g3d_parent);
+	return 0;
+}
+
+static int exynos5420_pm_domain_g3d_pre_power_off(struct exynos_pm_domain *domain)
+{
+	clk_g3d_parent = clk_get_parent(clk_g3d);
+	return 0;
+}
+
 static int exynos5420_pm_domain_g3d_pre_power_on(struct exynos_pm_domain *domain)
 {
 	/* Turn on VPLL before maudio block on */
@@ -938,6 +952,7 @@ static int exynos5420_pm_domain_init(void)
 
 	hdmi = clk_get(&s5p_device_hdmi.dev, "hdmi");
 
+	clk_g3d = clk_get(NULL, "aclk_g3d");
 	clk_200_disp1 = clk_get(NULL, "aclk_200_disp1");
 	clk_200_disp1_parent = clk_get(NULL, "aclk_200_sw");
 	clk_300_disp1 = clk_get(NULL, "aclk_300_disp1");
@@ -1033,6 +1048,11 @@ static int exynos5420_pm_domain_init(void)
 				true, exynos5420_pm_domain_g3d_pre_power_on);
 	exynos_pm_add_callback(&exynos54xx_pd_g3d, EXYNOS_PROCESS_AFTER, EXYNOS_PROCESS_OFF,
 				false, exynos5420_pm_domain_g3d_post_power_off);
+	exynos_pm_add_callback(&exynos54xx_pd_g3d, EXYNOS_PROCESS_AFTER, EXYNOS_PROCESS_ON,
+				false, exynos5420_pm_domain_g3d_post_power_on);
+	exynos_pm_add_callback(&exynos54xx_pd_g3d, EXYNOS_PROCESS_BEFORE, EXYNOS_PROCESS_OFF,
+				false, exynos5420_pm_domain_g3d_pre_power_off);
+
 	for (i = 0; i < ARRAY_SIZE(exynos54xx_pwr_reg_g3d); ++i)
 		exynos_pm_add_reg(&exynos54xx_pd_g3d, EXYNOS_PROCESS_BEFORE, EXYNOS_PROCESS_ONOFF,
 			exynos54xx_pwr_reg_g3d[i], 0);

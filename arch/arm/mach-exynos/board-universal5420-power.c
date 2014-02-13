@@ -21,8 +21,8 @@ static struct platform_device samsung_device_battery = {
 #endif
 
 static struct exynos_tmu_platform_data exynos5_tmu_data = {
-	.trigger_levels[0] = 80,
-	.trigger_levels[1] = 90,
+	.trigger_levels[0] = 90,
+	.trigger_levels[1] = 95,
 	.trigger_levels[2] = 110,
 	.trigger_levels[3] = 115,
 	.trigger_level0_en = 1,
@@ -36,19 +36,19 @@ static struct exynos_tmu_platform_data exynos5_tmu_data = {
 	.efuse_value = 55,
 	.freq_tab[0] = {
 		.freq_clip_max = 1800 * 1000,
-		.temp_level = 80,
+		.temp_level = 90,
 	},
 	.freq_tab[1] = {
 		.freq_clip_max = 1700 * 1000,
-		.temp_level = 90,
+		.temp_level = 95,
 	},
 	.freq_tab[2] = {
 		.freq_clip_max = 1200 * 1000,
-		.temp_level = 95,
+		.temp_level = 110,
 	},
 	.freq_tab[3] = {
 		.freq_clip_max = 600 * 1000,
-		.temp_level = 100,
+		.temp_level = 115,
 	},
 	.size[THERMAL_TRIP_ACTIVE] = 1,
 	.size[THERMAL_TRIP_PASSIVE] = 3,
@@ -63,7 +63,7 @@ static struct platform_device exynos5_mif_devfreq = {
 };
 
 static struct exynos_devfreq_platdata smdk5420_qos_mif_pd __initdata = {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	.default_qos = 160000,
 #else
 	.default_qos = 133000,
@@ -76,7 +76,7 @@ static struct platform_device exynos5_int_devfreq = {
 };
 
 static struct exynos_devfreq_platdata smdk5420_qos_int_pd __initdata = {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	.default_qos = 133000,
 #else
 	.default_qos = 83000,

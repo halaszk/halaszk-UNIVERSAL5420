@@ -116,4 +116,10 @@ unsigned int s5p_mipi_dsi_is_ulps_lane_state(struct mipi_dsim_device *dsim,
 	unsigned int enable);
 void s5p_mipi_dsi_enable_main_standby(struct mipi_dsim_device *dsim,
 	unsigned int enable);
+
+#ifdef CONFIG_FB_MIC
+unsigned int s5p_mipi_dsi_calc_bs_size(struct mipi_dsim_device *dsim);
+void s5p_mipi_dsi_config_mic(struct mipi_dsim_device *dsim);
+#endif
+
 #endif /* _S5P_MIPI_DSI_LOWLEVEL_H */

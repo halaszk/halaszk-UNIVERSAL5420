@@ -5,7 +5,6 @@
 #include <linux/rcupdate.h>
 #include <linux/vmalloc.h>
 #include <linux/reboot.h>
-#include <mach/sec_debug.h>
 
 /*
  *	Notifier list for kernel code which wants to be called
@@ -97,7 +96,6 @@ static int __kprobes notifier_call_chain(struct notifier_block **nl,
 			(*nr_calls)++;
 
 		if ((ret & NOTIFY_STOP_MASK) == NOTIFY_STOP_MASK) {
-			sec_debug_aux_log(SEC_DEBUG_AUXLOG_NOTIFY_FAIL, "%pF val %d fail:", nb->notifier_call, val);
 			break;
 		}
 		nb = next_nb;

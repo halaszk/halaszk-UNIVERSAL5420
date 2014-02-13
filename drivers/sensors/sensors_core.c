@@ -218,15 +218,18 @@ static int __init sensors_class_init(void)
 	if (IS_ERR(sensors_event_class)) {
 		pr_err("%s, create sensors_class is failed.(err=%ld)\n",
 			__func__, IS_ERR(sensors_event_class));
+		class_destroy(sensors_class);
 		return PTR_ERR(sensors_event_class);
 	}
 
 	symlink_dev = device_create(sensors_event_class, NULL, 0, NULL,
 		"%s", "symlink");
-
 	if (IS_ERR(symlink_dev)) {
 		pr_err("[SENSORS CORE] symlink_dev create failed![%ld]\n",
 			IS_ERR(symlink_dev));
+
+		class_destroy(sensors_class);
+		class_destroy(sensors_event_class);
 		return PTR_ERR(symlink_dev);
 	}
 

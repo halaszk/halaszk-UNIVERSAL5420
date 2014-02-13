@@ -63,6 +63,8 @@ static void initialize_variable(struct ssp_data *data)
 
 	for (iSensorIndex = 0; iSensorIndex < SENSOR_MAX; iSensorIndex++) {
 		data->adDelayBuf[iSensorIndex] = DEFUALT_POLLING_DELAY;
+		data->batchLatencyBuf[iSensorIndex] = 0;
+		data->batchOptBuf[iSensorIndex] = 0;
 		data->aiCheckStatus[iSensorIndex] = INITIALIZATION_STATE;
 	}
 
@@ -86,6 +88,7 @@ static void initialize_variable(struct ssp_data *data)
 	data->bGeomagneticRawEnabled = false;
 	data->bBarcodeEnabled = false;
 	data->bAccelAlert = false;
+	data->bTimeSyncing = true;
 
 	data->accelcal.x = 0;
 	data->accelcal.y = 0;
@@ -162,11 +165,6 @@ int initialize_mcu(struct ssp_data *data)
 		goto out;
 	}
 
-	iRet = ssp_send_cmd(data, MSG2SSP_AP_MCU_SET_DUMPMODE, 1);
-	if (iRet < 0) {
-		pr_err("[SSP]: %s - set_mcu_dump_mode failed\n", __func__);
-		goto out;
-	}
 	iRet = SUCCESS;
 out:
 	return iRet;
@@ -254,9 +252,6 @@ static int ssp_probe(struct spi_device *spi)
 		goto exit;
 	}
 
-	data->wakeup_mcu = pdata->wakeup_mcu;
-	data->check_mcu_ready = pdata->check_mcu_ready;
-	data->check_mcu_busy = pdata->check_mcu_busy;
 	data->set_mcu_reset = pdata->set_mcu_reset;
 	data->ap_int = pdata->ap_int;
 	data->mcu_int1 = pdata->mcu_int1;
@@ -320,10 +315,7 @@ static int ssp_probe(struct spi_device *spi)
 	mutex_init(&data->pending_mutex);
 #endif
 
-	if ((data->wakeup_mcu == NULL)
-		|| (data->check_mcu_ready == NULL)
-		|| (data->check_mcu_busy == NULL)
-		|| (data->set_mcu_reset == NULL)) {
+	if (data->set_mcu_reset == NULL) {
 		pr_err("[SSP] %s, function callback is null\n", __func__);
 		iRet = -EIO;
 		goto err_reset_null;
@@ -401,10 +393,6 @@ static int ssp_probe(struct spi_device *spi)
 #endif
 
 	data->bMcuDumpMode = ssp_check_sec_dump_mode();
-	iRet = ssp_send_cmd(data, MSG2SSP_AP_MCU_SET_DUMPMODE,data->bMcuDumpMode);
-	if (iRet < 0)
-		pr_err("[SSP]: %s - MSG2SSP_AP_MCU_SET_DUMPMODE failed\n", __func__);
-
 	pr_info("[SSP]: %s - setup debuglevel %d!\n", __func__, data->bMcuDumpMode);
 
 	pr_info("[SSP]: %s - probe success!\n", __func__);
@@ -471,13 +459,13 @@ static void ssp_shutdown(struct spi_device *spi)
 	}
 
 	ssp_enable(data, false);
+	disable_debug_timer(data);
+
 	clean_pending_list(data);
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	unregister_early_suspend(&data->early_suspend);
 #endif
-
-	disable_debug_timer(data);
 
 	free_irq(data->iIrq, data);
 	gpio_free(data->mcu_int1);
@@ -555,12 +543,13 @@ static int ssp_suspend(struct device *dev)
 	struct ssp_data *data = spi_get_drvdata(spi);
 
 	func_dbg();
+	data->uLastResumeState = MSG2SSP_AP_STATUS_SUSPEND;
 	disable_debug_timer(data);
 
 	if (SUCCESS != ssp_send_cmd(data, MSG2SSP_AP_STATUS_SUSPEND, 0))
 		pr_err("[SSP]: %s MSG2SSP_AP_STATUS_SUSPEND failed\n",
 			__func__);
-	data->uLastResumeState = MSG2SSP_AP_STATUS_SUSPEND;
+	data->bTimeSyncing = false;
 	disable_irq(data->iIrq);
 	return 0;
 }

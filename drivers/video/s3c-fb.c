@@ -42,6 +42,7 @@
 #include <mach/exynos5_bus.h>
 #include <mach/map.h>
 #include <mach/bts.h>
+#include <mach/regs-mem.h>
 #include <plat/regs-fb-v4.h>
 #include <plat/fb.h>
 #include <plat/cpu.h>
@@ -64,14 +65,14 @@
 #include <linux/debugfs.h>
 #endif
 
-#if    defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ) ||   \
-       defined(CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ) && \
-       !defined(CONFIG_S5P_DP)
+#if    (defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ) ||   \
+       defined(CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ)) && \
+       (!defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA))
 #define CONFIG_FIMD_USE_BUS_DEVFREQ
 #endif
 
 #if	defined(CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ) && \
-       defined(CONFIG_S5P_DP)
+        (defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA))
 #define CONFIG_FIMD_USE_WIN_OVERLAP_CNT
 #include <mach/devfreq.h>
 static int prev_overlap_cnt = 0;
@@ -81,6 +82,9 @@ static int prev_overlap_cnt = 0;
 #include <linux/pm_qos.h>
 static struct pm_qos_request exynos5_mif_qos;
 static struct pm_qos_request exynos5_int_qos;
+extern unsigned long curr_mif_freq;
+extern unsigned long curr_int_freq;
+extern int mali_get_dvfs_current_level(void);
 #endif
 
 #include <mach/sec_debug.h>
@@ -93,8 +97,9 @@ static struct pm_qos_request exynos5_int_qos;
 
 #ifdef CONFIG_S5P_DP_PSR
 #include <linux/time.h>
-#define MAX_PSR_VSYNC_COUNT	60
-#define PSR_PRE_ENTRY_VSYNC_COUNT	55
+#define MAX_PSR_VSYNC_COUNT	10
+#define PSR_PRE_ENTRY_VSYNC_COUNT	5
+extern void print_reg_pm_disp1(void);
 #endif
 
 /* This driver will export a number of framebuffer interfaces depending
@@ -127,7 +132,7 @@ static struct pm_qos_request exynos5_int_qos;
 #define FHD_MID_BW_PER_WINDOW  (1080 * 1920 * 4 * 60 * 3)
 #define FHD_LOW_BW_PER_WINDOW  (1080 * 1920 * 4 * 60 * 2)
 
-#if defined(CONFIG_S5P_DP) /* For WQXGA */
+#if defined(CONFIG_S5P_DP)  || defined(CONFIG_SUPPORT_WQXGA)	/* For WQXGA */
 #define FIMD_MIF_BUS_MIN    0
 #define FIMD_MIF_BUS_CMD    160000
 #define FIMD_MIF_BUS_MID    266000
@@ -135,7 +140,7 @@ static struct pm_qos_request exynos5_int_qos;
 #define FIMD_MIF_BUS_MAX    667000
 
 #define FIMD_INT_BUS_MIN    0
-#define FIMD_INT_BUS_LOW    222000
+#define FIMD_INT_BUS_LOW    133000
 #define FIMD_INT_BUS_MID    222000
 #define FIMD_INT_BUS_HIG    333000
 #define FIMD_INT_BUS_MAX    400000
@@ -564,7 +569,7 @@ static int s3c_fb_get_mipi_state(struct s3c_fb *sfb)
 static void __iomem *gate_ip_disp1;
 static void __iomem *clk_div_disp10;
 
-#ifdef CONFIG_FB_I80IF
+#if defined(CONFIG_FB_I80IF) || defined(CONFIG_S5P_DP_PSR)
 void s3c_fb_enable_clk(struct s3c_fb *sfb)
 {
 	struct s3c_fb_platdata *pd = sfb->pdata;
@@ -620,7 +625,9 @@ void s3c_fb_disable_clk(struct s3c_fb *sfb)
 
 		sfb->clk_enabled = false;
 
+#ifdef CONFIG_FB_I80IF
 		s3c_ielcd_fimd_instance_off();
+#endif
 
 		clk_disable(sfb->bus_clk);
 
@@ -1945,9 +1952,8 @@ static irqreturn_t s3c_fb_te_irq(int irq, void *dev_id)
 
 	if (sfb->vsync_info.irq_refcount) {
 		sfb->vsync_info.timestamp = timestamp;
-		if (check_gate_disp1()) {
-			wake_up_interruptible_all(&sfb->vsync_info.wait);
-		} else {
+		wake_up_interruptible_all(&sfb->vsync_info.wait);
+		if (!check_gate_disp1()) {
 #ifdef CONFIG_DEBUG_FS
 			ktime_t timestamp = sfb->debug_data.win_config_timestamp;
 			dev_warn(sfb->dev,
@@ -2106,7 +2112,11 @@ static void s3c_fb_deactivate_vsync(struct s3c_fb *sfb)
 
 	new_refcount = --sfb->vsync_info.irq_refcount;
 	WARN_ON(new_refcount < 0);
-#ifndef CONFIG_S5P_DP_PSR
+#ifdef CONFIG_S5P_DP_PSR
+	if (!sfb->output_on) {
+		s3c_fb_disable_irq(sfb);
+	}
+#else
 	if (!new_refcount) {
 		s3c_fb_disable_irq(sfb);
 	}
@@ -2120,7 +2130,12 @@ void s3c_fb_underrun_log(struct s3c_fb *sfb)
 	if (!check_gate_ip_disp1(sfb))
 		BUG();
 
-	printk("lcd under_run error!!!\n");
+	printk("%s: lcd under_run error!!!\n", __func__);
+#if defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
+	pr_info("%s: Currently, MIF = %lu, INT = %lu, overlap_cnt = %d!!!\n",
+		__func__, curr_mif_freq, curr_int_freq, prev_overlap_cnt);
+#endif
+
 #ifdef CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ
 	printk("shawdow = %x g_miffreq = %d\n", readl(sfb->regs + SHADOWCON), g_miffreq);
 #endif
@@ -2158,8 +2173,14 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 	u32 irq_sts_reg;
 	ktime_t timestamp = ktime_get();
 
-	if (!check_gate_ip_disp1(sfb))
-		BUG();
+	if (!check_gate_ip_disp1(sfb)) {
+		if (!sfb->output_on) {
+			dev_info(sfb->dev, "%s, video output is disabled\n", __func__);
+			return IRQ_HANDLED;
+		} else {
+			BUG();
+		}
+	}
 
 	spin_lock(&sfb->slock);
 	irq_sts_reg = readl(regs + VIDINTCON1);
@@ -2168,9 +2189,17 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 		/* VSYNC interrupt, accept it */
 		writel(VIDINTCON1_INT_FRAME, regs + VIDINTCON1);
 
+#ifdef CONFIG_S5P_DP_PSR  /* watchdog debug - remove it */
+		sec_debug_irq_log(sfb->irq_no, (void *)s3c_fb_irq, 0xA);
+#endif
+
 #ifndef CONFIG_FB_I80IF
 		sfb->vsync_info.timestamp = timestamp;
 		wake_up_interruptible_all(&sfb->vsync_info.wait);
+#endif
+
+#ifdef CONFIG_S5P_DP_PSR  /* watchdog debug - remove it */
+		sec_debug_irq_log(sfb->irq_no, (void *)s3c_fb_irq, 0xB);
 #endif
 	}
 	if (irq_sts_reg & VIDINTCON1_INT_FIFO) {
@@ -2182,17 +2211,9 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 	if (sfb->psr_enter_state == PSR_PREPARE || sfb->psr_enter_state == PSR_PRE_ENTRY_DONE) {
 		sfb->vsync_count++;
 		if (sfb->vsync_count >= MAX_PSR_VSYNC_COUNT) {
-			if (sfb->psr_enter_state == PSR_PRE_ENTRY_DONE) {
-				sfb->psr_enter_state = PSR_PRE_ENTER;
-				queue_kthread_work(&sfb->psr_worker,
-					&sfb->psr_work);
-				sfb->vsync_count = 0;
-			}
-		} else if (sfb->vsync_count >= PSR_PRE_ENTRY_VSYNC_COUNT) {
-			if (sfb->psr_enter_state == PSR_PREPARE) {
-				queue_kthread_work(&sfb->psr_worker,
-					&sfb->psr_work);
-			}
+			sfb->psr_enter_state = PSR_PRE_ENTER;
+			queue_kthread_work(&sfb->psr_worker,
+					&sfb->psr_work);				
 		}
 	} else {
 		sfb->vsync_count = 0;
@@ -2233,8 +2254,25 @@ static int s3c_fb_wait_for_vsync(struct s3c_fb *sfb, u32 timeout)
 #endif
 	pm_runtime_put_sync(sfb->dev);
 
-	if (timeout && ret == 0)
+	if (timeout && ret == 0) {
+#ifdef CONFIG_S5P_DP_PSR
+		pr_err("%s: wait_event timeout, irq timestamp is %lld",
+			__func__, ktime_to_ns(sfb->vsync_info.timestamp));
+		pr_err("%s: refcount=%d, active=%d", __func__,
+			sfb->vsync_info.irq_refcount, sfb->vsync_info.active);
+		if (check_gate_disp1() && sfb->vsync_info.irq_refcount) {
+			pr_err("dumping registers(Base)\n");
+			print_hex_dump(KERN_ERR, "", DUMP_PREFIX_ADDRESS, 32, 4, sfb->regs,
+					0x40, false);
+			pr_err("dumping registers(VIDINTCON0)\n");
+			print_hex_dump(KERN_ERR, "", DUMP_PREFIX_ADDRESS, 32, 4,
+					sfb->regs + VIDINTCON0, 0x10, false);
+			pr_err("...\n");
+			print_reg_pm_disp1();
+		}
+#endif
 		return -ETIMEDOUT;
+	}
 
 	return 0;
 }
@@ -2374,11 +2412,9 @@ int s3c_fb_set_vsync_int(struct fb_info *info,
 
 #ifdef CONFIG_S5P_DP_PSR
 	if (active && !prev_active) {
-		s3c_fb_activate_vsync(sfb);
 		sfb->psr_enter_state = PSR_NONE;
+		s3c_fb_activate_vsync(sfb);
 	} else if (!active && prev_active) {
-		void __iomem *regs = sfb->regs;
-		writel(0xffffffff, regs + VIDINTCON1);
 		s3c_fb_deactivate_vsync(sfb);
 		sfb->psr_enter_state = PSR_PREPARE;
 	}
@@ -3117,9 +3153,17 @@ static void s3c_fb_update_pm_qos(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 	} else {
 		pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
 	}
+#elif defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
+	exynos5_update_media_layers(TYPE_FIMD1, regs->win_overlap_cnt);
+	if (regs->win_overlap_cnt >= 3) {
+		pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_HIG);
+	} else if (regs->win_overlap_cnt == 2) {
+		pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_MID);
+	} else {
+		pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
+	}
 #endif
 }
-
 
 static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 {
@@ -3140,18 +3184,11 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 		if (regs->dma_buf_data[i].fence)
 			s3c_fd_fence_wait(sfb, regs->dma_buf_data[i].fence);
 	}
-	s3c_fb_update_pm_qos(sfb, regs);
 #if defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
-	if (prev_overlap_cnt < regs->win_overlap_cnt) {
-		exynos5_update_media_layers(TYPE_FIMD1, regs->win_overlap_cnt);
-		if (regs->win_overlap_cnt >= 3) {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_HIG);
-		} else if (regs->win_overlap_cnt == 2) {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_MID);
-		} else {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
-		}
-	}
+	if (prev_overlap_cnt < regs->win_overlap_cnt)
+		s3c_fb_update_pm_qos(sfb, regs);
+#else
+	s3c_fb_update_pm_qos(sfb, regs);
 #endif
 	do {
 		__s3c_fb_update_regs(sfb, regs);
@@ -3200,21 +3237,13 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 
 	for (i = 0; i < sfb->variant.nr_windows; i++)
 		s3c_fb_free_dma_buf(sfb, &old_dma_bufs[i]);
-	s3c_fb_update_pm_qos(sfb, regs);
 #if defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
-	if (prev_overlap_cnt > regs->win_overlap_cnt) {
-		exynos5_update_media_layers(TYPE_FIMD1, regs->win_overlap_cnt);
-		if (regs->win_overlap_cnt >= 3) {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_HIG);
-		} else if (regs->win_overlap_cnt == 2) {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_MID);
-		} else {
-			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
-		}
-	}
+	if (prev_overlap_cnt > regs->win_overlap_cnt)
+		s3c_fb_update_pm_qos(sfb, regs);
 	prev_overlap_cnt = regs->win_overlap_cnt;
+#else
+	s3c_fb_update_pm_qos(sfb, regs);
 #endif
-
 }
 
 static void s3c_fb_update_regs_handler(struct kthread_work *work)
@@ -3279,6 +3308,15 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	if (sfb->output_on)
 		s3c_fb_enable_clk(sfb);
 	mutex_unlock(&sfb->output_lock);
+#endif
+#ifdef CONFIG_S5P_DP_PSR
+	if (cmd != S3CFB_WIN_CONFIG &&
+			cmd != S3CFB_SET_VSYNC_INT) {
+		flush_kthread_worker(&sfb->psr_worker);
+		mutex_lock(&sfb->output_lock);
+		s3c_fb_clk_ctrl(sfb, true);
+		mutex_unlock(&sfb->output_lock);
+	}
 #endif
 
 	switch (cmd) {
@@ -3357,7 +3395,7 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 #ifdef CONFIG_S5P_DP_PSR
 		if ((sfb->psr_enter_state == PSR_PRE_ENTER ||
 				sfb->psr_enter_state == PSR_ENTER_DONE) &&
-		    sfb->psr_exit_state != PSR_PRE_EXIT) {
+				sfb->psr_exit_state != PSR_PRE_EXIT) {
 			s3c_fb_psr_exit(sfb);
 		}
 #endif
@@ -3407,6 +3445,15 @@ static int s3c_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	default:
 		ret = -ENOTTY;
 	}
+#ifdef CONFIG_S5P_DP_PSR
+	if (cmd != S3CFB_WIN_CONFIG &&
+			cmd != S3CFB_SET_VSYNC_INT) {
+		flush_kthread_worker(&sfb->psr_worker);
+		mutex_lock(&sfb->output_lock);
+		s3c_fb_clk_ctrl(sfb, false);
+		mutex_unlock(&sfb->output_lock);
+	}
+#endif
 	return ret;
 }
 #if !defined(CONFIG_FB_EXYNOS_FIMD_SYSMMU_DISABLE)
@@ -4576,6 +4623,18 @@ static void s3c_fb_debugfs_cleanup(struct s3c_fb *sfb) { }
 
 #endif
 
+#ifdef CONFIG_FB_MIC
+static void s3c_fb_mic_enable(struct s3c_fb *sfb, bool enable)
+{
+	u32 reg = 0;
+
+	if (enable)
+		reg = MIC_CTRL_ON_UP | MIC_CTRL_ON_F;
+
+	writel(reg, sfb->regs + MIC_CTRL);
+}
+#endif
+
 static int __devinit s3c_fb_probe(struct platform_device *pdev)
 {
 	const struct platform_device_id *platid;
@@ -4777,7 +4836,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	clk_enable(sfb->bus_clk);
 	*/
 #else
-#ifndef CONFIG_FB_I80IF
+#if !defined(CONFIG_FB_I80IF)
 	clk_enable(sfb->bus_clk);
 #endif
 #endif
@@ -4815,6 +4874,11 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	pd->setup_gpio();
 
 	writel(pd->vidcon1, sfb->regs + VIDCON1);
+
+	/* If VCLK is faster than Bus clock or same with ACLK */
+	reg = readl(sfb->regs + VIDCON0);
+	reg |= VIDCON0_83_ENABLE;
+	writel(reg, sfb->regs + VIDCON0);
 
 	/* set video clock running at under-run */
 	if (sfb->variant.has_fixvclk) {
@@ -4878,6 +4942,11 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	pm_qos_add_request(&exynos5_int_qos, PM_QOS_DEVICE_THROUGHPUT, FIMD_INT_BUS_MID);
 	prev_overlap_cnt = 1;
 #endif
+
+#ifdef CONFIG_FB_MIC
+	s3c_fb_mic_enable(sfb, true);
+#endif
+
 	/* we have the register setup, start allocating framebuffers */
 	for (i = 0; i < fbdrv->variant.nr_windows; i++) {
 		win = i;
@@ -4997,7 +5066,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_ION_EXYNOS
-#ifndef CONFIG_FB_I80IF
+#if !defined(CONFIG_FB_I80IF) && !defined(CONFIG_S5P_DP)
 #if !defined(CONFIG_FB_EXYNOS_FIMD_SYSMMU_DISABLE)
 	ret = s3c_fb_copy_bootloader_fb(pdev,
 			sfb->windows[default_win]->dma_buf_data.dma_buf);
@@ -5029,10 +5098,10 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	sfb->output_on = true;
 	s3c_fb_set_par(sfb->windows[default_win]->fbinfo);
 
-#ifdef CONFIG_S5P_DP
+#ifndef CONFIG_FB_I80IF
 	/* keep boot image display - wait address change(shadow_protect_win)*/
 	msleep(32);
-#endif  
+#endif
 
 #ifdef CONFIG_ION_EXYNOS
 #ifndef CONFIG_FB_I80IF
@@ -5095,6 +5164,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 #endif
 
 #ifdef CONFIG_S5P_DP_PSR
+	sfb->clk_enabled = true;
 	sfb->vsync_count = 0;
 	sfb->psr_enter_state = PSR_NONE;
 	sfb->psr_exit_state = PSR_NONE;
@@ -5227,7 +5297,19 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 	u32 vidcon0;
 	int ret = 0;
 
+#ifdef CONFIG_S5P_DP_PSR
+	if ((sfb->psr_enter_state == PSR_PRE_ENTER ||
+			sfb->psr_enter_state == PSR_ENTER_DONE) &&
+			sfb->psr_exit_state != PSR_PRE_EXIT) {
+		s3c_fb_psr_exit(sfb);
+	}
+#endif
 	mutex_lock(&sfb->output_lock);
+#ifdef CONFIG_S5P_DP_PSR
+	sfb->vsync_count = 0;
+	sfb->psr_enter_state = PSR_NONE;
+	sfb->psr_exit_state = PSR_NONE;
+#endif
 
 	if (!sfb->output_on) {
 		ret = -EBUSY;
@@ -5255,10 +5337,6 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 	flush_kthread_worker(&sfb->update_regs_worker);
 #endif
 
-#ifdef CONFIG_S5P_DP_PSR
-	flush_kthread_worker(&sfb->psr_worker);
-	flush_kthread_worker(&sfb->psr_exit_worker);
-#endif
 #if defined(CONFIG_FB_I80IF) && defined(GPIO_PCD_INT)
 	pcd_detection_disable(sfb);
 #endif
@@ -5269,6 +5347,10 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 #endif
 
 	if (sfb->clk_enabled) {
+#ifdef CONFIG_S5P_DP_PSR
+		s3c_fb_disable_irq(sfb);
+#endif
+
 #ifdef CONFIG_FB_S5P_MDNIE
 	/* FIMD , IELCD Disable video out */
 		s3c_fimd1_display_off();
@@ -5338,35 +5420,59 @@ static int s3c_fb_psr_exit(struct s3c_fb *sfb)
 	u32 reg;
 	struct fb_event event;
 
-	mutex_lock(&sfb->output_lock);
-
-	if (!sfb->output_on) {
-		mutex_unlock(&sfb->output_lock);
-		return -EBUSY;
-	}
-
-	dev_dbg(sfb->dev, "%s +\n", __func__);
 	sfb->psr_exit_state = PSR_PRE_EXIT;
 
 	flush_kthread_worker(&sfb->psr_worker);
 
-	writel(DPCLKCON_ENABLE, sfb->regs + DPCLKCON);
+	mutex_lock(&sfb->output_lock);
+	dev_info(sfb->dev, "%s +\n", __func__);
 
-	/* setup gpio and output polarity controls */
-	pd->setup_gpio();
-	writel(pd->vidcon1, sfb->regs + VIDCON1);
+	if (!sfb->output_on) {
+#if defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
+		exynos5_update_media_layers(TYPE_FIMD1, prev_overlap_cnt);
+		if (prev_overlap_cnt >= 3) {
+			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_HIG);
+		} else if (prev_overlap_cnt == 2) {
+			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_MID);
+		} else {
+			pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
+		}
+#endif
+
+		/* FIXME: Please comment out if you want clock-gating
+		if (!sfb->clk_enabled) {
+			s3c_fb_enable_clk(sfb);
+		} else {
+			dev_err(sfb->dev, "%s: clock is already enabled", __func__);
+		}
+		*/
+
+		/* setup gpio and output polarity controls */
+		pd->setup_gpio();
+		writel(pd->vidcon1, sfb->regs + VIDCON1);
+
+		writel(DPCLKCON_ENABLE, sfb->regs + DPCLKCON);
+
+		/* FIMD , IELCD Enable video out */
+#ifdef CONFIG_FB_S5P_MDNIE
+		s3c_ielcd_display_on();
+#endif
+		s3c_fimd1_display_on();
+
+		sfb->output_on = true;
+	} else {
+		dev_info(sfb->dev, "%s: FIMD is already on", __func__);
+	}
 
 	default_win = sfb->pdata->default_win;
-
-	/* FIXME: Will be add Clock-Gating(VIDCON and Display clocks are * enabled) */
-
 	event.info = sfb->windows[default_win]->fbinfo;
 	sfb->vsync_count = 0;
 	fb_notifier_call_chain(FB_EVENT_PSR_EXIT, &event);
 	sfb->psr_enter_state = PSR_NONE;
 	sfb->psr_exit_state = PSR_EXIT_DONE;
-	dev_dbg(sfb->dev, "%s -\n", __func__);
+	dev_info(sfb->dev, "%s -\n", __func__);
 	mutex_unlock(&sfb->output_lock);
+
 	return ret;
 }
 
@@ -5375,13 +5481,22 @@ int s3c_fb_notify(struct notifier_block *nb,
 {
 	struct s3c_fb *sfb;
 	int ret = 0;
+	int irq_refcount;
 
-	sfb = container_of(nb, struct s3c_fb, notifier);
+ 	sfb = container_of(nb, struct s3c_fb, notifier);
+	mutex_lock(&sfb->vsync_info.irq_lock);
+	irq_refcount = sfb->vsync_info.irq_refcount;
+	mutex_unlock(&sfb->vsync_info.irq_lock);
+
 	switch (action) {
 		case FB_EVENT_PSR_DONE:
 			dev_dbg(sfb->dev, "FB_EVENT_PSR_DONE occurs!\n");
-			s3c_fb_disable_irq(sfb);
-			s3c_fb_psr_enter(sfb);
+			if (!irq_refcount && !sfb->vsync_info.active) {
+				s3c_fb_disable_irq(sfb);
+				s3c_fb_psr_enter(sfb);
+			} else {
+				dev_info(sfb->dev, "%s: No need to enter PSR", __func__);
+			}
 			break;
 	}
 	return ret;
@@ -5390,23 +5505,43 @@ int s3c_fb_notify(struct notifier_block *nb,
 static int s3c_fb_psr_enter(struct s3c_fb *sfb)
 {
 	int ret = 0;
+	u32 vidcon0;
 
-	dev_dbg(sfb->dev, "%s + \n", __func__);
+	if (sfb->psr_exit_state == PSR_PRE_EXIT) {
+		dev_info(sfb->dev, "%s: PSR mode need to EXIT", __func__);
+		return ret;
+	}
+
+	mutex_lock(&sfb->output_lock);
+	dev_info(sfb->dev, "%s + \n", __func__);
+
+	sfb->output_on = false;
+
 	writel(0 << 1, sfb->regs + DPCLKCON);
 
-	/* FIXME: Will be add Clock-Gating(VIDCON and Display clocks are * disabled)
-	u32 vidcon0;
-	vidcon0 = readl(sfb->regs + VIDCON0);
+	/* FIMD , IELCD Disable video out */
+	s3c_fimd1_display_off();
+#ifdef CONFIG_FB_S5P_MDNIE
+	s3c_ielcd_display_off();
+#endif
 
-	if (vidcon0 & VIDCON0_ENVID) {
-		vidcon0 |= VIDCON0_ENVID;
-		vidcon0 &= ~VIDCON0_ENVID_F;
-		writel(vidcon0, sfb->regs + VIDCON0);
-	} else
-		dev_warn(sfb->dev, "ENVID not set while disabling fb");
+#if defined(CONFIG_FIMD_USE_WIN_OVERLAP_CNT)
+	exynos5_update_media_layers(TYPE_FIMD1, 1);
+	pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_LOW);
+#endif
+
+	/* FIXME: Please comment out if you want clock-gating
+	if (sfb->clk_enabled) {
+		s3c_fb_disable_clk(sfb);
+	} else {
+		dev_err(sfb->dev, "%s: clock is already disabled", __func__);
+	}
 	*/
 
-	dev_dbg(sfb->dev, "%s - \n", __func__);
+	sfb->psr_enter_state = PSR_ENTER_DONE;
+	sfb->psr_exit_state = PSR_NONE;
+	dev_info(sfb->dev, "%s - \n", __func__);
+	mutex_unlock(&sfb->output_lock);
 	return ret;
 }
 
@@ -5417,25 +5552,16 @@ static void s3c_fb_psr_handler(struct kthread_work *work)
 	struct fb_event event;
 	struct s3c_fb_win *win;
 
-	mutex_lock(&sfb->output_lock);
 	if (!sfb->output_on) {
-		mutex_unlock(&sfb->output_lock);
 		return;
 	}
-	mutex_unlock(&sfb->output_lock);
 
 	if (sfb->psr_enter_state == PSR_PRE_ENTER) {
 		if (sfb->psr_exit_state != PSR_PRE_EXIT) {
 			win = sfb->windows[sfb->pdata->default_win];
 			event.info = win->fbinfo;
 			fb_notifier_call_chain(FB_EVENT_PSR_ENTER, &event);
-			sfb->psr_enter_state = PSR_ENTER_DONE;
 		}
-	} else if (sfb->psr_enter_state == PSR_PREPARE) {
-		win = sfb->windows[sfb->pdata->default_win];
-		event.info = win->fbinfo;
-		fb_notifier_call_chain(FB_EVENT_PSR_PRE_ENTRY, &event);
-		sfb->psr_enter_state = PSR_PRE_ENTRY_DONE;
 	}
 }
 
@@ -5493,9 +5619,21 @@ static int s3c_fb_enable(struct s3c_fb *sfb)
 		BUG();
 #endif
 
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+	pm_qos_update_request(&exynos5_int_qos, FIMD_INT_BUS_MID);
+	exynos5_update_media_layers(TYPE_FIMD1, 3);
+#endif
+
 	/* [W/A] prevent sleep enter during LCD on */
 	pm_stay_awake(sfb->dev);
 	dev_warn(sfb->dev, "pm_stay_awake");
+
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+	bts_drex_initialize();
+	if(__raw_readl(EXYNOS5_DREXI_1_BRBRSVCONFIG) != 0x88588858)
+		dev_warn(sfb->dev, "drex bts is not set\n");
+	dev_warn(sfb->dev, "mali level : %d\n", mali_get_dvfs_current_level());
+#endif
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_get_sync(sfb->dev);

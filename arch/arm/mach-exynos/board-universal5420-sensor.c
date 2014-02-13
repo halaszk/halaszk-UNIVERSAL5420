@@ -17,21 +17,26 @@
 #include <mach/spi-clocks.h>
 #include "board-universal5420.h"
 
-#ifdef CONFIG_SENSORS_SSP
+#if defined(CONFIG_SENSORS_SSP)
 #include <linux/ssp_platformdata.h>
 #endif
-#ifdef CONFIG_SENSORS_VFS61XX
+#if defined(CONFIG_SENSORS_VFS61XX)
 #include <linux/vfs61xx_platform.h>
 #endif
-#ifdef CONFIG_SENSORS_BMI055
+#if defined(CONFIG_SENSORS_BMI055)
 #include <linux/bma255_platformdata.h>
 #include <linux/bmg160_platformdata.h>
+#elif defined(CONFIG_SENSORS_BMI058)
+#include <linux/bma280_platformdata.h>
+#include <linux/bmg160_platformdata.h>
 #endif
-#ifdef CONFIG_SENSORS_AK8963C
+#if defined(CONFIG_SENSORS_AK8963C)
 #include <linux/ak8963c_platformdata.h>
+#elif defined(CONFIG_SENSORS_AK09911C)
+#include <linux/ak09911c_platformdata.h>
 #endif
 
-#ifdef CONFIG_SENSORS_BMI055
+#if defined(CONFIG_SENSORS_BMI055)
 static void bma255_get_position(int *pos)
 {
 	*pos = BMA255_BOTTOM_UPPER_LEFT;
@@ -53,9 +58,31 @@ static struct bmg160_platform_data bmg160_pdata = {
 	.gyro_int = GPIO_GYRO_INT,
 	.gyro_drdy = GPIO_GYRO_DRDY,
 };
+#elif defined(CONFIG_SENSORS_BMI058)
+static void bma280_get_position(int *pos)
+{
+	*pos = BMA280_BOTTOM_UPPER_LEFT;
+}
+
+static void bmg160_get_position(int *pos)
+{
+	*pos = BMG160_BOTTOM_UPPER_LEFT;
+}
+
+static struct bma280_platform_data bma280_pdata = {
+	.get_pos = bma280_get_position,
+	.acc_int1 = GPIO_ACC_INT1,
+	.acc_int2 = GPIO_ACC_INT2,
+};
+
+static struct bmg160_platform_data bmg160_pdata = {
+	.get_pos = bmg160_get_position,
+	.gyro_int = GPIO_GYRO_INT,
+	.gyro_drdy = GPIO_GYRO_DRDY,
+};
 #endif
 
-#ifdef CONFIG_SENSORS_AK8963C
+#if defined(CONFIG_SENSORS_AK8963C)
 static void ak8963c_get_position(int *pos)
 {
 	*pos = AK8963C_BOTTOM_LOWER_LEFT;
@@ -66,32 +93,58 @@ static struct ak8963c_platform_data ak8963c_pdata = {
 	.m_rst_n = GPIO_M_RST_N,
 	.m_sensor_int = GPIO_MSENSOR_INT,
 };
+#elif defined(CONFIG_SENSORS_AK09911C)
+static void ak09911c_get_position(int *pos)
+{
+	*pos = AK09911C_BOTTOM_LOWER_LEFT;
+}
+
+static struct ak09911c_platform_data ak09911c_pdata = {
+	.get_pos = ak09911c_get_position,
+	.m_rst_n = GPIO_M_RST_N,
+};
 #endif
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if !defined(CONFIG_HA)
 static struct i2c_board_info i2c_devs3[] __initdata = {
+#if defined(CONFIG_SENSORS_BMI055)
 	{
 		I2C_BOARD_INFO("bma255-i2c", 0x18),
 		.platform_data = &bma255_pdata,
 	},
+#elif defined(CONFIG_SENSORS_BMI058)
+	{
+		I2C_BOARD_INFO("bma280-i2c", 0x18),
+		.platform_data = &bma280_pdata,
+	},
+#endif
 	{
 		I2C_BOARD_INFO("bmg160-i2c", 0x68),
 		.platform_data = &bmg160_pdata,
 	},
+#if defined(CONFIG_SENSORS_AK8963C)
 	{
 		I2C_BOARD_INFO("ak8963c-i2c", 0x0c),
 		.platform_data = &ak8963c_pdata,
 	},
+#elif defined(CONFIG_SENSORS_AK09911C)
+	{
+		I2C_BOARD_INFO("ak09911c-i2c", 0x0c),
+		.platform_data = &ak09911c_pdata,
+	},
+#endif
+
 	{
 		I2C_BOARD_INFO("cm3323-i2c", 0x10),
 	},
 };
 #endif
 
-#if defined(CONFIG_V1A_3G) || defined(CONFIG_N1A_3G)
+#if defined(CONFIG_V1A_3G) || defined(CONFIG_V2A_3G) || defined(CONFIG_N1A_3G)
 struct exynos5_platform_i2c hs_i2c0_data __initdata = {
 	.bus_number = 4,
 	.speed_mode = HSI2C_FAST_SPD,
+	.operation_mode = HSI2C_POLLING,
 	.fast_speed = 100000,
 	.high_speed = 0,
 	.cfg_gpio = NULL,
@@ -105,28 +158,22 @@ static struct i2c_board_info i2c_devs4[] __initdata = {
 };
 #endif
 
-#ifdef CONFIG_SENSORS_SSP
+#if defined(CONFIG_SENSORS_SSP)
 u8 ssp_magnetic_pdc[] = {110, 85, 171, 71, 203, 195, 0, 67,\
 			208, 56, 175, 244, 206, 213, 0, 92, 250, 0,\
 			55, 48, 189, 252, 171, 243, 13, 45, 250};
 
-static int wakeup_mcu(void);
-static int check_mcu_busy(void);
-static int check_mcu_ready(void);
 static int set_mcu_reset(int on);
 static int check_ap_rev(void);
 static void ssp_get_positions(int *acc, int *mag);
 
 static struct ssp_platform_data ssp_pdata = {
-	.wakeup_mcu = wakeup_mcu,
-	.check_mcu_busy = check_mcu_busy,
-	.check_mcu_ready = check_mcu_ready,
 	.set_mcu_reset = set_mcu_reset,
 	.check_ap_rev = check_ap_rev,
 	.get_positions = ssp_get_positions,
 	.mag_matrix_size = ARRAY_SIZE(ssp_magnetic_pdc),
 	.mag_matrix = ssp_magnetic_pdc,
-#ifdef CONFIG_SENSORS_SSP_SHTC1
+#if defined(CONFIG_SENSORS_SSP_SHTC1)
 	.cp_thm_adc_channel = CP_THM_CHANNEL_NUM,
 	.cp_thm_adc_arr_size = ARRAY_SIZE(temp_table_cp),
 	.cp_thm_adc_table = temp_table_cp,
@@ -135,7 +182,7 @@ static struct ssp_platform_data ssp_pdata = {
 	.chg_thm_adc_arr_size = ARRAY_SIZE(temp_table_chg),
 	.chg_thm_adc_table = temp_table_chg,
 #endif
-#ifdef CONFIG_SENSORS_SSP_STM
+#if defined(CONFIG_SENSORS_SSP_STM)
 	.ap_int = GPIO_AP_MCU_INT_18V,
 	.mcu_int1 = GPIO_MCU_AP_INT_1_18V,
 	.mcu_int2 = GPIO_MCU_AP_INT_2_18V,
@@ -143,8 +190,7 @@ static struct ssp_platform_data ssp_pdata = {
 };
 #endif
 
-
-#ifdef CONFIG_SENSORS_SSP
+#if defined(CONFIG_SENSORS_SSP)
 static int initialize_ssp_gpio(void)
 {
 	int ret;
@@ -185,27 +231,6 @@ static int initialize_ssp_gpio(void)
 	return ret;
 }
 
-static int wakeup_mcu(void)
-{
-	gpio_set_value(GPIO_AP_MCU_INT_18V, 0);
-	udelay(1);
-	gpio_set_value(GPIO_AP_MCU_INT_18V, 1);
-
-	return 0;
-}
-
-static int check_mcu_busy(void)
-{
-	pr_info("%s\n", __func__);
-	return gpio_get_value(GPIO_MCU_AP_INT_1_18V);
-}
-
-static int check_mcu_ready(void)
-{
-	pr_info("%s\n", __func__);
-	return gpio_get_value(GPIO_MCU_AP_INT_2_18V);
-}
-
 static int set_mcu_reset(int on)
 {
 	if (on == 0)
@@ -221,18 +246,9 @@ static int check_ap_rev(void)
 	return system_rev;
 }
 
-/* MCU
- * 0,     1,      2,      3,      4,     5,      6,      7
- * PXPYPZ, PYNXPZ, NXNYPZ, NYPXPZ, NXPYNZ, PYPXNZ, PXNYNZ, NYNXNZ
- * *******************************************************
+/********************************************************
  * Sensors
  * top/upper-left => top/upper-right ... ... =>	bottom/lower-left
- * 1. K330
- * NYPXPZ, PXPYPZ, PYNXPZ, NXNYPZ, PYPXNZ, NXPYNZ, NYNXNZ, PXNYNZ
- * 2. AK8963C
- * NXNYPZ, NYPXPZ, PXPYPZ, PYNXPZ, PXNYNZ, PYPXNZ, NXPYNZ, NYNXNZ
- * 3. LSM330DLC
- * NXNYPZ, NYPXPZ, PXPYPZ, PYNXPZ, PXNYNZ, PYPXNZ, NXPYNZ, NYNXNZ
 */
 static void ssp_get_positions(int *acc, int *mag)
 {
@@ -243,7 +259,7 @@ static void ssp_get_positions(int *acc, int *mag)
 }
 #endif
 
-#ifdef CONFIG_SENSORS_SSP_STM
+#if defined(CONFIG_SENSORS_SSP_STM)
 int initialize_ssp_spi_gpio(struct platform_device *dev)
 {
 	int gpio;
@@ -311,7 +327,7 @@ static struct spi_board_info spi0_board_info[] __initdata = {
 #endif
 
 
-#ifdef CONFIG_SENSORS_VFS61XX
+#if defined(CONFIG_SENSORS_VFS61XX)
 #define GPIO_BTP_LDO_EN	EXYNOS5420_GPY6(5)
 
 static int vfs61xx_regulator_onoff(int onoff)
@@ -388,13 +404,13 @@ void __init exynos5_universal5420_sensor_init(void)
 
 	pr_info("%s, is called\n", __func__);
 
-#ifdef CONFIG_SENSORS_SSP
+#if defined(CONFIG_SENSORS_SSP)
 	ret = initialize_ssp_gpio();
 	if (ret < 0)
 		pr_err("%s, initialize_ssp_gpio fail(err=%d)\n", __func__, ret);
 #endif
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if !defined(CONFIG_HA)
 	s3c_i2c3_set_platdata(NULL);
 	ret = i2c_register_board_info(3, i2c_devs3, ARRAY_SIZE(i2c_devs3));
 	if (ret < 0) {
@@ -408,7 +424,7 @@ void __init exynos5_universal5420_sensor_init(void)
 
 #endif
 
-#if defined(CONFIG_V1A_3G) || defined(CONFIG_N1A_3G)
+#if defined(CONFIG_V1A_3G) || defined(CONFIG_V2A_3G) || defined(CONFIG_N1A_3G)
 	exynos5_hs_i2c0_set_platdata(&hs_i2c0_data);
 	ret = i2c_register_board_info(4, i2c_devs4, ARRAY_SIZE(i2c_devs4));
 	if (ret < 0) {
@@ -422,7 +438,7 @@ void __init exynos5_universal5420_sensor_init(void)
 #endif
 
 
-#ifdef CONFIG_SENSORS_SSP_STM
+#if defined(CONFIG_SENSORS_SSP_STM)
 	pr_info("%s, SSP_SPI_SETUP\n", __func__);
 	if (!exynos_spi_cfg_cs(spi0_csi[0].line, 0)) {
 		pr_info("%s, spi0_set_platdata ...\n", __func__);
@@ -442,7 +458,7 @@ void __init exynos5_universal5420_sensor_init(void)
 			__func__, ret);
 #endif
 
-#ifdef CONFIG_SENSORS_VFS61XX
+#if defined(CONFIG_SENSORS_VFS61XX)
 	pr_info("%s: SENSORS_VFS61XX init\n", __func__);
 	vfs61xx_setup_gpio();
 	s3c64xx_spi1_pdata.dma_mode = PIO_MODE;

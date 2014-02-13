@@ -1638,7 +1638,11 @@ static void regulator_disable_work(struct work_struct *work)
 
 	mutex_lock(&rdev->mutex);
 
-	BUG_ON(!rdev->deferred_disables);
+	WARN_ON(!rdev->deferred_disables);
+	if (!rdev->deferred_disables) {
+		mutex_unlock(&rdev->mutex);
+		return;
+	}
 
 	count = rdev->deferred_disables;
 	rdev->deferred_disables = 0;
@@ -1678,6 +1682,9 @@ int regulator_disable_deferred(struct regulator *regulator, int ms)
 {
 	struct regulator_dev *rdev = regulator->rdev;
 	int ret;
+
+	if (!ms)
+		return regulator_disable(regulator);
 
 	mutex_lock(&rdev->mutex);
 	rdev->deferred_disables++;

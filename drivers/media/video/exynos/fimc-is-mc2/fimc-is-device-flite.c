@@ -703,11 +703,15 @@ static void tasklet_flite_str0(unsigned long data)
 		atomic_set(&group_3ax->sensor_fcount,
 				fcount + group_3ax->async_shots);
 
+		/*
+		 * pcount : program count
+		 * current program count(location) in kthread
+		 */
 		if (((g_print_cnt % LOG_INTERVAL_OF_DROPS) == 0) ||
 			(g_print_cnt < LOG_INTERVAL_OF_DROPS)) {
 			printk(KERN_ERR "grp1(res %d, rcnt %d, scnt %d), "
 				"grp2(res %d, rcnt %d, scnt %d), "
-				"fcount %d(%d, %d)",
+				"fcount %d(%d, %d) pcount %d",
 				groupmgr->group_smp_res[group_3ax->id].count,
 				atomic_read(&group_3ax->rcount),
 				atomic_read(&group_3ax->scount),
@@ -715,7 +719,7 @@ static void tasklet_flite_str0(unsigned long data)
 				atomic_read(&group_isp->rcount),
 				atomic_read(&group_isp->scount),
 				fcount + group_3ax->async_shots,
-				*last_fcount0, *last_fcount1);
+				*last_fcount0, *last_fcount1, group_3ax->pcount);
 		}
 		g_print_cnt++;
 	} else {
@@ -891,6 +895,12 @@ static void tasklet_flite_end(unsigned long data)
 	}
 
 	framemgr_x_barrier(framemgr, FMGR_IDX_1 + bdone);
+
+	if (sensor->instant_cnt) {
+		sensor->instant_cnt--;
+		if (sensor->instant_cnt <= 1)
+			wake_up(&sensor->instant_wait);
+	}
 }
 
 static inline void notify_fcount(u32 channel, u32 fcount)

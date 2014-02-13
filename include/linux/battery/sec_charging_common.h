@@ -35,7 +35,7 @@
 
 
 /* definitions */
-#define	SEC_SIZEOF_POWER_SUPPLY_TYPE	13
+#define	SEC_SIZEOF_POWER_SUPPLY_TYPE	14
 
 enum sec_battery_voltage_mode {
 	/* average voltage */
@@ -389,6 +389,7 @@ struct sec_battery_platform_data {
 	bool (*get_temperature_callback)(
 			enum power_supply_property,
 			union power_supply_propval*);
+	void (*check_batt_id)(void);
 
 	/* ADC API for each ADC type */
 	sec_bat_adc_api_t adc_api[SEC_BATTERY_ADC_TYPE_NUM];

@@ -917,6 +917,15 @@ config USB_DUN_SUPPORT
 	  It uses misc register.
 	  Support fops : open, close, release, read, poll, llseek, ioctl
 
+config USB_ANDROID_SAMSUNG_SIDESYNC
+	boolean "Samsung SideSync function"
+	depends on USB_G_ANDROID
+	help
+		provides SideSync support
+		for samsung gadget driver.
+		If you enable this option,
+		SideSync will be added to android composite.
+
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET

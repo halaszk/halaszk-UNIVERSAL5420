@@ -18,6 +18,10 @@
 #include <linux/earlysuspend.h>
 #endif
 
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
+#endif
+
 #include <linux/i2c/touchkey_i2c.h>
 
 /* Touchkey Register */
@@ -41,9 +45,6 @@
 #define TK_UPDATE_FAIL		-1
 #define TK_UPDATE_PASS		0
 
-#ifdef CONFIG_SEC_TSP_FACTORY
-#endif
-
 /* Flip cover*/
 #define TKEY_FLIP_MODE
 
@@ -59,7 +60,11 @@
 
 /* Boot-up Firmware Update */
 #define TK_HAS_FIRMWARE_UPDATE
+#ifdef CONFIG_HA
 #define TK_UPDATABLE_BD_ID	6
+#else
+#define TK_UPDATABLE_BD_ID	0
+#endif
 
 /* for HA */
 #define FW_PATH "cypress/cypress_ha_m09.fw"
@@ -82,7 +87,9 @@
 #endif
 
 #define  TOUCHKEY_FW_UPDATEABLE_HW_REV  11
+#if !defined(CONFIG_INPUT_BOOSTER)
 #define TOUCHKEY_BOOSTER
+#endif
 #ifdef TOUCHKEY_BOOSTER
 #include <linux/pm_qos.h>
 #define TKEY_BOOSTER_ON_TIME	500
@@ -95,13 +102,20 @@ enum BOOST_LEVEL {
 	TKEY_BOOSTER_LEVEL2,
 };
 
-#define TKEY_BOOSTER_CPU_FREQ1 1600000
-#define TKEY_BOOSTER_MIF_FREQ1 667000
-#define TKEY_BOOSTER_INT_FREQ1 333000
+static unsigned int TKEY_BOOSTER_CPU_FREQ1 = 1600000;
+static unsigned int TKEY_BOOSTER_MIF_FREQ1 = 667000;
+static unsigned int TKEY_BOOSTER_INT_FREQ1 = 333000;
 
-#define TKEY_BOOSTER_CPU_FREQ2 650000
-#define TKEY_BOOSTER_MIF_FREQ2 400000
-#define TKEY_BOOSTER_INT_FREQ2 111000
+static unsigned int TKEY_BOOSTER_CPU_FREQ2 = 650000;
+static unsigned int TKEY_BOOSTER_MIF_FREQ2 = 400000;
+static unsigned int TKEY_BOOSTER_INT_FREQ2 = 111000;
+
+module_param_named(qos_cpu_freq_lvl_1, TKEY_BOOSTER_CPU_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_lvl_1, TKEY_BOOSTER_MIF_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_lvl_1, TKEY_BOOSTER_INT_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_cpu_freq_lvl_2, TKEY_BOOSTER_CPU_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_mif_freq_lvl_2, TKEY_BOOSTER_MIF_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_int_freq_lvl_2, TKEY_BOOSTER_INT_FREQ2, uint, S_IWUSR | S_IRUGO);
 #endif
 /* #define TK_INFORM_CHARGER	1 */
 
@@ -127,11 +141,15 @@ enum {
 	FW_EX_SDCARD,
 };
 
-struct fw_update_info {
-	u8 fw_path;
-	const struct firmware *firm_data;
-	u8 *fw_data;
-};
+struct fw_image {
+	u8 hdr_ver;
+	u8 hdr_len;
+	u16 first_fw_ver;
+	u16 second_fw_ver;
+	u16 third_ver;
+	u32 fw_len;
+	u8 data[0];
+} __attribute__ ((packed));
 
 /*Parameters for i2c driver*/
 struct touchkey_i2c {
@@ -182,7 +200,10 @@ struct touchkey_i2c {
 #endif
 	bool status_update;
 	struct work_struct update_work;
-	struct fw_update_info update_info;
+	struct workqueue_struct *fw_wq;
+	u8 fw_path;
+	const struct firmware *firm_data;
+	struct fw_image *fw_img;
 };
 
 extern struct class *sec_class;

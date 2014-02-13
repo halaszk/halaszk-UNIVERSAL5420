@@ -139,7 +139,11 @@
 #define DVFS_MIF_L5			(266000)
 
 #define I2C_L0				(108000000)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+#define I2C_L1				(108000000)
+#else
 #define I2C_L1				(36000000)
+#endif
 #define I2C_L1_1			(54000000)
 #define I2C_L2				(21600000)
 #define DVFS_SKIP_FRAME_NUM		(5)

@@ -460,7 +460,7 @@ int exynos5_fimc_is_gpio(struct platform_device *pdev, struct gpio_set *gpio, in
 			/* set max strength */
 			if (strstr(gpio->name, "SDA") || strstr(gpio->name, "SCL")) {
 				s5p_gpio_set_drvstr(gpio->pin, S5P_GPIO_DRVSTR_LV4);
-#if defined(CONFIG_N1A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 				s3c_gpio_setpull(gpio->pin, S3C_GPIO_PULL_UP);
 #endif
 			}
@@ -684,7 +684,7 @@ int exynos5_fimc_is_pin_cfg(struct platform_device *pdev, int channel, int flag_
 						"cam_af_2.8v_pm",
 					};
 					int size = 2;
-#elif defined(CONFIG_N1A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 					char *pic_cfg_exception_af[] = {
 						"cam_af_2.8v_pm",
 					};
@@ -2468,7 +2468,11 @@ int exynos5420_fimc_is_sensor_clk_on(struct platform_device *pdev, u32 source)
 	}
 
 	clk_set_parent(sclk_isp_sensor, mout_ipll);
+#if defined(CONFIG_V1A) ||  defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+	clk_set_rate(sclk_isp_sensor, 18 * 1000000);
+#else
 	clk_set_rate(sclk_isp_sensor, 24 * 1000000);
+#endif
 	clk_enable(sclk_isp_sensor);
 
 	sensor_mclk = clk_get_rate(sclk_isp_sensor);

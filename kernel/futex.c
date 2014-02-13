@@ -843,7 +843,7 @@ static void wake_futex(struct futex_q *q)
 {
 	struct task_struct *p = q->task;
 
-	if (WARN(q->pi_state || q->rt_waiter, "refusing to wake PI futex\n"))
+	if (WARN( q == NULL || q->pi_state || q->rt_waiter, "refusing to wake PI futex\n"))
 		return;
 
 	/*

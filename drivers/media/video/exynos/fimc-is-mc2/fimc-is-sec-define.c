@@ -1328,13 +1328,17 @@ read_phone_fw_exit:
 		}
 
 		if (is_dump_needed) {
-			ret = fimc_is_sec_readfw();
-			if (ret < 0) {
-				if (!CRC32_FW_CHECK) {
-					is_dumped_fw_loading_needed = false;
-					ret = 0;
-				} else
-					goto exit;
+			if (!isSysfsRead) {
+				ret = fimc_is_sec_readfw();
+				if (ret < 0) {
+					if (!CRC32_FW_CHECK) {
+						is_dumped_fw_loading_needed = false;
+						ret = 0;
+					} else
+						goto exit;
+				}
+			} else {
+				pr_info("Camera: sysfs read. FW and SetFile will not dump\n");
 			}
 		}
 	}

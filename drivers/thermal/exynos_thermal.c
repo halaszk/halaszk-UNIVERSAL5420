@@ -125,18 +125,28 @@
 
 #define EXYNOS_GPU_NUMBER	4
 
-#define HOT_NORMAL_TEMP		95
-#define HOT_CRITICAL_TEMP	110
-#define HOT_95			95
-#define HOT_109			104
-#define HOT_110			105
-#define MEM_TH_TEMP1		75
-#define MEM_TH_TEMP2		85
-#define GPU_TH_TEMP1		90
-#define GPU_TH_TEMP2		95
-#define GPU_TH_TEMP3		100
-#define GPU_TH_TEMP4		105
-#define GPU_TH_TEMP5		110
+static unsigned int HOT_NORMAL_TEMP = 95;
+static unsigned int HOT_CRITICAL_TEMP = 110;
+static unsigned int HOT_95 = 95;
+static unsigned int HOT_109 = 109;
+static unsigned int HOT_110 = 110;
+static unsigned int MEM_TH_TEMP1 = 75;
+static unsigned int MEM_TH_TEMP2 = 85;
+static unsigned int GPU_TH_TEMP1 = 90;
+static unsigned int GPU_TH_TEMP2 = 95;
+static unsigned int GPU_TH_TEMP3 = 100;
+static unsigned int GPU_TH_TEMP4 = 105;
+static unsigned int GPU_TH_TEMP5 = 110;
+
+module_param_named(tmu_cpu_normal, HOT_NORMAL_TEMP, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_cpu_critical, HOT_CRITICAL_TEMP, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_mif_normal, MEM_TH_TEMP1, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_mif_hot, MEM_TH_TEMP2, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_gpu_temp1, GPU_TH_TEMP1, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_gpu_temp2, GPU_TH_TEMP2, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_gpu_temp3, GPU_TH_TEMP3, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_gpu_temp4, GPU_TH_TEMP4, uint, S_IWUSR | S_IRUGO);
+module_param_named(tmu_gpu_temp5, GPU_TH_TEMP5, uint, S_IWUSR | S_IRUGO);
 
 #define TYPE_CPU		1
 #define TYPE_GPU		2
@@ -739,6 +749,10 @@ int exynos_gpu_add_notifier(struct notifier_block *n)
 
 void exynos_gpu_call_notifier(enum gpu_noti_state_t cur_state)
 {
+	if (is_suspending) {
+		cur_state = GPU_COLD;
+	}
+
 	if (cur_state!=gpu_old_state) {
 		pr_info("gpu temperature state %d to %d \n", gpu_old_state, cur_state);
 		blocking_notifier_call_chain(&exynos_gpu_notifier, cur_state, &cur_state);
@@ -1218,6 +1232,7 @@ static int exynos_pm_notifier(struct notifier_block *notifier,
 		exynos_tmu_call_notifier(TMU_COLD);
 		exynos_tmu_call_notifier(tmu_old_state);
 		exynos_check_mif_noti_state(MEM_TH_TEMP2 - 1);
+		exynos_gpu_call_notifier(GPU_COLD);
 		break;
 	case PM_POST_SUSPEND:
 		is_suspending = false;

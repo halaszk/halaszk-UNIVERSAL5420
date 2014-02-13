@@ -63,21 +63,24 @@ static ssize_t proximity_avg_show(struct device *dev,
 static ssize_t proximity_avg_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	char chTempbuf[2] = { 1, 20};
+	char chTempbuf[4] = { 0 };
 	int iRet;
 	int64_t dEnable;
 	struct ssp_data *data = dev_get_drvdata(dev);
+
+	s32 dMsDelay = 20;
+	memcpy(&chTempbuf[0], &dMsDelay, 4);
 
 	iRet = kstrtoll(buf, 10, &dEnable);
 	if (iRet < 0)
 		return iRet;
 
 	if (dEnable) {
-		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, chTempbuf, 2);
+		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, chTempbuf, 4);
 		data->bProximityRawEnabled = true;
 	} else {
 		send_instruction(data, REMOVE_SENSOR, PROXIMITY_RAW,
-			chTempbuf, 2);
+			chTempbuf, 4);
 		data->bProximityRawEnabled = false;
 	}
 
@@ -87,14 +90,17 @@ static ssize_t proximity_avg_store(struct device *dev,
 static u16 get_proximity_rawdata(struct ssp_data *data)
 {
 	u16 uRowdata = 0;
-	char chTempbuf[2] = { 1, 20};
+	char chTempbuf[4] = { 0 };
+
+	s32 dMsDelay = 20;
+	memcpy(&chTempbuf[0], &dMsDelay, 4);
 
 	if (data->bProximityRawEnabled == false) {
-		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, chTempbuf, 2);
+		send_instruction(data, ADD_SENSOR, PROXIMITY_RAW, chTempbuf, 4);
 		msleep(200);
 		uRowdata = data->buf[PROXIMITY_RAW].prox[0];
 		send_instruction(data, REMOVE_SENSOR, PROXIMITY_RAW,
-			chTempbuf, 2);
+			chTempbuf, 4);
 	} else {
 		uRowdata = data->buf[PROXIMITY_RAW].prox[0];
 	}

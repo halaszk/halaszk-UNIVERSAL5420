@@ -98,7 +98,7 @@ enum {
 	SNDRV_HWDEP_IFACE_YAMAHA_YMU831,  /* YMU831 */
 
 	/* Don't forget to change the following: */
-	SNDRV_HWDEP_IFACE_LAST = SNDRV_HWDEP_IFACE_USB_STREAM
+	SNDRV_HWDEP_IFACE_LAST = SNDRV_HWDEP_IFACE_YAMAHA_YMU831
 };
 
 struct snd_hwdep_info {

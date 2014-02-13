@@ -61,6 +61,8 @@
 
 #include <mach/exynos5_bus.h>
 
+#include <mach/sec_debug.h>
+
 #ifdef MALI_DVFS_ASV_ENABLE
 #include <mach/asv-exynos.h>
 #define ASV_STATUS_INIT 1
@@ -127,16 +129,16 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{962500, 420, 71, 80, 0, 800000, 400000, 250000},
 	{1000000, 480, 81, 85, 0, 800000, 400000, 650000},
 	{1037500, 533, 86, 90, 0, 800000, 400000, 1200000},
-	{1050000, 600, 91, 93, 0, 800000, 400000, 1400000},
-        {1075000, 667, 94, 96, 0, 800000, 400000, 1600000},
-        {1100000, 733, 97, 99, 0, 800000, 400000, 1800000},
+	{1050000, 600, 91, 93, 0, 800000, 600000, 1400000},
+        {1075000, 667, 94, 96, 0, 800000, 600000, 1600000},
+        {1100000, 733, 97, 99, 0, 800000, 600000, 1800000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
 
 unsigned int dvfs_step_min = 0;
 unsigned int dvfs_step_max = 10;
-unsigned int dvfs_step_max_minus1 = 480;
+unsigned int dvfs_step_max_minus1 = 667;
 unsigned int cur_gpu_freq = 0;
 
 #ifdef CONFIG_MALI_T6XX_DVFS
@@ -302,11 +304,6 @@ static void mali_dvfs_decide_next_level(mali_dvfs_status *dvfs_status)
 {
 	unsigned long flags;
 	struct exynos_context *platform;
-
-	if (!kbase_platform_dvfs_get_enable_status()) {
-		mutex_unlock(&mali_enable_clock_lock);
-		return;
-	}
 
 	platform = (struct exynos_context *)dvfs_status->kbdev->platform_context;
 #ifdef MALI_DVFS_ASV_ENABLE
@@ -718,7 +715,7 @@ int mali_dvfs_freq_min_lock(int level, gpu_lock_type user_lock)
 		return -1;
 	}
 
-	mali_dvfs_status_current.user_min_lock[i] = level;
+	mali_dvfs_status_current.user_min_lock[user_lock] = level;
 	mali_dvfs_status_current.min_lock = level;
 
 	if (mali_dvfs_status_current.min_lock != -1) {
@@ -953,9 +950,39 @@ void kbase_tmu_normal_work(void)
 }
 #endif
 
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+unsigned long get_dpll_freq(int curr, int targ)
+{
+	unsigned long dpll_clk;
+	int divider;
+
+	switch(targ)
+	{
+		case 480: case 420: case 350:
+			divider = 2;
+			break;
+		case 266:
+			divider = 2 + (targ < curr ? 0:1);
+			break;
+		case 177:
+			divider = 3 + (targ < curr ? 0:1);
+			break;
+		case 100:
+			divider = 4;
+			break;
+		default:
+			divider = 1;
+			break;
+	}
+	dpll_clk = curr / divider + 5;
+
+	return (dpll_clk*1000000);
+}
+#endif
+
 void kbase_platform_dvfs_set_clock(kbase_device *kbdev, int freq)
 {
-#if defined(CONFIG_S5P_DP)
+#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
 	struct clk *mout_dpll = NULL;
 	struct clk *mout_vpll = NULL;
 	struct clk *fout_vpll = NULL;
@@ -996,7 +1023,7 @@ void kbase_platform_dvfs_set_clock(kbase_device *kbdev, int freq)
 		}
 
 		/*for stable clock input.*/
-		clk_set_rate(aclk_g3d_dout, clk_get_rate(platform->aclk_g3d)/6);
+		clk_set_rate(aclk_g3d_dout, get_dpll_freq(clk_get_rate(platform->aclk_g3d)/1000000,freq));
 		clk_set_parent(aclk_g3d_dout, mout_dpll);
 
 		/*change vpll*/
@@ -1146,6 +1173,11 @@ void kbase_platform_dvfs_set_level(kbase_device *kbdev, int level)
 #ifdef CONFIG_MALI_T6XX_DVFS
 	mutex_lock(&mali_set_clock_lock);
 #endif
+
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+			"old:%7d new:%7d (G3D)",
+			mali_dvfs_infotbl[prev_level].clock*1000, 
+			mali_dvfs_infotbl[level].clock*1000);
 
 	mif_qos = mali_dvfs_infotbl[level].mem_freq;
 	int_qos = mali_dvfs_infotbl[level].int_freq;

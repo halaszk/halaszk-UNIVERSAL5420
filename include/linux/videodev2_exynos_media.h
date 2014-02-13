@@ -19,6 +19,7 @@
 
 /* RGB formats */
 #define V4L2_PIX_FMT_RGB32X    v4l2_fourcc('R', 'G', 'B', 'X') /* 32  RGB-8-8-8-8   */
+#define V4L2_PIX_FMT_ARGB32    v4l2_fourcc('A', 'R', 'G', 'B') /* 32  ARGB-8-8-8-8   */
 
 /* two planes -- one Y, one Cr + Cb interleaved  */
 #define V4L2_PIX_FMT_YUV444_2P v4l2_fourcc('Y', 'U', '2', 'P') /* 24  Y/CbCr */
@@ -320,4 +321,10 @@ enum v4l2_mpeg_video_h264_hierarchical_coding_type {
 					(V4L2_CID_MPEG_MFC_BASE + 92)
 #define V4L2_CID_MPEG_MFC_SET_DUAL_DPB_MODE			\
 					(V4L2_CID_MPEG_MFC_BASE + 93)
+#define V4L2_CID_MPEG_MFC_SET_DYNAMIC_DPB_MODE			\
+					(V4L2_CID_MPEG_MFC_BASE + 95)
+#define V4L2_CID_MPEG_MFC_SET_USER_SHARED_HANDLE		\
+					(V4L2_CID_MPEG_MFC_BASE + 96)
+#define V4L2_CID_MPEG_MFC_GET_EXT_INFO				\
+					(V4L2_CID_MPEG_MFC_BASE + 97)
 #endif /* __LINUX_VIDEODEV2_EXYNOS_MEDIA_H */

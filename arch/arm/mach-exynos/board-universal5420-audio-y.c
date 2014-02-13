@@ -112,6 +112,7 @@ static void universal5420_audio_gpio_init(void)
 		pr_err(KERN_ERR "MICBIAS_EN GPIO set error!\n");
 		return;
 	}
+	s3c_gpio_setpull(GPIO_MICBIAS_EN, S3C_GPIO_PULL_NONE);
 	gpio_direction_output(GPIO_MICBIAS_EN, 1);
 	gpio_set_value(GPIO_MICBIAS_EN, 0);
 #endif

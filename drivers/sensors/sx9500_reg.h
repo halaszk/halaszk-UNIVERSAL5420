@@ -15,7 +15,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
-
 #ifndef _SX9500_I2C_REG_H_
 #define _SX9500_I2C_REG_H_
 
@@ -110,6 +109,11 @@ static const struct smtc_reg_data setup_reg[] = {
 		.reg = SX9500_CPS_CTRL0_REG,
 		.val = 0x20,
 	},
+};
+
+enum {
+	OFF = 0,
+	ON = 1
 };
 
 #endif /* _SX9500_I2C_REG_H_*/

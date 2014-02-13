@@ -219,6 +219,11 @@
 #define VIDTCON2_HOZVAL_LIMIT			(0x7ff)
 #define VIDTCON2_HOZVAL(_x)			(((_x) & 0x7ff) << 0)
 
+/* MIC_CTRL */
+#define MIC_CTRL				(0x10)
+#define MIC_CTRL_ON_UP				(1 << 3)
+#define MIC_CTRL_ON_F				(1 << 0)
+
 /* WINCONx */
 #define WINCONx_SHADOW_MASK			(0x4780FF)
 #define WINCONx_BITSWP				(1 << 18)

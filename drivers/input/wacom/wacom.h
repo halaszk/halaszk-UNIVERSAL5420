@@ -22,6 +22,10 @@
 
 #include <linux/wacom_i2c.h>
 
+#ifdef CONFIG_INPUT_BOOSTER
+#include <linux/input/input_booster.h>
+#endif
+
 #define NAMEBUF 12
 #define WACNAME "WAC_I2C_EMR"
 #define WACFLASH "WAC_I2C_FLASH"
@@ -36,9 +40,9 @@
 #endif
 
 /*Wacom Command*/
-#ifdef CONFIG_HA
+#if defined(CONFIG_HA) || defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 #define COM_COORD_NUM	12
-#elif defined(CONFIG_MACH_T0)
+#elif defined(CONFIG_N1A)
 #define COM_COORD_NUM	8
 #else
 #define COM_COORD_NUM	7
@@ -103,9 +107,17 @@
 #define EPEN_RESUME_DELAY 180
 
 /* Wacom Booster */
+#if !defined(CONFIG_INPUT_BOOSTER)
 #define WACOM_BOOSTER
+#endif
 
-#if defined(CONFIG_V1A)
+#if defined (CONFIG_V1A)  || defined(CONFIG_CHAGALL)
+#define EPEN_KEY_MENU KEY_RECENT
+#else
+#define EPEN_KEY_MENU KEY_MENU
+#endif
+
+#if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 #define WACOM_CONNECTION_CHECK
 
 /* softkey block workaround */
@@ -116,6 +128,20 @@
 #define EPEN_IRQF_TRIGGER_TYPE IRQF_TRIGGER_RISING
 
 #define WACOM_USE_SOFTKEY
+#define WACOM_USE_GAIN
+
+/* LCD freq sync */
+#define LCD_FREQ_SYNC
+
+#ifdef LCD_FREQ_SYNC
+#define LCD_FREQ_BOTTOM 97500
+#define LCD_FREQ_TOP 98500
+#endif
+#ifdef CONFIG_V1A_WIFI
+#define LCD_FREQ_SUPPORT_HWID 5
+#else
+#define LCD_FREQ_SUPPORT_HWID 7
+#endif
 
 #define WACOM_X_INVERT 0
 #define WACOM_XY_SWITCH 0
@@ -131,17 +157,27 @@
 
 #define COOR_WORK_AROUND
 
-#define WACOM_BOOSTER_CPU_FREQ1 1600000
-#define WACOM_BOOSTER_MIF_FREQ1 800000
-#define WACOM_BOOSTER_INT_FREQ1 400000
+static unsigned int WACOM_BOOSTER_CPU_FREQ1 = 1600000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ1 = 800000;
+static unsigned int WACOM_BOOSTER_INT_FREQ1 = 400000;
 
-#define WACOM_BOOSTER_CPU_FREQ2 650000
-#define WACOM_BOOSTER_MIF_FREQ2 400000
-#define WACOM_BOOSTER_INT_FREQ2 222000
+static unsigned int WACOM_BOOSTER_CPU_FREQ2 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ2 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ2 = 222000;
 
-#define WACOM_BOOSTER_CPU_FREQ3 650000
-#define WACOM_BOOSTER_MIF_FREQ3 400000
-#define WACOM_BOOSTER_INT_FREQ3 222000
+static unsigned int WACOM_BOOSTER_CPU_FREQ3 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ3 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ3 = 222000;
+
+module_param_named(qos_wacom_cpu_freq_level_1, WACOM_BOOSTER_CPU_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_1, WACOM_BOOSTER_MIF_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_1, WACOM_BOOSTER_INT_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_2, WACOM_BOOSTER_CPU_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_2, WACOM_BOOSTER_MIF_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_2, WACOM_BOOSTER_INT_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_3, WACOM_BOOSTER_CPU_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_3, WACOM_BOOSTER_MIF_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_3, WACOM_BOOSTER_INT_FREQ3, uint, S_IWUSR | S_IRUGO);
 
 #elif defined(CONFIG_N1A)
 
@@ -152,6 +188,7 @@
 #define WACOM_HAVE_FWE_PIN
 
 #define WACOM_USE_SOFTKEY
+#define WACOM_USE_GAIN
 
 #define WACOM_X_INVERT 0
 #define WACOM_XY_SWITCH 0
@@ -171,34 +208,54 @@
 #define WACOM_USE_SOFTKEY_BLOCK
 #define SOFTKEY_BLOCK_DURATION (HZ / 10)
 
-#define WACOM_BOOSTER_CPU_FREQ1 1600000
-#define WACOM_BOOSTER_MIF_FREQ1 800000
-#define WACOM_BOOSTER_INT_FREQ1 400000
+static unsigned int WACOM_BOOSTER_CPU_FREQ1 = 1600000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ1 = 800000;
+static unsigned int WACOM_BOOSTER_INT_FREQ1 = 400000;
 
-#define WACOM_BOOSTER_CPU_FREQ2 650000
-#define WACOM_BOOSTER_MIF_FREQ2 400000
-#define WACOM_BOOSTER_INT_FREQ2 222000
+static unsigned int WACOM_BOOSTER_CPU_FREQ2 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ2 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ2 = 222000;
 
-#define WACOM_BOOSTER_CPU_FREQ3 650000
-#define WACOM_BOOSTER_MIF_FREQ3 400000
-#define WACOM_BOOSTER_INT_FREQ3 222000
+static unsigned int WACOM_BOOSTER_CPU_FREQ3 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ3 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ3 = 222000;
+
+module_param_named(qos_wacom_cpu_freq_level_1, WACOM_BOOSTER_CPU_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_1, WACOM_BOOSTER_MIF_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_1, WACOM_BOOSTER_INT_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_2, WACOM_BOOSTER_CPU_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_2, WACOM_BOOSTER_MIF_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_2, WACOM_BOOSTER_INT_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_3, WACOM_BOOSTER_CPU_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_3, WACOM_BOOSTER_MIF_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_3, WACOM_BOOSTER_INT_FREQ3, uint, S_IWUSR | S_IRUGO);
 
 #elif defined(CONFIG_HA)
 /* softkey block workaround */
 #define WACOM_USE_SOFTKEY_BLOCK
 #define SOFTKEY_BLOCK_DURATION (HZ / 10)
 
-#define WACOM_BOOSTER_CPU_FREQ1 1600000
-#define WACOM_BOOSTER_MIF_FREQ1 667000
-#define WACOM_BOOSTER_INT_FREQ1 333000
+static unsigned int WACOM_BOOSTER_CPU_FREQ1 = 1600000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ1 = 800000;
+static unsigned int WACOM_BOOSTER_INT_FREQ1 = 400000;
 
-#define WACOM_BOOSTER_CPU_FREQ2 650000
-#define WACOM_BOOSTER_MIF_FREQ2 400000
-#define WACOM_BOOSTER_INT_FREQ2 111000
+static unsigned int WACOM_BOOSTER_CPU_FREQ2 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ2 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ2 = 222000;
 
-#define WACOM_BOOSTER_CPU_FREQ3 650000
-#define WACOM_BOOSTER_MIF_FREQ3 667000
-#define WACOM_BOOSTER_INT_FREQ3 333000
+static unsigned int WACOM_BOOSTER_CPU_FREQ3 = 650000;
+static unsigned int WACOM_BOOSTER_MIF_FREQ3 = 400000;
+static unsigned int WACOM_BOOSTER_INT_FREQ3 = 222000;
+
+module_param_named(qos_wacom_cpu_freq_level_1, WACOM_BOOSTER_CPU_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_1, WACOM_BOOSTER_MIF_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_1, WACOM_BOOSTER_INT_FREQ1, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_2, WACOM_BOOSTER_CPU_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_2, WACOM_BOOSTER_MIF_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_2, WACOM_BOOSTER_INT_FREQ2, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_cpu_freq_level_3, WACOM_BOOSTER_CPU_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_mif_freq_level_3, WACOM_BOOSTER_MIF_FREQ3, uint, S_IWUSR | S_IRUGO);
+module_param_named(qos_wacom_int_freq_level_3, WACOM_BOOSTER_INT_FREQ3, uint, S_IWUSR | S_IRUGO);
 
 /* LCD freq sync */
 #define LCD_FREQ_SYNC
@@ -361,7 +418,6 @@ struct wacom_i2c {
 	bool use_aveTransition;
 #endif
 	bool checksum_result;
-	const char name[NAMEBUF];
 	struct wacom_features *wac_feature;
 	struct wacom_g5_platform_data *wac_pdata;
 	struct wacom_g5_callbacks callbacks;
@@ -383,6 +439,7 @@ struct wacom_i2c {
 	struct pm_qos_request int_qos;
 	unsigned char boost_level;
 #endif
+	bool pwr_flag;
 	bool power_enable;
 	bool boot_mode;
 	bool query_status;

@@ -23,27 +23,27 @@ unsigned char *fw_data;
 bool ums_binary;
 extern unsigned int system_rev;
 
-#if defined(CONFIG_V1A)
+#if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 const unsigned int fw_size = 0x0000;
 const unsigned char mpu_type = 0x00;
-unsigned int fw_ver_file = 0x0200;
-unsigned char *fw_name = "epen/W9007_B878.bin";
+unsigned int fw_ver_file = 0x020A;
+unsigned char *fw_name = "epen/W9007A_V1.bin";
 
-char fw_chksum[] = { 0x1F, 0x00, 0xBC, 0x33, 0xDF, };
+char fw_chksum[] = { 0x1F, 0xEB, 0x40, 0x69, 0x2E, };
 
 #elif defined(CONFIG_N1A)
 const unsigned int fw_size = 0x0000;
 const unsigned char mpu_type = 0x00;
-unsigned int fw_ver_file = 0x013C;
-unsigned char *fw_name = "epen/W9007A_0136.bin";
+unsigned int fw_ver_file = 0x0260;
+unsigned char *fw_name = "epen/W9007A_LT03.bin";
 
-char fw_chksum[] = { 0x1F, 0xDE, 0xA4, 0x46, 0x76, };
+char fw_chksum[] = { 0x1F, 0xDC, 0x8E, 0x08, 0x9C, };
 
 #elif defined(CONFIG_HA)
 const unsigned int fw_size = 0x0000;
 const unsigned char mpu_type = 0x2C;
 unsigned int fw_ver_file = 0x0174;
-unsigned char *fw_name = "epen/W9010_B968.bin";
+unsigned char *fw_name = "epen/W9010_HA_B968.bin";
 
 char fw_chksum[] = { 0x1F, 0x19, 0x7E, 0x3D, 0xB3, };
 const char B934_chksum[] = { 0x1F, 0x93, 0x7E, 0xDE, 0xAD, };
@@ -62,7 +62,7 @@ void wacom_i2c_set_firm_data(struct wacom_i2c *wac_i2c)
 /*Return digitizer type according to board rev*/
 int wacom_i2c_get_digitizer_type(void)
 {
-#ifdef CONFIG_V1A
+#if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 	return EPEN_DTYPE_B878;
 #elif defined(CONFIG_HA)
 	if (system_rev >= WACOM_DTYPE_B968_HWID)
@@ -78,7 +78,7 @@ void wacom_i2c_init_firm_data(void)
 	int type;
 	type = wacom_i2c_get_digitizer_type();
 
-#if defined(CONFIG_V1A)
+#if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 	if (type == EPEN_DTYPE_B878) {
 		printk(KERN_DEBUG
 			"epen:Digitizer type is B878\n");

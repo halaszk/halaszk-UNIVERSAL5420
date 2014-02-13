@@ -32,6 +32,11 @@
 #define MAX77802_SMPL_ENABLE			(0x1)
 #define MAX77802_WTSR_ENABLE			(0x2)
 
+#define MAX77802_JIGONB_CPULOCK			(0x1)
+#define MAX77802_JIGONB_SMPL_DISABLE		(0x2)
+
+#define MAX77802_STATUS1_JIGONB_MASK		BIT(1)
+
 /* MAX77802 regulator IDs */
 enum max77802_regulators {
 	MAX77802_LDO1 = 0,
@@ -139,6 +144,12 @@ struct max77802_platform_data {
 	unsigned int buck3_voltage[8];
 	unsigned int buck4_voltage[8];
 	unsigned int buck6_voltage[8];
-};
 
+	/*
+	 * jigon_ops adds extra behaavior when JIGONB is low.
+	 * Locks booting cpu frequency with MAX77802_JIGONB_CPULOCK condition.
+	 * Disables SMPL with MAX77802_JIGONB_SMPL_DISABLE condition.
+	 */
+	int jigon_ops;
+};
 #endif /* __LINUX_MFD_MAX77802_H */

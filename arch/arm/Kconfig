@@ -21,6 +21,7 @@ config ARM
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZO
+	select HAVE_KERNEL_LZ4
 	select HAVE_KERNEL_LZMA
 	select HAVE_KERNEL_XZ
 	select HAVE_IRQ_WORK
@@ -2349,6 +2350,12 @@ config NEON
 	help
 	  Say Y to include support code for NEON, the ARMv7 Advanced SIMD
 	  Extension.
+
+config KERNEL_MODE_NEON
+	bool "Support for NEON in kernel mode"
+	depends on NEON && AEABI
+	help
+	  Say Y to include support for NEON in kernel mode.
 
 endmenu
 

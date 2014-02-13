@@ -88,6 +88,11 @@ struct mdnie_info {
 	struct clk			*pwm_clk;
 	unsigned int			support_pwm;
 #endif
+#if defined(CONFIG_FB_DBLC_PWM)
+	unsigned int outdoormode;
+	struct notifier_block secfb_notif;
+#endif
+
 };
 
 extern struct mdnie_info *g_mdnie;
@@ -107,5 +112,8 @@ unsigned short *mdnie_sequence_hook(unsigned short *seq);
 extern int mdnie_calibration(unsigned short x, unsigned short y, int *r);
 extern int mdnie_request_firmware(const char *path, u16 **buf, const char *name);
 extern int mdnie_open_file(const char *path, char **fp);
+#if defined(CONFIG_FB_S5P_MDNIE_LITE)
+extern int mdnie_lite_write(const unsigned short *seq, int size);
+#endif
 
 #endif /* __MDNIE_H__ */

@@ -137,7 +137,7 @@ static void led_set(struct max77803_led_data *led_data)
 	u8 shift = led_current_shift[id];
 	int value;
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(CONFIG_FEAT_LED_MAX77888)
 	/* It is for Flash Control by UART, Max77888 have internal FET structure limitation */
 	/* change MUIC Control3 to 'JIG pin Hi-Impedance' */
 	ret = max77803_muic_set_jigset(0x03);
@@ -176,7 +176,7 @@ static void led_set(struct max77803_led_data *led_data)
 	if (unlikely(ret))
 		goto error_set_bits;
 	}
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(CONFIG_FEAT_LED_MAX77888)
 	/* change MUIC Control3 to 'Auto Detection' */
 	ret = max77803_muic_set_jigset(0x00);
 	if (unlikely(ret))
@@ -187,7 +187,7 @@ static void led_set(struct max77803_led_data *led_data)
 error_set_bits:
 	pr_err("%s: can't set led level %d\n", __func__, ret);
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(CONFIG_FEAT_LED_MAX77888)
 	/* change MUIC Control3 to 'Auto Detection' */
 	ret = max77803_muic_set_jigset(0x00);
 	if (unlikely(ret))

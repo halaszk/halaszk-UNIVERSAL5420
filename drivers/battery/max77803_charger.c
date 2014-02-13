@@ -378,7 +378,7 @@ static void max77803_set_charge_current(struct max77803_charger_data *charger,
 		max77803_write_reg(charger->max77803->i2c,
 			MAX77803_CHG_REG_CHG_CNFG_02, reg_data);
 	} else {
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(max77888_charger)
 		reg_data |= ((cur / 40) << 0);
 #else
 		reg_data |= ((cur * 10 / charger->charging_curr_step) << 0);
@@ -401,7 +401,7 @@ static int max77803_get_charge_current(struct max77803_charger_data *charger)
 	pr_debug("%s: CHG_CNFG_02(0x%02x)\n", __func__, reg_data);
 
 	reg_data &= MAX77803_CHG_CC;
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(max77888_charger)
 	get_current = reg_data * 40;
 #else
 	get_current = reg_data * 333 / 10;
@@ -589,7 +589,8 @@ static int max77803_get_health_state(struct max77803_charger_data *charger)
 {
 	int state;
 	int vbus_state;
-	u8 chg_dtls, reg_data, chg_cnfg_00;
+	u8 chg_dtls_00, chg_dtls_01, chg_dtls, reg_data;
+	u8 chg_cnfg_00, chg_cnfg_01 ,chg_cnfg_02, chg_cnfg_04, chg_cnfg_09, chg_cnfg_12;
 
 	max77803_read_reg(charger->max77803->i2c,
 		MAX77803_CHG_REG_CHG_DTLS_01, &reg_data);
@@ -628,6 +629,8 @@ static int max77803_get_health_state(struct max77803_charger_data *charger)
 		break;
 	}
 
+	pr_info("%s: CHG_DTLS(0x%x), \n", __func__, reg_data);
+
 	/* VBUS OVP state return battery OVP state */
 	vbus_state = max77803_get_vbus_state(charger);
 
@@ -641,6 +644,31 @@ static int max77803_get_health_state(struct max77803_charger_data *charger)
 				MAX77803_CHG_DTLS_SHIFT);
 		max77803_read_reg(charger->max77803->i2c,
 				MAX77803_CHG_REG_CHG_CNFG_00, &chg_cnfg_00);
+
+		/* print the log at the abnormal case */
+		if((charger->is_charging == 1) && (chg_dtls & 0x08)) {
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_DTLS_00, &chg_dtls_00);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_DTLS_01, &chg_dtls_01);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_CNFG_01, &chg_cnfg_01);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_CNFG_02, &chg_cnfg_02);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_CNFG_04, &chg_cnfg_04);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_CNFG_09, &chg_cnfg_09);
+			max77803_read_reg(charger->max77803->i2c,
+				MAX77803_CHG_REG_CHG_CNFG_12, &chg_cnfg_12);
+
+			pr_info("%s: CHG_DTLS_00(0x%x), CHG_DTLS_01(0x%x), CHG_CNFG_00(0x%x)\n",
+					__func__, chg_dtls_00, chg_dtls_01, chg_cnfg_00);
+			pr_info("%s:  CHG_CNFG_01(0x%x), CHG_CNFG_02(0x%x), CHG_CNFG_04(0x%x)\n",
+					__func__, chg_cnfg_01, chg_cnfg_02, chg_cnfg_04);
+			pr_info("%s:  CHG_CNFG_09(0x%x), CHG_CNFG_12(0x%x)\n",
+					__func__, chg_cnfg_09, chg_cnfg_12);
+		}
 
 		/* OVP is higher priority */
 		if (vbus_state == 0x02) { /* CHGIN_OVLO */
@@ -724,7 +752,7 @@ static void max77803_charger_initialize(struct max77803_charger_data *charger)
 
 	/*
 	 * charge current 466mA(default)
-	 * (max77888(v1): 480mA(default))
+	 * (max77888: 480mA(default))
 	 * otg current limit 900mA
 	 */
 	max77803_read_reg(charger->max77803->i2c,
@@ -745,7 +773,7 @@ static void max77803_charger_initialize(struct max77803_charger_data *charger)
 	 * cv voltage 4.2V or 4.35V
 	 * MINVSYS 3.6V(default)
 	 */
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(max77888_charger)
 	reg_data = (0xD9 << 0);
 #else
 	reg_data = (0xDD << 0);
@@ -851,6 +879,9 @@ static int sec_chg_set_property(struct power_supply *psy,
 		/* check and unlock */
 		check_charger_unlock_state(charger);
 		charger->cable_type = val->intval;
+		if (val->intval == POWER_SUPPLY_TYPE_OTG)
+			break;
+
 		psy_do_property("battery", get,
 				POWER_SUPPLY_PROP_HEALTH, value);
 		if (val->intval == POWER_SUPPLY_TYPE_BATTERY) {
@@ -1386,7 +1417,7 @@ static __devinit int max77803_charger_probe(struct platform_device *pdev)
 				charger->pmic_ver);
 	}
 
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(max77888_charger)
 	charger->input_curr_limit_step = 25;
 	charger->wpc_input_curr_limit_step = 20;
 	charger->charging_curr_step= 400;  // 0.1mA unit
@@ -1492,6 +1523,7 @@ err_irq:
 err_power_supply_register:
 	destroy_workqueue(charger->wqueue);
 err_free:
+	mutex_destroy(&charger->ops_lock);
 	kfree(charger);
 
 	return ret;
@@ -1541,7 +1573,7 @@ static void max77803_charger_shutdown(struct device *dev)
 	reg_data = 0x04;
 	max77803_write_reg(charger->max77803->i2c,
 		MAX77803_CHG_REG_CHG_CNFG_00, reg_data);
-#if defined(CONFIG_V1A) || defined(CONFIG_N1A)
+#if defined(max77888_charger)
 	reg_data = 0x14;
 #else
 	reg_data = 0x19;

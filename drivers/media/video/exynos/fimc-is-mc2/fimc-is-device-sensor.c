@@ -385,6 +385,13 @@ static struct fimc_is_settle settle_imx134[] = {
 		.framerate	= 15,
 		.settle		= 9,
 	},
+	/* 1280x720@60fps */
+	{
+		.width		= 1640,
+		.height		= 924,
+		.framerate	= 60,
+		.settle		= 6,
+	},
 	/* 816x460@120fps */
 	{
 		.width		= 816,
@@ -853,6 +860,123 @@ p_err:
 	return ret;
 }
 
+#ifdef ENABLE_DTP
+static void fimc_is_sensor_dtp(unsigned long data)
+{
+	struct fimc_is_video_ctx *vctx;
+	struct fimc_is_device_sensor *device;
+	struct fimc_is_device_ischain *ischain;
+	struct fimc_is_queue *queue;
+	struct fimc_is_framemgr *framemgr;
+	struct fimc_is_frame *frame;
+	unsigned long flags;
+	u32 i;
+
+	BUG_ON(!data);
+
+	err("DTP is detected, forcely reset");
+
+	device = (struct fimc_is_device_sensor *)data;
+	vctx = device->vctx;
+	if (!vctx) {
+		err("vctx is NULL");
+		return;
+	}
+
+	ischain = device->ischain;
+	if (!ischain) {
+		err("ischain is NULL");
+		return;
+	}
+
+	queue = GET_DST_QUEUE(vctx);
+	framemgr = &queue->framemgr;
+	if ((framemgr->frame_cnt == 0) || (framemgr->frame_cnt >= FRAMEMGR_MAX_REQUEST)) {
+		err("frame count of framemgr is invalid(%d)", framemgr->frame_cnt);
+		return;
+	}
+
+	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
+	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_3ax.state);
+	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_isp.state);
+	up(&ischain->group_3ax.smp_trigger);
+
+	framemgr_e_barrier_irqs(framemgr, 0, flags);
+
+	for (i = 0; i < framemgr->frame_cnt; i++) {
+		frame = &framemgr->frame[i];
+		if (frame->state == FIMC_IS_FRAME_STATE_REQUEST) {
+			pr_err("%s buffer done1!!!! %d \n", __func__, i);
+			fimc_is_frame_trans_req_to_com(framemgr, frame);
+			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
+		} else if (frame->state == FIMC_IS_FRAME_STATE_PROCESS) {
+			pr_err("%s buffer done2!!!! %d \n", __func__, i);
+			fimc_is_frame_trans_pro_to_com(framemgr, frame);
+			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
+		}
+	}
+
+	framemgr_x_barrier_irqr(framemgr, 0, flags);
+}
+#endif
+
+static void fimc_is_sensor_instanton(struct work_struct *data)
+{
+	int ret = 0;
+	u32 instant_cnt;
+	struct fimc_is_device_sensor *device;
+	struct fimc_is_device_ischain *ischain;
+
+	BUG_ON(!data);
+
+	device = container_of(data, struct fimc_is_device_sensor, instant_work);
+	instant_cnt = device->instant_cnt;
+	ischain = device->ischain;
+	if (!ischain) {
+		merr("ischain is NULL", device);
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	ret = fimc_is_itf_stream_on(device->ischain);
+	if (ret) {
+		merr("fimc_is_itf_stream_on is fail(%d)\n", device, ret);
+		goto p_err;
+	}
+
+	clear_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
+
+#ifdef ENABLE_DTP
+	if (device->dtp_check) {
+		setup_timer(&device->dtp_timer, fimc_is_sensor_dtp, (unsigned long)device);
+		mod_timer(&device->dtp_timer, jiffies +  msecs_to_jiffies(300));
+		pr_info("DTP checking...\n");
+	}
+#endif
+
+	if (instant_cnt) {
+		u32 timetowait, timeout;
+
+		timeout = FIMC_IS_FLITE_STOP_TIMEOUT + msecs_to_jiffies(instant_cnt*60);
+		timetowait = wait_event_timeout(device->instant_wait,
+			(device->instant_cnt <= 1),
+			timeout);
+		if (!timetowait) {
+			merr("wait_event_timeout is invalid", device);
+			ret = -ETIME;
+		}
+
+		fimc_is_sensor_front_stop(device);
+
+		pr_info("[FRT:D:%d] instant off(fcount : %d, time : %dms)", device->instance,
+			device->instant_cnt,
+			(jiffies_to_msecs(timeout) - jiffies_to_msecs(timetowait)));
+	}
+
+p_err:
+	device->instant_ret = ret;
+}
+
 int fimc_is_sensor_probe(struct fimc_is_device_sensor *device,
 	u32 clk_source,
 	u32 csi_channel,
@@ -864,10 +988,12 @@ int fimc_is_sensor_probe(struct fimc_is_device_sensor *device,
 
 	BUG_ON(!device);
 
-	enum_sensor = device->enum_sensor;
 	device->clk_source = clk_source;
 	device->csi.channel = csi_channel;
 	device->flite.channel = flite_channel;
+	init_waitqueue_head(&device->instant_wait);
+	INIT_WORK(&device->instant_work, fimc_is_sensor_instanton);
+	enum_sensor = device->enum_sensor;
 
 	/*sensor init*/
 	clear_bit(FIMC_IS_SENSOR_OPEN, &device->state);
@@ -1223,6 +1349,8 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
 	clear_bit(FIMC_IS_SENSOR_BACK_START, &device->state);
 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
 	device->vctx = vctx;
+	device->instant_cnt = 0;
+	device->instant_ret = 0;
 	device->active_sensor = NULL;
 	device->ischain = NULL;
 
@@ -1317,6 +1445,7 @@ int fimc_is_sensor_close(struct fimc_is_device_sensor *device)
 		ret = -EINVAL;
 		goto exit_rsc;
 	}
+
 	/* Sensor clock off */
 	ret = fimc_is_sensor_clock_off(device, device->clk_source);
 	if (ret) {
@@ -1392,7 +1521,7 @@ int fimc_is_sensor_buffer_queue(struct fimc_is_device_sensor *device,
 		goto exit;
 	}
 
-	if (frame->init == FRAME_UNI_MEM) {
+	if (unlikely(frame->memory == FRAME_UNI_MEM)) {
 		err("frame %d is NOT init", index);
 		ret = EINVAL;
 		goto exit;
@@ -1452,66 +1581,6 @@ int fimc_is_sensor_buffer_finish(struct fimc_is_device_sensor *device,
 exit:
 	return ret;
 }
-
-#ifdef ENABLE_DTP
-void fimc_is_sensor_dtp(unsigned long data)
-{
-	struct fimc_is_video_ctx *vctx;
-	struct fimc_is_device_sensor *device;
-	struct fimc_is_device_ischain *ischain;
-	struct fimc_is_queue *queue;
-	struct fimc_is_framemgr *framemgr;
-	struct fimc_is_frame *frame;
-	unsigned long flags;
-	u32 i;
-
-	BUG_ON(!data);
-
-	err("DTP is detected, forcely reset");
-
-	device = (struct fimc_is_device_sensor *)data;
-	vctx = device->vctx;
-	if (!vctx) {
-		err("vctx is NULL");
-		return;
-	}
-
-	ischain = device->ischain;
-	if (!ischain) {
-		err("ischain is NULL");
-		return;
-	}
-
-	queue = GET_DST_QUEUE(vctx);
-	framemgr = &queue->framemgr;
-	if ((framemgr->frame_cnt == 0) || (framemgr->frame_cnt >= FRAMEMGR_MAX_REQUEST)) {
-		err("frame count of framemgr is invalid(%d)", framemgr->frame_cnt);
-		return;
-	}
-
-	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
-	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_3ax.state);
-	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_isp.state);
-	up(&ischain->group_3ax.smp_trigger);
-
-	framemgr_e_barrier_irqs(framemgr, 0, flags);
-
-	for (i = 0; i < framemgr->frame_cnt; i++) {
-		frame = &framemgr->frame[i];
-		if (frame->state == FIMC_IS_FRAME_STATE_REQUEST) {
-			pr_err("%s buffer done1!!!! %d \n", __func__, i);
-			fimc_is_frame_trans_req_to_com(framemgr, frame);
-			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
-		} else if (frame->state == FIMC_IS_FRAME_STATE_PROCESS) {
-			pr_err("%s buffer done2!!!! %d \n", __func__, i);
-			fimc_is_frame_trans_pro_to_com(framemgr, frame);
-			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
-		}
-	}
-
-	framemgr_x_barrier_irqr(framemgr, 0, flags);
-}
-#endif
 
 int fimc_is_sensor_back_start(struct fimc_is_device_sensor *device,
 	struct fimc_is_video_ctx *vctx)
@@ -1643,10 +1712,13 @@ void fimc_is_sensor_back_restart(struct fimc_is_device_sensor *device)
 		frame.width, frame.height);
 }
 
-int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device)
+int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device,
+	u32 instant_cnt,
+	u32 nonblock)
 {
 	int ret = 0;
 	struct fimc_is_frame_info frame;
+	struct fimc_is_device_flite *flite;
 
 	dbg_front("%s\n", __func__);
 
@@ -1656,6 +1728,7 @@ int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device)
 		goto p_err;
 	}
 
+	device->instant_cnt = instant_cnt;
 	frame.o_width = device->width;
 	frame.o_height = device->height;
 	frame.offs_h = 0;
@@ -1675,26 +1748,16 @@ int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device)
 		device->active_sensor->csi_ch,
 		frame.width, frame.height);
 
-	if (!device->ischain) {
-		mwarn("ischain is NULL", device);
-		goto p_err;
+	if (nonblock) {
+		schedule_work(&device->instant_work);
+	} else {
+		fimc_is_sensor_instanton(&device->instant_work);
+		if (device->instant_ret) {
+			merr("fimc_is_sensor_instanton is fail(%d)", device, device->instant_ret);
+			ret = device->instant_ret;
+			goto p_err;
+		}
 	}
-
-	ret = fimc_is_itf_stream_on(device->ischain);
-	if (ret) {
-		merr("sensor stream on is failed(error %d)\n", device, ret);
-		goto p_err;
-	}
-
-#ifdef ENABLE_DTP
-	if (device->dtp_check) {
-		setup_timer(&device->dtp_timer, fimc_is_sensor_dtp, (unsigned long)device);
-		mod_timer(&device->dtp_timer, jiffies +  msecs_to_jiffies(300));
-		pr_info("DTP checking...\n");
-	}
-#endif
-
-	clear_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
 
 p_err:
 	return ret;

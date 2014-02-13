@@ -127,6 +127,8 @@ struct cpufreq_policy {
 #define CPUFREQ_SUSPENDCHANGE	(9)
 #define FREQ_STEPS_GPU		10
 #define FREQ_STEPS_GPU_MAX	733
+#define FREQ_STEPS_MIF          9
+#define FREQ_STEPS_INT          10
 
 struct cpufreq_freqs {
 	unsigned int cpu;	/* cpu nr */
@@ -271,6 +273,13 @@ static inline void cpufreq_verify_within_limits(struct cpufreq_policy *policy, u
 	if (policy->min > policy->max)
 		policy->min = policy->max;
 	return;
+}
+
+static inline void
+cpufreq_verify_within_cpu_limits(struct cpufreq_policy *policy)
+{
+	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
+			policy->cpuinfo.max_freq);
 }
 
 struct freq_attr {

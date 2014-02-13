@@ -32,6 +32,11 @@
 #include <plat/clock.h>
 
 #include "exynos5420_ppmu.h"
+#include <mach/sec_debug.h>
+#include <linux/sysfs_helpers.h>
+#ifdef CONFIG_EXYNOS5_CPUFREQ
+#include <mach/cpufreq.h>
+#endif
 
 #define INT_VOLT_STEP		12500
 #define COLD_VOLT_OFFSET	37500
@@ -54,7 +59,7 @@ enum int_bus_idx {
 	LV_3,
 	LV_4,
 	LV_5,
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	LV_6,
 #endif
 	LV_END,
@@ -84,7 +89,7 @@ struct int_bus_opp_table int_bus_opp_list[] = {
 	{LV_2,   400000,  987500, 0},
 	{LV_3,   333000,  950000, 0},
 	{LV_4,   222000,  950000, 0},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   111000,  950000, 0},
 	{LV_6,    83000,  925000, 0},
 #else
@@ -147,7 +152,7 @@ struct int_clk_info aclk_200_fsys[] = {
 	{LV_3,   200000, D_PLL},
 	{LV_4,   150000, D_PLL},
 	{LV_5,   100000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,   100000, D_PLL},
 #endif
 };
@@ -163,7 +168,7 @@ struct int_clk_info pclk_200_fsys[] = {
 	{LV_3,   150000, D_PLL},
 	{LV_4,   150000, D_PLL},
 	{LV_5,   100000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,   100000, D_PLL},
 #endif
 };
@@ -179,7 +184,7 @@ struct int_clk_info aclk_100_noc[] = {
 	{LV_3,    86000, D_PLL},
 	{LV_4,    75000, D_PLL},
 	{LV_5,    67000, M_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,    67000, M_PLL},
 #endif
 };
@@ -194,7 +199,7 @@ struct int_clk_info aclk_400_wcore[] = {
 	{LV_2,   400000, SW_MUX},
 	{LV_3,   333000, C_PLL},
 	{LV_4,   222000, C_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   111000, C_PLL},
 	{LV_6,    84000, C_PLL},
 #else
@@ -213,7 +218,7 @@ struct int_clk_info aclk_200_fsys2[] = {
 	{LV_3,   200000, D_PLL},
 	{LV_4,   150000, D_PLL},
 	{LV_5,   100000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,   100000, D_PLL},
 #endif
 };
@@ -226,10 +231,14 @@ struct int_clk_info aclk_200_disp1[] = {
 	{LV_1_2, 200000, D_PLL},
 	{LV_1_3, 200000, D_PLL},
 	{LV_2,   200000, D_PLL},
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_3,   150000, D_PLL},
+#else
+	{LV_3,   200000, D_PLL},
+#endif
 	{LV_4,   150000, D_PLL},
 	{LV_5,   100000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,   100000, D_PLL},
 #endif
 };
@@ -244,7 +253,7 @@ struct int_clk_info aclk_400_mscl[] = {
 	{LV_2,   400000, SW_MUX},
 	{LV_3,   333000, C_PLL},
 	{LV_4,   222000, C_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   167000, C_PLL},
 	{LV_6,    84000, C_PLL},
 #else
@@ -263,7 +272,7 @@ struct int_clk_info aclk_400_isp[] = {
 	{LV_3,    67000, M_PLL},
 	{LV_4,    67000, M_PLL},
 	{LV_5,    67000, M_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,    67000, M_PLL},
 #endif
 };
@@ -280,7 +289,7 @@ struct int_clk_info aclk_166[] = {
 	{LV_3,   134000, C_PLL},
 	{LV_4,   111000, C_PLL},
 	{LV_5,    84000, C_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,    84000, C_PLL},
 #endif
 };
@@ -295,7 +304,7 @@ struct int_clk_info aclk_266[] = {
 	{LV_2,   266000, M_PLL},
 	{LV_3,   178000, M_PLL},
 	{LV_4,   133000, M_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   133000, M_PLL},
 	{LV_6,    89000, M_PLL},
 #else
@@ -314,7 +323,7 @@ struct int_clk_info aclk_66[] = {
 	{LV_3,    67000, C_PLL},
 	{LV_4,    67000, C_PLL},
 	{LV_5,    67000, C_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,    67000, C_PLL},
 #endif
 };
@@ -322,7 +331,11 @@ struct int_clk_info aclk_66[] = {
 struct int_clk_info aclk_333_432_isp0[] = {
 	/* Level, Freq, Parent_Pll */
 	{LV_0,   432000, I_PLL},
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_1,   144000, I_PLL},
+#else
+	{LV_1,   432000, I_PLL},
+#endif
 	{LV_1_1, 216000, I_PLL},
 	{LV_1_2,  87000, I_PLL},
 	{LV_1_3,  87000, I_PLL},
@@ -330,7 +343,7 @@ struct int_clk_info aclk_333_432_isp0[] = {
 	{LV_3,     3000, I_PLL},
 	{LV_4,     3000, I_PLL},
 	{LV_5,     3000, I_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,     3000, I_PLL},
 #endif
 };
@@ -338,7 +351,11 @@ struct int_clk_info aclk_333_432_isp0[] = {
 struct int_clk_info aclk_333_432_isp[] = {
 	/* Level, Freq, Parent_Pll */
 	{LV_0,   432000, I_PLL},
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_1,   144000, I_PLL},
+#else
+	{LV_1,   432000, I_PLL},
+#endif
 	{LV_1_1, 216000, I_PLL},
 	{LV_1_2,  87000, I_PLL},
 	{LV_1_3,  87000, I_PLL},
@@ -346,7 +363,7 @@ struct int_clk_info aclk_333_432_isp[] = {
 	{LV_3,     3000, I_PLL},
 	{LV_4,     3000, I_PLL},
 	{LV_5,     3000, I_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,     3000, I_PLL},
 #endif
 };
@@ -362,7 +379,7 @@ struct int_clk_info aclk_333_432_gscl[] = {
 	{LV_3,     3000, I_PLL},
 	{LV_4,     3000, I_PLL},
 	{LV_5,     3000, I_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_6,     3000, I_PLL},
 #endif
 };
@@ -378,7 +395,7 @@ struct int_clk_info aclk_300_gscl[] = {
 	{LV_2,   300000, D_PLL},
 	{LV_3,   300000, D_PLL},
 	{LV_4,   200000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   150000, D_PLL},
 	{LV_6,    75000, D_PLL},
 #else
@@ -388,7 +405,7 @@ struct int_clk_info aclk_300_gscl[] = {
 
 struct int_clk_info aclk_300_disp1[] = {
 	/* Level, Freq, Parent_Pll */
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_0,   200000, D_PLL},
 	{LV_1,   200000, D_PLL},
 	{LV_1_1, 200000, D_PLL},
@@ -414,7 +431,7 @@ struct int_clk_info aclk_300_disp1[] = {
 
 struct int_clk_info aclk_400_disp1[] = {
 	/* Level, Freq, Parent_Pll */
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_0,   300000, D_PLL},
 	{LV_1,   300000, D_PLL},
 	{LV_1_1, 300000, D_PLL},
@@ -448,7 +465,7 @@ struct int_clk_info aclk_300_jpeg[] = {
 	{LV_2,   300000, D_PLL},
 	{LV_3,   300000, D_PLL},
 	{LV_4,   200000, D_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   150000, D_PLL},
 	{LV_6,    75000, D_PLL},
 #else
@@ -466,7 +483,7 @@ struct int_clk_info aclk_266_g2d[] = {
 	{LV_2,   266000, M_PLL},
 	{LV_3,   266000, M_PLL},
 	{LV_4,   178000, M_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   133000, M_PLL},
 	{LV_6,    67000, M_PLL},
 #else
@@ -484,7 +501,7 @@ struct int_clk_info aclk_333_g2d[] = {
 	{LV_2,   333000, C_PLL},
 	{LV_3,   222000, C_PLL},
 	{LV_4,   222000, C_PLL},
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_5,   167000, C_PLL},
 	{LV_6,    84000, C_PLL},
 #else
@@ -613,6 +630,10 @@ static void exynos5_int_set_freq(struct busfreq_data_int *data,
 	struct int_pm_clks *int_clk;
 	struct clk *temp_clk;
 
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+			"old:%7d new:%7d (INT)",
+			pre_freq, target_freq);
+
 	/* Find setting value with target and previous frequency */
 	for (i = 0; i < LV_END; i++) {
 		if (int_bus_opp_list[i].freq == target_freq)
@@ -621,7 +642,7 @@ static void exynos5_int_set_freq(struct busfreq_data_int *data,
 			pre_idx = int_bus_opp_list[i].idx;
 	}
 
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	if (target_idx <= LV_2 && !data->spll_enabled) {
 #else
 	if (target_idx <= LV_3 && !data->spll_enabled) {
@@ -688,7 +709,7 @@ static void exynos5_int_set_freq(struct busfreq_data_int *data,
 		data->ipll_enabled = false;
 	}
 
-#if !defined(CONFIG_S5P_DP)
+#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
 	if (target_idx > LV_2 && data->spll_enabled) {
 #else
 	if (target_idx > LV_3 && data->spll_enabled) {
@@ -721,6 +742,7 @@ static void exynos5_int_update_state(unsigned int target_freq)
 	int_pre_time = cur_time;
 }
 
+unsigned long curr_int_freq;
 static int exynos5_int_busfreq_target(struct device *dev,
 				      unsigned long *_freq, u32 flags)
 {
@@ -777,6 +799,7 @@ static int exynos5_int_busfreq_target(struct device *dev,
 		regulator_set_voltage(data->vdd_int, target_volt, target_volt + INT_VOLT_STEP);
 	}
 
+	curr_int_freq = freq;
 	data->curr_opp = opp;
 out:
 	mutex_unlock(&data->lock);
@@ -851,6 +874,30 @@ static int exynos5420_init_int_table(struct busfreq_data_int *data)
 	}
 
 	return 0;
+}
+
+ssize_t hlpr_get_int_volt_table(char *buf)
+{
+       unsigned int i, len = 0;
+
+        for (i = 0; i < LV_END; i++) {
+               len += sprintf(buf + len, "%ld %ld\n", int_bus_opp_list[i].freq, int_bus_opp_list[i].volt);
+       }
+
+       return len;
+}
+
+void hlpr_set_int_volt_table(int int_table[])
+{
+        unsigned int i;
+        int u = 0;
+
+        for (i = 0; i < LV_END; i++)
+        {
+                int_bus_opp_list[i].volt = int_table[u];
+                pr_alert("SET INT VOLTAGE TABLE %d - %lu - %lu", i, int_bus_opp_list[i].freq, int_bus_opp_list[i].volt);
+                u++;
+	}
 }
 
 static ssize_t int_show_state(struct device *dev, struct device_attribute *attr, char *buf)

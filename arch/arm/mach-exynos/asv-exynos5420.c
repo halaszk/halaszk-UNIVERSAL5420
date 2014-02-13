@@ -540,6 +540,32 @@ unsigned int exynos5420_regist_asv_member(void)
 	return 0;
 }
 
+static void exynos5420_lot_id(struct asv_common *asv_info)
+{
+	unsigned int lid_reg = 0;
+	unsigned int rev_lid = 0;
+	unsigned int i;
+	unsigned int tmp;
+
+	lid_reg = __raw_readl(LOT_ID_REG);
+
+	for (i=0; i < 32 ; i++) {
+		tmp = (lid_reg >> i) & 0x1;
+		rev_lid += tmp << (31 - i);
+	}
+
+	asv_info->lot_name[0] = 'N';
+	lid_reg = (rev_lid >> 11) & 0x1FFFFF;
+
+	for (i = 4; i >= 1; i--) {
+		tmp = lid_reg % 36;
+		lid_reg /= 36;
+		asv_info->lot_name[i] = (tmp < 10) ? (tmp + '0') : ((tmp - 10) + 'A');
+	}
+
+	pr_info("EXYNOS5420 : LOT ID is %s\n",asv_info->lot_name);
+}
+
 int exynos5420_init_asv(struct asv_common *asv_info)
 {
 	struct clk *clk_abb;
@@ -559,6 +585,8 @@ int exynos5420_init_asv(struct asv_common *asv_info)
 
 	chip_id3_value = __raw_readl(CHIP_ID3_REG);
 	chip_id4_value = __raw_readl(CHIP_ID4_REG);
+
+	exynos5420_lot_id(asv_info);
 
 	if ((chip_id3_value >> EXYNOS5420_USESG_OFFSET) & EXYNOS5420_USESG_MASK) {
 		if (!((chip_id3_value >> EXYNOS5420_SG_BSIGN_OFFSET) & EXYNOS5420_SG_BSIGN_MASK))

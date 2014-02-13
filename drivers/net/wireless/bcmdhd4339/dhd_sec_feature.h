@@ -51,7 +51,7 @@
 #if defined(CONFIG_MACH_GC1) || defined(CONFIG_MACH_U1_NA_SPR) || \
 	defined(CONFIG_MACH_VIENNAEUR) || defined(CONFIG_V1A) || defined(CONFIG_MACH_LT03EUR) || \
 	defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || defined(CONFIG_MACH_LT03LGT) || \
-	defined(CONFIG_N1A_3G) || defined(CONFIG_N1A_WIFI)
+	defined(CONFIG_V2A) || defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
 #undef USE_CID_CHECK
 #define READ_MACADDR
 #endif	/* CONFIG_MACH_GC1 || CONFIG_MACH_U1_NA_SPR || CONFIG_MACH_VIENNAEUR || CONFIG_V1A ||
@@ -141,5 +141,7 @@
 #define GET_MAC_FROM_OTP
 #define SHOW_NVRAM_TYPE
 #endif /* !READ_MACADDR && !WRITE_MACADDR && !RDWR_KORICS_MACADDR && !RDWR_MACADDR */
+
+#define WRITE_WLANINFO
 
 #endif /* _dhd_sec_feature_h_ */

@@ -47,11 +47,13 @@ struct s5p_dp_device {
 	struct notifier_block	notifier;
 	enum dp_psr_state	psr_enter_state;
 	enum dp_psr_state	psr_exit_state;
+	int			psr_error_count;
 #endif
 
 #ifdef CONFIG_S5P_DP_ESD_RECOVERY
-	struct delayed_work esd_recovery;
-	int	hpd_count;
+	struct delayed_work	esd_recovery;
+	int			set_power_state;
+	int			esd_count;
 #endif
 
 };
@@ -64,6 +66,12 @@ void s5p_dp_init_analog_param(struct s5p_dp_device *dp);
 void s5p_dp_init_interrupt(struct s5p_dp_device *dp);
 void s5p_dp_reset(struct s5p_dp_device *dp);
 void s5p_dp_config_interrupt(struct s5p_dp_device *dp);
+#ifdef CONFIG_S5P_DP_ESD_RECOVERY
+void s5p_dp_enable_esd_interrupt(struct s5p_dp_device *dp);
+void s5p_dp_disable_esd_interrupt(struct s5p_dp_device *dp);
+int s5p_dp_clear_esd_interrupt(struct s5p_dp_device *dp);
+void s3c_fb_psr_exit_from_touch(void);
+#endif
 u32 s5p_dp_get_pll_lock_status(struct s5p_dp_device *dp);
 void s5p_dp_set_pll_power_down(struct s5p_dp_device *dp, bool enable);
 void s5p_dp_set_analog_power_down(struct s5p_dp_device *dp,
@@ -126,6 +134,8 @@ u32 s5p_dp_get_lane1_link_training(struct s5p_dp_device *dp);
 u32 s5p_dp_get_lane2_link_training(struct s5p_dp_device *dp);
 u32 s5p_dp_get_lane3_link_training(struct s5p_dp_device *dp);
 void s5p_dp_reset_macro(struct s5p_dp_device *dp);
+void s5p_dp_reset_macro_onoff(struct s5p_dp_device *dp, int onoff);
+void s5p_dp_reset_serdes_fifo(struct s5p_dp_device *dp);
 int s5p_dp_init_video(struct s5p_dp_device *dp);
 
 void s5p_dp_set_video_color_format(struct s5p_dp_device *dp,

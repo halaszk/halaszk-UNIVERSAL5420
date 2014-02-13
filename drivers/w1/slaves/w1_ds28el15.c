@@ -1542,7 +1542,7 @@ int w1_ds28el15_verifymac(struct w1_slave *sl)
 		manid[1] = buf[2];
 	} else {
 		pr_info("%s : read_status error\n", __func__);
-		rt = -1;
+		return -1;
 	}
 
 	/* if you want to use random value, insert code here. */
@@ -1567,7 +1567,7 @@ int w1_ds28el15_verifymac(struct w1_slave *sl)
 
 	if (rslt) {
 		pr_info("%s: read_authverify error\n", __func__);
-		rt = -1;
+		return -1;
 	}
 
 success:
@@ -1593,13 +1593,13 @@ static int w1_ds28el15_setup_device(struct w1_slave *sl)
 	rslt = w1_ds28el15_write_scratchpad(sl, master_secret);
 	printk(KERN_ERR "result : %d\n", rslt);
 	if (rslt)
-		rt = -1;
+		return -1;
 
 	printk(KERN_ERR "Load the master secret\n");
 	rslt = w1_ds28el15_load_secret(sl, 0);
 	printk(KERN_ERR "result : %d\n", rslt);
 	if (rslt)
-		rt = -1;
+		return -1;
 
 	printk(KERN_ERR "Set the master secret in the Software SHA-256\n");
 	set_secret(master_secret);
@@ -1613,7 +1613,7 @@ static int w1_ds28el15_setup_device(struct w1_slave *sl)
 		manid[0] = buf[3];
 		manid[1] = buf[2];
 	} else
-		rt = -1;
+		return -1;
 
 	printk(KERN_ERR "result : %d\n", rslt);
 
@@ -1623,7 +1623,7 @@ static int w1_ds28el15_setup_device(struct w1_slave *sl)
 				challenge, &memimage[0], manid, 0, 0);
 	printk(KERN_ERR "result : %d\n", rslt);
 	if (rslt)
-		rt = -1;
+		return -1;
 
 	printk(KERN_ERR "DS28EL15 Setup Example: %s\n",
 				(rt) ? "FAIL" : "SUCCESS");
@@ -1906,18 +1906,28 @@ static int w1_ds28el15_add_slave(struct w1_slave *sl)
 	if (init_verify) {
 		if (skip_setup == 0) {
 			err = w1_ds28el15_setup_device(sl);
-			printk(KERN_ERR "w1_ds28el15_setup_device\n");
+			pr_info("w1_ds28el15_setup_device\n");
+
 			skip_setup = 1;
 			err = w1_ds28el15_verifymac(sl);
 			verification = err;
+			if (err) {
+				pr_info("%s verifymac failed\n", __func__);
+				return err;
+			}
 		} else {
 			err = w1_ds28el15_verifymac(sl);
 			verification = err;
-			printk(KERN_ERR "w1_ds28el15_verifymac\n");
+			pr_info("w1_ds28el15_verifymac\n");
+			if (err) {
+				pr_info("%s verifymac failed\n", __func__);
+				return err;
+			}
 		}
 	}
 
-	w1_ds28el15_update_slave_info(sl);
+	if (!verification)
+		w1_ds28el15_update_slave_info(sl);
 
 	printk(KERN_ERR "w1_ds28el15_add_slave end, skip_setup=%d, err=%d\n",
 		skip_setup, err);

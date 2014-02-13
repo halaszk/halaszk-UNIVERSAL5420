@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h 418907 2013-08-18 02:10:25Z $
+ * $Id: dhd.h 419132 2013-08-19 21:33:05Z $
  */
 
 /****************
@@ -275,10 +275,6 @@ typedef struct dhd_pub {
 	/* Suspend disable flag and "in suspend" flag */
 	int suspend_disable_flag; /* "1" to disable all extra powersaving during suspend */
 	int in_suspend;			/* flag set to 1 when early suspend called */
-#ifdef PNO_SUPPORT
-	int pno_enable;                 /* pno status : "1" is pno enable */
-	int pno_suspend;		/* pno suspend status : "1" is pno suspended */
-#endif /* PNO_SUPPORT */
 	/* DTIM skip value, default 0(or 1) means wake each DTIM
 	 * 3 means skip 2 DTIMs and wake up 3rd DTIM(9th beacon when AP DTIM is 3)
 	 */
@@ -324,6 +320,9 @@ typedef struct dhd_pub {
 	/* platform specific function for wlfc_enable and wlfc_deinit */
 	void (*plat_enable)(void *dhd);
 	void (*plat_deinit)(void *dhd);
+#endif
+#ifdef PNO_SUPPORT
+	void *pno_state;
 #endif
 #ifdef ROAM_AP_ENV_DETECTION
 	bool	roam_env_detection;
@@ -634,23 +633,6 @@ extern void dhd_set_version_info(dhd_pub_t *pub, char *fw);
 extern int dhd_keep_alive_onoff(dhd_pub_t *dhd);
 #endif /* KEEP_ALIVE */
 
-#ifdef PNO_SUPPORT
-extern int dhd_pno_enable(dhd_pub_t *dhd, int pfn_enabled);
-extern int dhd_pnoenable(dhd_pub_t *dhd, int pfn_enabled);
-extern int dhd_pno_clean(dhd_pub_t *dhd);
-extern int dhd_pno_set(dhd_pub_t *dhd, wlc_ssid_t* ssids_local, int nssid,
-                       ushort  scan_fr, int pno_repeat, int pno_freq_expo_max);
-extern int dhd_pno_get_status(dhd_pub_t *dhd);
-extern int dhd_dev_pno_reset(struct net_device *dev);
-extern int dhd_dev_pno_set(struct net_device *dev, wlc_ssid_t* ssids_local,
-                           int nssid, ushort  scan_fr, int pno_repeat, int pno_freq_expo_max);
-extern int dhd_dev_pno_enable(struct net_device *dev,  int pfn_enabled);
-extern int dhd_dev_get_pno_status(struct net_device *dev);
-extern int dhd_pno_set_add(dhd_pub_t *dhd, wl_pfn_t *netinfo, int nssid,
-	ushort scan_fr, ushort slowscan_fr, uint8 pno_repeat, uint8 pno_freq_expo_max, int16 flags);
-extern int dhd_pno_cfg(dhd_pub_t *dhd, wl_pfn_cfg_t *pcfg);
-extern int dhd_pno_suspend(dhd_pub_t *dhd, int pfn_suspend);
-#endif /* PNO_SUPPORT */
 
 #ifdef PKT_FILTER_SUPPORT
 #define DHD_UNICAST_FILTER_NUM		0
@@ -659,7 +641,7 @@ extern int dhd_pno_suspend(dhd_pub_t *dhd, int pfn_suspend);
 #define DHD_MULTICAST6_FILTER_NUM	3
 #define DHD_MDNS_FILTER_NUM		4
 #define DHD_ARP_FILTER_NUM		5
-extern int dhd_os_enable_packet_filter(dhd_pub_t *dhdp, int val);
+extern int 	dhd_os_enable_packet_filter(dhd_pub_t *dhdp, int val);
 extern void dhd_enable_packet_filter(int value, dhd_pub_t *dhd);
 extern int net_os_enable_packet_filter(struct net_device *dev, int val);
 extern int net_os_rxfilter_add_remove(struct net_device *dev, int val, int num);
@@ -735,7 +717,7 @@ extern int dhd_keep_alive_onoff(dhd_pub_t *dhd);
 #endif /* KEEP_ALIVE */
 
 extern bool dhd_is_concurrent_mode(dhd_pub_t *dhd);
-
+extern int dhd_iovar(dhd_pub_t *pub, int ifidx, char *name, char *cmd_buf, uint cmd_len, int set);
 typedef enum cust_gpio_modes {
 	WLAN_RESET_ON,
 	WLAN_RESET_OFF,
@@ -889,8 +871,10 @@ extern uint dhd_pktgen_len;
 
 /* optionally set by a module_param_string() */
 #define MOD_PARAM_PATHLEN	2048
+#ifdef WRITE_WLANINFO
 extern char fw_path[MOD_PARAM_PATHLEN];
 extern char nv_path[MOD_PARAM_PATHLEN];
+#endif
 
 #define MOD_PARAM_INFOLEN	512
 #ifdef SOFTAP
@@ -1070,18 +1054,6 @@ extern void dhd_wait_event_wakeup(dhd_pub_t*dhd);
 #define IFUNLOCK(lock)  InterlockedExchange((lock), 0)
 #define IFLOCK_FREE(lock)
 #define FW_SUPPORTED(dhd, capa) ((strstr(dhd->fw_capabilities, #capa) != NULL))
-#ifdef PNO_SUPPORT
-extern int dhd_pno_enable(dhd_pub_t *dhd, int pfn_enabled);
-extern int dhd_pnoenable(dhd_pub_t *dhd, int pfn_enabled);
-extern int dhd_pno_clean(dhd_pub_t *dhd);
-extern int dhd_pno_set(dhd_pub_t *dhd, wlc_ssid_t* ssids_local, int nssid,
-                       ushort  scan_fr, int pno_repeat, int pno_freq_expo_max);
-extern int dhd_pno_get_status(dhd_pub_t *dhd);
-extern int dhd_pno_set_add(dhd_pub_t *dhd, wl_pfn_t *netinfo, int nssid, ushort scan_fr,
-	ushort slowscan_fr, uint8 pno_repeat, uint8 pno_freq_expo_max, int16 flags);
-extern int dhd_pno_cfg(dhd_pub_t *dhd, wl_pfn_cfg_t *pcfg);
-extern int dhd_pno_suspend(dhd_pub_t *dhd, int pfn_suspend);
-#endif /* PNO_SUPPORT */
 #ifdef ARP_OFFLOAD_SUPPORT
 #define MAX_IPV4_ENTRIES	8
 void dhd_arp_offload_set(dhd_pub_t * dhd, int arp_mode);

@@ -31,8 +31,9 @@ struct max77803_haptic_data {
 	struct max77803_haptic_platform_data *pdata;
 
 	struct pwm_device *pwm;
+#if !defined(CONFIG_V2A)
 	struct regulator *regulator;
-
+#endif
 	struct timed_output_dev tout_dev;
 	struct hrtimer timer;
 	unsigned int timeout;
@@ -158,22 +159,22 @@ static void haptic_work(struct work_struct *work)
 		pwm_config(hap_data->pwm, hap_data->pdata->duty,
 			   hap_data->pdata->period);
 		pwm_enable(hap_data->pwm);
-
+#if !defined(CONFIG_V2A)
 		if (hap_data->pdata->motor_en)
 			hap_data->pdata->motor_en(true);
 		else
 			regulator_enable(hap_data->regulator);
-
+#endif
 		hap_data->running = true;
 	} else {
 		if (!hap_data->running)
 			return;
-
+#if !defined(CONFIG_V2A)
 		if (hap_data->pdata->motor_en)
 			hap_data->pdata->motor_en(false);
 		else
 			regulator_disable(hap_data->regulator);
-
+#endif
 		pwm_disable(hap_data->pwm);
 
 		max77803_haptic_i2c(hap_data, false);
@@ -203,24 +204,24 @@ void vibtonz_en(bool en)
 			pwm_config(g_hap_data->pwm, g_hap_data->pdata->period/2, g_hap_data->pdata->period);
 			g_hap_data->resumed = false;
 		}
-		
-		pwm_enable(g_hap_data->pwm);
 
+		pwm_enable(g_hap_data->pwm);
+#if !defined(CONFIG_V2A)
 		if (g_hap_data->pdata->motor_en)
 			g_hap_data->pdata->motor_en(true);
 		else
 			regulator_enable(g_hap_data->regulator);
-
+#endif
 		g_hap_data->running = true;
 	} else {
 		if (!g_hap_data->running)
 			return;
-
+#if !defined(CONFIG_V2A)
 		if (g_hap_data->pdata->motor_en)
 			g_hap_data->pdata->motor_en(false);
 		else
 			regulator_disable(g_hap_data->regulator);
-
+#endif
 		pwm_disable(g_hap_data->pwm);
 
 		max77803_haptic_i2c(g_hap_data, false);
@@ -298,7 +299,7 @@ static int max77803_haptic_probe(struct platform_device *pdev)
 	pwm_config(hap_data->pwm, pdata->period / 2, pdata->period);
 
 	vibetonz_clk_on(&pdev->dev, true);
-
+#if !defined(CONFIG_V2A)
 	if (pdata->init_hw)
 		pdata->init_hw();
 	else
@@ -310,7 +311,7 @@ static int max77803_haptic_probe(struct platform_device *pdev)
 		error = -EFAULT;
 		goto err_regulator_get;
 	}
-
+#endif
 	/* hrtimer init */
 	hrtimer_init(&hap_data->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	hap_data->timer.function = haptic_timer_func;
@@ -336,7 +337,9 @@ static int max77803_haptic_probe(struct platform_device *pdev)
 	return error;
 
 err_timed_output_register:
+#if !defined(CONFIG_V2A)
 	regulator_put(hap_data->regulator);
+#endif
 err_regulator_get:
 	pwm_free(hap_data->pwm);
 err_pwm_request:
@@ -351,7 +354,10 @@ static int __devexit max77803_haptic_remove(struct platform_device *pdev)
 #ifdef CONFIG_ANDROID_TIMED_OUTPUT
 	timed_output_dev_unregister(&data->tout_dev);
 #endif
+
+#if !defined(CONFIG_V2A)
 	regulator_put(data->regulator);
+#endif
 	pwm_free(data->pwm);
 	destroy_workqueue(data->workqueue);
 	kfree(data);

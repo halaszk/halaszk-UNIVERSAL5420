@@ -37,6 +37,10 @@
 #include <mach/asv-exynos.h>
 #include <plat/cpu.h>
 
+#if defined(CONFIG_RTC_DRV_MAX77802)
+extern bool pmic_is_jig_attached;
+#endif
+
 struct lpj_info {
 	unsigned long   ref;
 	unsigned int    freq;
@@ -66,7 +70,7 @@ static unsigned long lpj[CA_END];
 #define DOWN_STEP_NEW		700000
 #define UP_STEP_OLD		650000
 #define UP_STEP_NEW		700000
-#define STEP_LEVEL_CA7_MAX	700000
+#define STEP_LEVEL_CA7_MAX	750000
 #define STEP_LEVEL_CA15_MIN	800000
 
 #define LIMIT_COLD_VOLTAGE	1250000
@@ -564,6 +568,9 @@ static int exynos_target(struct cpufreq_policy *policy,
 	bool user = false, later = false, limit_eagle = false;
 	int cpu, delta;
 	unsigned int min_cpu = 0, min_freq = UINT_MAX;
+#ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
+	unsigned int skew_freq = 0;
+#endif
 
 	mutex_lock(&cpufreq_lock);
 
@@ -912,7 +919,8 @@ static struct cpufreq_driver exynos_driver = {
 static ssize_t show_freq_table(struct kobject *kobj,
 			     struct attribute *attr, char *buf)
 {
-	int cluster_id, i;
+	int cluster_id, i, count = 0;
+	size_t tbl_sz = 0, pr_len;
 	unsigned int total_sz = 0, size[CA_END];
 	struct cpufreq_frequency_table *freq_table;
 
@@ -921,6 +929,10 @@ static ssize_t show_freq_table(struct kobject *kobj,
 		   exynos_info[cluster_id]->freq_table, cluster_id);
 		total_sz += size[cluster_id];
 	}
+
+	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++)
+		tbl_sz++;
+	pr_len = (size_t)((PAGE_SIZE - 2) / tbl_sz);
 
 	freq_table = kzalloc(sizeof(struct cpufreq_frequency_table) *
 						(total_sz + 1), GFP_KERNEL);
@@ -942,9 +954,16 @@ static ssize_t show_freq_table(struct kobject *kobj,
 	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		pr_debug("merged_table index: %d freq: %d\n", i,
 						merge_freq_table[i].frequency);
+	if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID && 
+			merge_freq_table[i].frequency <= 1900000 &&
+			merge_freq_table[i].frequency >= 250000)
+			count += snprintf(&buf[count], pr_len, "%d ",
+				merge_freq_table[i].frequency);
+
 	}
 
-	return 0;
+        count += snprintf(&buf[count], 2, "\n");
+        return count;
 }
 
 static ssize_t show_min_freq(struct kobject *kobj,
@@ -1337,10 +1356,52 @@ static struct notifier_block __cpuinitdata exynos_hotplug_cpu_notifier = {
 	.notifier_call = exynos_hotplug_cpu_handler,
 };
 
+struct freq_qos_val {
+	s32 min_freq;
+	s32 max_freq;
+	unsigned long min_timeout_us;
+	unsigned long max_timeout_us;
+};
+
+static void get_boot_freq_qos(struct freq_qos_val *boot_freq_qos)
+{
+#if defined(CONFIG_RTC_DRV_MAX77802)
+	if (pmic_is_jig_attached) {
+		boot_freq_qos->min_freq = 1000000;
+		boot_freq_qos->min_timeout_us = 360000 * 1000;
+		boot_freq_qos->max_freq = 1000000;
+		boot_freq_qos->max_timeout_us = 360000 * 1000;
+	} else {
+		boot_freq_qos->min_freq = 1500000;
+		boot_freq_qos->min_timeout_us = 40000 * 1000;
+		boot_freq_qos->max_freq = 1500000;
+		boot_freq_qos->max_timeout_us = 40000 * 1000;
+	}
+#else
+#if defined(CONFIG_SEC_FACTORY)
+	boot_freq_qos->min_freq = 1000000;
+	boot_freq_qos->min_timeout_us = 360000 * 1000;
+	boot_freq_qos->max_freq = 1000000;
+	boot_freq_qos->max_timeout_us = 360000 * 1000;
+#else
+#if defined(CONFIG_CHAGALL)
+	boot_freq_qos->min_freq = 1200000;
+	boot_freq_qos->max_freq = 1200000;
+#else
+	boot_freq_qos->min_freq = 1700000;
+	boot_freq_qos->max_freq = 1700000;
+#endif
+	boot_freq_qos->min_timeout_us = 40000 * 1000;
+	boot_freq_qos->max_timeout_us = 40000 * 1000;
+#endif
+#endif
+}
+
 static int __init exynos_cpufreq_init(void)
 {
 	int ret = -EINVAL;
 	int cpu;
+	struct freq_qos_val boot_freq_qos;
 
 	boot_cluster = 0;
 
@@ -1474,15 +1535,29 @@ static int __init exynos_cpufreq_init(void)
 	pm_qos_add_request(&min_int_qos, PM_QOS_DEVICE_THROUGHPUT, 0);
 #endif
 
-	pm_qos_add_request(&boot_cpu_qos, PM_QOS_CPU_FREQ_MIN, 0);
-	pm_qos_update_request_timeout(&boot_cpu_qos, 1200000, 60000 * 1000);
+
+	get_boot_freq_qos(&boot_freq_qos);
+	pm_qos_add_request(&boot_max_cpu_qos, PM_QOS_CPU_FREQ_MAX, freq_max[CA15]);
+	pm_qos_add_request(&boot_min_cpu_qos, PM_QOS_CPU_FREQ_MIN, 0);
+
+#if defined(CONFIG_CHAGALL)
+	pm_qos_update_request(&boot_max_cpu_qos, boot_freq_qos.max_freq);
+	pm_qos_update_request(&boot_min_cpu_qos, boot_freq_qos.min_freq);
+#else
+	pm_qos_update_request_timeout(&boot_max_cpu_qos, boot_freq_qos.max_freq,
+			boot_freq_qos.max_timeout_us);
+	pm_qos_update_request_timeout(&boot_min_cpu_qos, boot_freq_qos.min_freq,
+			boot_freq_qos.min_timeout_us);
+#endif
 
 	exynos_cpufreq_init_done = true;
+
+	INIT_WORK(&blank_qos_change, change_blank_cpu_qos);
+	fb_register_client(&fb_block);
 
 #ifdef CONFIG_EXYNOS5_DYNAMIC_CPU_HOTPLUG
 	dm_cpu_hotplug_init();
 #endif
-
 	return 0;
 
 err_cpufreq:
