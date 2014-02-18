@@ -1,5 +1,16 @@
 #!/bin/bash
 
+TARGET=$1
+if [ "$TARGET" != "" ]; then
+	echo "starting your build for $TARGET"
+else
+	echo ""
+	echo "you need to define your device target!"
+	echo "example: build_kernel.sh cluster"
+	exit 1
+fi
+
+if [ "$TARGET" = "cluster" ] ; then
 # location
 export KERNELDIR=`readlink -f .`
 export PARENT_DIR=`readlink -f ..`
@@ -8,8 +19,18 @@ export INITRAMFS_SOURCE=`readlink -f $KERNELDIR/../initramfs`
 # kernel
 export ARCH=arm
 export USE_SEC_FIPS_MODE=true
-export KERNEL_CONFIG="halaszk_defconfig"
+export KERNEL_CONFIG="halaszk_defconfig_N900"
+elif [ "$TARGET" = "core" ] ; then
+# location
+export KERNELDIR=`readlink -f .`
+export PARENT_DIR=`readlink -f ..`
+export INITRAMFS_SOURCE=`readlink -f $KERNELDIR/../initramfs_core`
 
+# kernel
+export ARCH=arm
+export USE_SEC_FIPS_MODE=true
+export KERNEL_CONFIG="halaszk_defconfig_N900_CORE"
+fi
 # build script
 export USER=`whoami`
 # gcc 4.7.3 (Linaro 13.02)
@@ -94,12 +115,12 @@ ${CROSS_COMPILE}strip --strip-debug $INITRAMFS_TMP/lib/modules/*.ko
 chmod 755 $INITRAMFS_TMP/lib/modules/*
 ${CROSS_COMPILE}strip --strip-unneeded $INITRAMFS_TMP/lib/modules/*
 rm -f ${INITRAMFS_TMP}/update*;
-read -t 5 -p "create new kernel Image LOGO with version & date, 5sec timeout (y/n)?";
-if [ "$REPLY" == "y" ]; then
+#read -t 5 -p "create new kernel Image LOGO with version & date, 5sec timeout (y/n)?";
+#if [ "$REPLY" == "y" ]; then
 # create new image with version & date
-convert -ordered-dither threshold,32,64,32 -pointsize 17 -fill white -draw "text 230,1080 \"${GETVER} [$(date "+%H:%M | %d.%m.%Y"| sed -e ' s/\"/\\\"/g' )]\"" ${INITRAMFS_TMP}/res/images/icon_clockwork.png ${INITRAMFS_TMP}/res/images/icon_clockwork.png;
-optipng -o7 ${INITRAMFS_TMP}/res/images/icon_clockwork.png;
-fi;
+#convert -ordered-dither threshold,32,64,32 -pointsize 17 -fill white -draw "text 230,1080 \"${GETVER} [$(date "+%H:%M | %d.%m.%Y"| sed -e ' s/\"/\\\"/g' )]\"" ${INITRAMFS_TMP}/res/images/icon_clockwork.png ${INITRAMFS_TMP}/res/images/icon_clockwork.png;
+#optipng -o7 ${INITRAMFS_TMP}/res/images/icon_clockwork.png;
+#fi;
 
 cd $INITRAMFS_TMP
 find | fakeroot cpio -H newc -o > $INITRAMFS_TMP.cpio 2>/dev/null
@@ -117,7 +138,7 @@ ${KERNELDIR}/mkshbootimg.py ${KERNELDIR}/boot.img ${KERNELDIR}/boot.img.pre ${KE
 rm -f ${KERNELDIR}/boot.img.pre
 
 	# copy all needed to ready kernel folder.
-cp ${KERNELDIR}/.config ${KERNELDIR}/arch/arm/configs/${KERNEL_CONFIG}_N900
+cp ${KERNELDIR}/.config ${KERNELDIR}/arch/arm/configs/${KERNEL_CONFIG}
 cp ${KERNELDIR}/.config ${KERNELDIR}/READY/
 rm ${KERNELDIR}/READY/boot/zImage
 rm ${KERNELDIR}/READY/Kernel_*
