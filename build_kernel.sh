@@ -10,25 +10,20 @@ else
 	exit 1
 fi
 
-if [ "$TARGET" = "cluster" ] ; then
 # location
 export KERNELDIR=`readlink -f .`
 export PARENT_DIR=`readlink -f ..`
+if [ "$TARGET" = "cluster" ] ; then
 export INITRAMFS_SOURCE=`readlink -f $KERNELDIR/../initramfs`
-
+elif [ "$TARGET" = "core" ] ; then
+export INITRAMFS_SOURCE=`readlink -f $KERNELDIR/../initramfs_core`
+fi
 # kernel
 export ARCH=arm
 export USE_SEC_FIPS_MODE=true
+if [ "$TARGET" = "cluster" ] ; then
 export KERNEL_CONFIG="halaszk_defconfig_N900"
 elif [ "$TARGET" = "core" ] ; then
-# location
-export KERNELDIR=`readlink -f .`
-export PARENT_DIR=`readlink -f ..`
-export INITRAMFS_SOURCE=`readlink -f $KERNELDIR/../initramfs_core`
-
-# kernel
-export ARCH=arm
-export USE_SEC_FIPS_MODE=true
 export KERNEL_CONFIG="halaszk_defconfig_N900_CORE"
 fi
 # build script
@@ -37,9 +32,9 @@ export USER=`whoami`
 #export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.6/bin/arm-eabi-
 #export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.8.x/bin/arm-eabi-;
 export CROSS_COMPILE=/home/dev/KERNEL/arm-eabi-4.7.2/bin/arm-eabi-;
-if [ "${1}" != "" ];then
-export KERNELDIR=`readlink -f ${1}`
-fi
+#if [ "${1}" != "" ];then
+#export KERNELDIR=`readlink -f ${1}`
+#fi
 
 # Importing PATCH for GCC depend on GCC version.
 GCCVERSION_OLD=`${CROSS_COMPILE}gcc --version | cut -d " " -f3 | cut -c3-5 | grep -iv "09" | grep -iv "ee" | grep -iv "en"`

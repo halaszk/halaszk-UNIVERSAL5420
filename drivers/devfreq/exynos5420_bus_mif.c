@@ -946,6 +946,7 @@ static ssize_t show_volt_table(struct device *device,
 {	
 	struct device_opp *dev_opp = ERR_PTR(-ENODEV);
 	struct opp *temp_opp;
+	struct device *mif_dev = device->parent;
 	int len = 0;
 
 	dev_opp = find_device_opp(mif_dev);
@@ -964,6 +965,7 @@ static ssize_t store_volt_table(struct device *device,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
+        struct device *mif_dev = device->parent;
 	struct device_opp *dev_opp = find_device_opp(mif_dev);
 	struct opp *temp_opp;
 	int u[LV_END];
