@@ -38,10 +38,6 @@
 
 #include "noc_probe.h"
 #include <mach/sec_debug.h>
-#include <linux/sysfs_helpers.h>
-#ifdef CONFIG_EXYNOS5_CPUFREQ
-#include <mach/cpufreq.h>
-#endif
 
 #define SET_DREX_TIMING
 
@@ -747,31 +743,6 @@ static int exynos5420_mif_table(struct busfreq_data_mif *data)
 
 	return 0;
 }
-
-ssize_t hlpr_get_mif_volt_table(char *buf)
-{
-       unsigned int i, len = 0;
-
-        for (i = 0; i < LV_END; i++) {
-               len += sprintf(buf + len, "%ld %ld\n", mif_bus_opp_list[i].clk, mif_bus_opp_list[i].volt);
-       }
-
-       return len;
-}
-
-void hlpr_set_mif_volt_table(int mif_table[])
-{
-        unsigned int i;
-        int u = 0;
-
-        for (i = 0; i < LV_END; i++)
-        {
-                mif_bus_opp_list[i].volt = mif_table[u];
-                pr_alert("SET MIF VOLTAGE TABLE %d - %lu - %lu", i, mif_bus_opp_list[i].clk, mif_bus_opp_list[i].volt);
-                u++;
-	}
-}
-
 
 struct nocp_info nocp_mem0_0 = {
 	.name		= "mem0_0",

@@ -33,10 +33,6 @@
 
 #include "exynos5420_ppmu.h"
 #include <mach/sec_debug.h>
-#include <linux/sysfs_helpers.h>
-#ifdef CONFIG_EXYNOS5_CPUFREQ
-#include <mach/cpufreq.h>
-#endif
 
 #define INT_VOLT_STEP		12500
 #define COLD_VOLT_OFFSET	37500
@@ -874,30 +870,6 @@ static int exynos5420_init_int_table(struct busfreq_data_int *data)
 	}
 
 	return 0;
-}
-
-ssize_t hlpr_get_int_volt_table(char *buf)
-{
-       unsigned int i, len = 0;
-
-        for (i = 0; i < LV_END; i++) {
-               len += sprintf(buf + len, "%ld %ld\n", int_bus_opp_list[i].freq, int_bus_opp_list[i].volt);
-       }
-
-       return len;
-}
-
-void hlpr_set_int_volt_table(int int_table[])
-{
-        unsigned int i;
-        int u = 0;
-
-        for (i = 0; i < LV_END; i++)
-        {
-                int_bus_opp_list[i].volt = int_table[u];
-                pr_alert("SET INT VOLTAGE TABLE %d - %lu - %lu", i, int_bus_opp_list[i].freq, int_bus_opp_list[i].volt);
-                u++;
-	}
 }
 
 static ssize_t int_show_state(struct device *dev, struct device_attribute *attr, char *buf)
