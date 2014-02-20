@@ -478,13 +478,14 @@ int kbase_platform_dvfs_enable(bool enable, int freq)
 		dvfs_status->step = kbase_platform_dvfs_get_level(freq);
 		spin_unlock_irqrestore(&mali_dvfs_spinlock, flags);
 
+#ifdef CONFIG_MALI_T6XX_FREQ_LOCK
 		if (freq == MALI_DVFS_START_FREQ) {
 			if (dvfs_status->min_lock != -1)
 				dvfs_status->step = MAX(dvfs_status->min_lock, dvfs_status->step);
 			if (dvfs_status->max_lock != -1)
 				dvfs_status->step = MIN(dvfs_status->max_lock, dvfs_status->step);
 		}
-
+#endif
 		kbase_platform_dvfs_set_level(dvfs_status->kbdev, dvfs_status->step);
 	}
 
