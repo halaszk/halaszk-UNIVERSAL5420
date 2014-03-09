@@ -2978,11 +2978,11 @@ loop_again:
 		 * OK, kswapd is getting into trouble.  Take a nap, then take
 		 * another pass across the zones.
 		 */
-		if (total_scanned && (priority < DEF_PRIORITY - 2)) {
+		if (total_scanned && (priority < DEF_PRIORITY - 8)) {
 			if (has_under_min_watermark_zone)
 				count_vm_event(KSWAPD_SKIP_CONGESTION_WAIT);
 			else
-				wait_iff_congested(unbalanced_zone, BLK_RW_ASYNC, HZ/10);
+				wait_iff_congested(unbalanced_zone, BLK_RW_ASYNC, HZ/60);
 		}
 
 		/*
