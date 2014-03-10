@@ -1158,6 +1158,8 @@ vector_addrexcptn:
  */
 vector_fiq:
 	subs	pc, lr, #4
+	.globl	vector_fiq_offset
+	.equ	vector_fiq_offset, vector_fiq
 
 	.section .vectors, "ax", %progbits
 __vectors_start:
