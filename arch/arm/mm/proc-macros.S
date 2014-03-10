@@ -304,6 +304,7 @@ ENTRY(\name\()_cache_fns)
 	.else
 	.long	\name\()_flush_kern_cache_all
 	.endif
+	.long   \name\()_flush_kern_cache_louis
 	.long	\name\()_flush_user_cache_all
 	.long	\name\()_flush_user_cache_range
 	.long	\name\()_coherent_kern_range
