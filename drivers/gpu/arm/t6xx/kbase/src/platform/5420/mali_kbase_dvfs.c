@@ -138,7 +138,7 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 
 unsigned int dvfs_step_min = 0;
 unsigned int dvfs_step_max = 10;
-unsigned int dvfs_step_max_minus1 = 667;
+unsigned int dvfs_step_max_minus1 = 480;
 unsigned int cur_gpu_freq = 0;
 
 #ifdef CONFIG_MALI_T6XX_DVFS

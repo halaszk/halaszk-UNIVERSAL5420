@@ -25,7 +25,7 @@
 #include <linux/suspend.h>
 
 #define	COLD_THRESHOLD	20
-#define NORMALMAX_FREQ	2000000
+#define NORMALMAX_FREQ	1900000
 #define NORMALMIN_FREQ	250000
 #define POLLING_MSEC	100
 

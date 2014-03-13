@@ -515,9 +515,9 @@ static int exynos5420_bus_table_CA7[CPUFREQ_LEVEL_END_CA7] = {
 	160000,	/* 700 MHz */
 	133000,	/* 600 MHz */
 	133000,	/* 500 MHz */
-	133000,	/* 400 MHz */
-	133000,	/* 300 MHz */
-	133000,	/* 200 MHz */
+	0,	/* 400 MHz */
+	0,	/* 300 MHz */
+	0,	/* 200 MHz */
 };
 
 static int exynos5420_bus_table_CA15[CPUFREQ_LEVEL_END_CA15] = {
