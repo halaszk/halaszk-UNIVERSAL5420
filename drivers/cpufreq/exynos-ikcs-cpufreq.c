@@ -276,9 +276,7 @@ static int cpufreq_merge_tables(void)
 			size[CA7] * sizeof(struct cpufreq_frequency_table));
 
 	for (i = size[CA15]; i <= total_sz ; i++) {
-		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID &&
-			merge_freq_table[i].frequency <= 1900000 &&
-			merge_freq_table[i].frequency >= 250000)
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID) 
 			merge_freq_table[i].frequency >>= 1;
 	}
 
@@ -898,7 +896,9 @@ static ssize_t show_freq_table(struct kobject *kobj,
 	pr_len = (size_t)((PAGE_SIZE - 2) / tbl_sz);
 
 	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID &&
+                        merge_freq_table[i].frequency <= 1900000 &&
+                        merge_freq_table[i].frequency >= 250000)
 			count += snprintf(&buf[count], pr_len, "%d ",
 				merge_freq_table[i].frequency);
         }
