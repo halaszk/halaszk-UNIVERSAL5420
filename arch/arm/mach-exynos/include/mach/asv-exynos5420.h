@@ -27,7 +27,7 @@
 #define MIF_DVFS_LEVEL_NR		(9)
 #define MIF_ASV_GRP_NR			(15)
 #define MIF_MAX_VOLT			(1025000)
-#define KFC_DVFS_LEVEL_NR		(14)
+#define KFC_DVFS_LEVEL_NR		(13)
 #define KFC_ASV_GRP_NR			(15)
 #define KFC_MAX_VOLT			(1312500)
 
