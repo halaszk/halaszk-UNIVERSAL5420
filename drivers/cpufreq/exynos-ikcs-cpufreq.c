@@ -70,7 +70,7 @@ static unsigned int freq_max[CA_END] __read_mostly;	/* Maximum (Big/Little) cloc
 #ifdef CONFIG_ARM_EXYNOS5420_CPUFREQ
 #define STEP_LEVEL_CA7_MAX	650000
 #define COLD_VOLT_OFFSET	37500
-#define ENABLE_MIN_COLD		1
+#define ENABLE_MIN_COLD		0
 #else
 #define STEP_LEVEL_CA7_MAX	600000
 #define COLD_VOLT_OFFSET	75000
