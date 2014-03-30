@@ -158,6 +158,10 @@ rm ${KERNELDIR}/READY/.config
         else
                 read -p "push kernel to ftp (y/n)?"
                 if [ "$REPLY" == "y" ]; then
+		read -p "push kernel verion update to ftp and synapse (y/n)?"
+		if [ "$REPLY" == "y" ]; then
+		echo "${GETVER}" > ${KERNELDIR}/N900/latest_version.txt;
+		fi;
 			echo "Uploading kernel to FTP server";
 			mv ${KERNELDIR}/READY/Kernel_* ${KERNELDIR}/N900/
 			ncftpput -f /home/dev/login.cfg -V -R / ${KERNELDIR}/N900/
