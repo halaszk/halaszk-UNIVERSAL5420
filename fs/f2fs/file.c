@@ -378,11 +378,11 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
 	err = inode_change_ok(inode, attr);
 	if (err)
 		return err;
-
+#ifdef CONFIG_F2FS_ANDROID_EMULATION_SUPPORT
 	if (IS_ANDROID_EMU(sbi, fi, pfi))
 		f2fs_android_emu(sbi, inode, &attr->ia_uid, &attr->ia_gid,
 				 &attr->ia_mode);
-
+#endif
 	if ((attr->ia_valid & ATTR_SIZE) &&
 			attr->ia_size != i_size_read(inode)) {
 		err = f2fs_convert_inline_data(inode, attr->ia_size);

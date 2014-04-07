@@ -257,8 +257,11 @@ int f2fs_init_acl(struct inode *inode, struct inode *dir, struct page *ipage)
 			if (IS_ERR(acl))
 				return PTR_ERR(acl);
 		}
+#ifdef CONFIG_F2FS_ANDROID_EMULATION_SUPPORT
 		if (!acl && !(test_opt(sbi, ANDROID_EMU) &&
 				F2FS_I(inode)->i_advise & FADVISE_ANDROID_EMU))
+#else
+		if (!acl)
 			inode->i_mode &= ~current_umask();
 	}
 
@@ -304,7 +307,7 @@ int f2fs_acl_chmod(struct inode *inode)
 	posix_acl_release(acl);
 	return error;
 }
-
+#ifdef CONFIG_F2FS_ANDROID_EMULATION_SUPPORT
 int f2fs_android_emu(struct f2fs_sb_info *sbi, struct inode *inode,
 		u32 *uid, u32 *gid, umode_t *mode)
 {
@@ -330,7 +333,7 @@ int f2fs_android_emu(struct f2fs_sb_info *sbi, struct inode *inode,
 
 	return 0;
 }
-
+#endif
 static size_t f2fs_xattr_list_acl(struct dentry *dentry, char *list,
 		size_t list_size, const char *name, size_t name_len, int type)
 {
