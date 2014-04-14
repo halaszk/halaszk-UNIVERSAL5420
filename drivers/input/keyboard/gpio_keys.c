@@ -483,6 +483,8 @@ static struct attribute_group sec_key_attr_group = {
 	.attrs = sec_key_attrs,
 };
 
+uint cover_pm = 0;
+
 #ifdef KEY_BOOSTER
 
 #define set_qos(req, pm_qos_class, value) { \
@@ -915,7 +917,7 @@ static void flip_cover_work(struct work_struct *work)
 		input_report_switch(ddata->input,
 			SW_FLIP, ddata->flip_cover);
 		input_sync(ddata->input);
-	if (ddata->flip_cover == 0) {
+	if (ddata->flip_cover == 0 && cover_pm == 1) {
 		pr_info("%s: flip cover closed. Going to sleep ...\n", __func__);
 	        input_event(powerkey_device, EV_KEY, KEY_POWER, 1);
 	        input_event(powerkey_device, EV_SYN, 0, 0);
@@ -924,7 +926,7 @@ static void flip_cover_work(struct work_struct *work)
 	        input_event(powerkey_device, EV_KEY, KEY_POWER, 0);
 	        input_event(powerkey_device, EV_SYN, 0, 0);
 	}
-	if (ddata->flip_cover == 1) {
+	if (ddata->flip_cover == 1 && cover_pm == 1) {
 		pr_info("%s: flip cover opened. Waking up ...\n", __func__);
 	        input_event(powerkey_device, EV_KEY, KEY_POWER, 1);
 	        input_event(powerkey_device, EV_SYN, 0, 0);
