@@ -1064,7 +1064,7 @@ extern const struct sched_class idle_sched_class;
 
 #ifdef CONFIG_SMP
 
-extern void trigger_load_balance(struct rq *rq, int cpu);
+extern void trigger_load_balance(struct rq *rq);
 extern void idle_balance(int this_cpu, struct rq *this_rq);
 
 #else	/* CONFIG_SMP */
