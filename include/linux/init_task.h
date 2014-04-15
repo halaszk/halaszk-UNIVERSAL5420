@@ -12,6 +12,7 @@
 #include <linux/securebits.h>
 #include <linux/rbtree.h>
 #include <net/net_namespace.h>
+#include <linux/sched/sysctl.h>
 
 #ifdef CONFIG_SMP
 # define INIT_PUSHABLE_TASKS(tsk)					\
