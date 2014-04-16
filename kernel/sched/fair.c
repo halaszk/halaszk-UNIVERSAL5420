@@ -4529,9 +4529,7 @@ redo:
 		env.load_move	= imbalance;
 		env.src_cpu	= busiest->cpu;
 		env.src_rq	= busiest;
-		env.loop_max  = min_t(unsigned long, sysctl_sched_nr_migrate,
-					busiest->cfs.h_nr_running);
-
+		env.loop_max  = min(sysctl_sched_nr_migrate, busiest->nr_running);
 more_balance:
 		local_irq_save(flags);
 		double_rq_lock(this_rq, busiest);
