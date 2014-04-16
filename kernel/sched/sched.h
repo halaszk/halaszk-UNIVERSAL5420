@@ -994,6 +994,16 @@ enum cpuacct_stat_index {
 	CPUACCT_STAT_NSTATS,
 };
 
+/*
+
+ * wake flags
+
+ */
+
+#define WF_SYNC		0x01		/* waker goes to sleep after wakup */
+#define WF_FORK		0x02		/* child wakeup after fork */
+#define WF_MIGRATED	0x04		/* internal use, task got migrated */
+
 #define ENQUEUE_WAKEUP		1
 #define ENQUEUE_HEAD		2
 #ifdef CONFIG_SMP

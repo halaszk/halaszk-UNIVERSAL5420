@@ -3725,7 +3725,7 @@ unsigned long scale_rt_power(int cpu)
 	struct rq *rq = cpu_rq(cpu);
 	u64 total, available;
 
-	total = sched_avg_period() + (rq->clock(rq) - rq->age_stamp);
+	total = sched_avg_period() + (rq->clock - rq->age_stamp);
 
 	if (unlikely(total < rq->rt_avg)) {
 		/* Ensures that power won't end up being negative */
@@ -5024,7 +5024,7 @@ void update_max_interval(void)
 static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 {
 	int balance = 1;
-	struct rq *rq = cpu_rq(cpu);
+	int cpu = rq->cpu;
 	unsigned long interval;
 	struct sched_domain *sd;
 	/* Earliest time when we have to do rebalance again */
