@@ -4486,7 +4486,7 @@ static ssize_t show_slab_objects(struct kmem_cache *s,
 {
 	unsigned long total = 0;
 	int node;
-	int x = 0;
+	int x;
 	unsigned long *nodes;
 	unsigned long *per_cpu;
 
