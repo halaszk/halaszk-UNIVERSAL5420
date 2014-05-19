@@ -75,10 +75,10 @@
 
 #if defined(CONFIG_EXYNOS_THERMAL)
 #include <mach/tmu.h>
-#define GPU_MAX_CLK 733
-#define GPU_THROTTLING_90_95 733
-#define GPU_THROTTLING_95_100 667
-#define GPU_THROTTLING_100_105 600
+#define GPU_MAX_CLK 800
+#define GPU_THROTTLING_90_95 800
+#define GPU_THROTTLING_95_100 733
+#define GPU_THROTTLING_100_105 666
 #define GPU_THROTTLING_105_110 266
 #define GPU_TRIPPING_110 177
 #endif
@@ -129,15 +129,16 @@ static mali_dvfs_info mali_dvfs_infotbl[] = {
 	{962500, 420, 71, 80, 0, 733000, 400000, 650000},
 	{1000000, 480, 81, 85, 0, 733000, 400000, 650000},
 	{1037500, 533, 86, 90, 0, 733000, 400000, 650000},
-	{1050000, 600, 91, 93, 0, 800000, 600000, 1200000},
-        {1075000, 667, 94, 96, 0, 800000, 600000, 1300000},
-        {1100000, 733, 97, 99, 0, 933000, 600000, 1400000},
+	{1050000, 600, 91, 92, 0, 800000, 600000, 1200000},
+        {1075000, 666, 93, 94, 0, 800000, 600000, 1300000},
+        {1100000, 733, 95, 96, 0, 933000, 600000, 1400000},
+        {1100000, 800, 97, 99, 0, 933000, 600000, 1600000},
 };
 
 #define MALI_DVFS_STEP	ARRAY_SIZE(mali_dvfs_infotbl)
 
 unsigned int dvfs_step_min = 0;
-unsigned int dvfs_step_max = 10;
+unsigned int dvfs_step_max = 11;
 unsigned int dvfs_step_max_minus1 = 480;
 unsigned int cur_gpu_freq = 0;
 
@@ -168,7 +169,7 @@ static void update_time_in_state(int level);
 /*dvfs status*/
 static mali_dvfs_status mali_dvfs_status_current;
 #ifdef MALI_DVFS_ASV_ENABLE
-static const unsigned int mali_dvfs_vol_default[] = { 812500, 812500, 862500, 912500, 962500, 1000000, 1037500, 1050000, 1075000, 1100000};
+static const unsigned int mali_dvfs_vol_default[] = { 812500, 812500, 862500, 912500, 962500, 1000000, 1037500, 1050000, 1075000, 1100000, 1100000};
 
 ssize_t hlpr_get_gpu_volt_table(char *buf)
 {
@@ -238,6 +239,7 @@ void hlpr_set_min_max_G3D(unsigned int min, unsigned int max)
 	int tbl7[8] = { 95, 90, 85, 75, 65, 55, 50, 40 };
 	int tbl8[9] = { 95, 90, 80, 70, 65, 60, 55, 50, 40 };
 	int tbl9[10] = { 95, 85, 80, 70, 65, 60, 55, 50, 45, 40 };
+        int tbl10[11] = { 95, 90, 85, 80, 70, 65, 60, 55, 50, 45, 40 };
 	
 	for (i = 0; i < MALI_DVFS_STEP; i++)
 	{
@@ -270,6 +272,8 @@ void hlpr_set_min_max_G3D(unsigned int min, unsigned int max)
 		hlpr_set_gpu_gov_table(tbl8);
 	else if (dvfs_step_max - dvfs_step_min == 10)
 		hlpr_set_gpu_gov_table(tbl9);
+        else if (dvfs_step_max - dvfs_step_min == 11)
+                hlpr_set_gpu_gov_table(tbl10);
 }
 
 static int mali_dvfs_update_asv(int cmd)
