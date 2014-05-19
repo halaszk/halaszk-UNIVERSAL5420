@@ -40,7 +40,7 @@
 #endif
 
 #ifdef CONFIG_MALI_T6XX_DVFS
-#define CONFIG_MALI_T6XX_FREQ_LOCK
+#undef CONFIG_MALI_T6XX_FREQ_LOCK
 typedef enum gpu_lock_type {
 	TMU_LOCK = 0,
 	SYSFS_LOCK,
