@@ -21,7 +21,7 @@ DHDCFLAGS += -DWL_CFG80211
 
 # Debug
 DHDCFLAGS += -DSIMPLE_MAC_PRINT
-DHDCFLAGS += -DDEBUGFS_CFG80211
+#DHDCFLAGS += -DDEBUGFS_CFG80211
 # Print out kernel panic point of file and line info when assertion happened
 DHDCFLAGS += -DBCMASSERT_LOG
 
@@ -332,7 +332,7 @@ DHDCFLAGS += -include "dhd_sec_feature.h"
 
 #EXTRA_LDFLAGS += --strip-debug
 
-EXTRA_CFLAGS += $(DHDCFLAGS) -DDHD_DEBUG
+EXTRA_CFLAGS += $(DHDCFLAGS) #-DDHD_DEBUG
 EXTRA_CFLAGS += -DSRCBASE=\"$(src)\"
 EXTRA_CFLAGS += -I$(src)/include/ -I$(src)/
 KBUILD_CFLAGS += -I$(LINUXDIR)/include -I$(shell pwd)
