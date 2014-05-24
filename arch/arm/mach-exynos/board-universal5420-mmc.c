@@ -178,15 +178,11 @@ static struct dw_mci_board universal5420_dwmci0_pdata __initdata = {
 	.ch_num			= 0,
 	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION |
 				  DW_MCI_QUIRK_HIGHSPEED |
-#if defined(CONFIG_N2A)
 				  DW_MCI_QUIRK_NO_DETECT_EBIT |
 				  DW_MMC_QUIRK_USE_FINE_TUNING,
-#else
-				  DW_MCI_QUIRK_NO_DETECT_EBIT,
-#endif
-	.bus_hz			= 666 * 1000 * 1000 / 4,
+	.bus_hz			= 666 * 1000 * 1000 / 2,
 	.caps			= MMC_CAP_CMD23 | MMC_CAP_8_BIT_DATA |
-				  MMC_CAP_UHS_DDR50 | MMC_CAP_1_8V_DDR |
+				  MMC_CAP_UHS_DDR50 | MMC_CAP_UHS_SDR104 | MMC_CAP_1_8V_DDR |
 				  MMC_CAP_ERASE | MMC_CAP_HW_RESET,
 	.caps2			= MMC_CAP2_HS200_1_8V_SDR | MMC_CAP2_HS200_1_8V_DDR |
 				  MMC_CAP2_CACHE_CTRL | MMC_CAP2_BROKEN_VOLTAGE |
@@ -579,8 +575,8 @@ static void exynos_dwmci2_exit(u32 slot_id)
 static struct dw_mci_board universal5420_dwmci2_pdata __initdata = {
 	.num_slots		= 1,
 	.ch_num			= 2,
-	.quirks			= DW_MCI_QUIRK_HIGHSPEED | DW_MMC_QUIRK_NO_VOLSW_INT,
-	.bus_hz			= 666 * 1000 * 1000 / 4,
+	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION | DW_MCI_QUIRK_HIGHSPEED,
+	.bus_hz			= 666 * 1000 * 1000 / 2,
 	.caps			= MMC_CAP_CMD23 |
 				  MMC_CAP_4_BIT_DATA |
 				  MMC_CAP_SD_HIGHSPEED |
@@ -588,8 +584,10 @@ static struct dw_mci_board universal5420_dwmci2_pdata __initdata = {
 #if defined(CONFIG_N1A) || defined(CONFIG_N2A)
 				  MMC_CAP_UHS_SDR50,
 #else
+				  MMC_CAP_UHS_SDR25 |
 				  MMC_CAP_UHS_SDR50 |
-				  MMC_CAP_UHS_SDR104,
+				  MMC_CAP_UHS_SDR104 |
+				  MMC_CAP_ERASE,
 #endif
 	.fifo_depth		= 0x40,
 	.detect_delay_ms	= 200,
