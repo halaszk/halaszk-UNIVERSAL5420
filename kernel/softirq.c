@@ -337,7 +337,7 @@ void irq_exit(void)
 #endif
 	account_system_vtime(current);
 	trace_hardirq_exit();
-	sub_preempt_count(IRQ_EXIT_OFFSET);
+	sub_preempt_count(HARDIRQ_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
 
@@ -347,7 +347,6 @@ void irq_exit(void)
 		tick_nohz_irq_exit();
 #endif
 	rcu_irq_exit();
-	sched_preempt_enable_no_resched();
 #ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED
 	local_irq_restore(flags);
 #endif
