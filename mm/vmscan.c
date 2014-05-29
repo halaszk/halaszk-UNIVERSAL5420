@@ -2982,7 +2982,7 @@ loop_again:
 			if (has_under_min_watermark_zone)
 				count_vm_event(KSWAPD_SKIP_CONGESTION_WAIT);
 			else
-				wait_iff_congested(unbalanced_zone, BLK_RW_ASYNC, HZ/60);
+				congestion_wait_kswapd(BLK_RW_ASYNC, HZ/60);
 		}
 
 		/*

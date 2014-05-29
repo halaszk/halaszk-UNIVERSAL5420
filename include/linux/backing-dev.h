@@ -303,6 +303,7 @@ enum {
 void clear_bdi_congested(struct backing_dev_info *bdi, int sync);
 void set_bdi_congested(struct backing_dev_info *bdi, int sync);
 long congestion_wait(int sync, long timeout);
+long congestion_wait_kswapd(int sync, long timeout);
 long wait_iff_congested(struct zone *zone, int sync, long timeout);
 
 static inline bool bdi_cap_stable_pages_required(struct backing_dev_info *bdi)
