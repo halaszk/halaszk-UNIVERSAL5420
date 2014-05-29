@@ -98,6 +98,7 @@ config HAVE_EFFICIENT_UNALIGNED_ACCESS
 
 config ARCH_USE_BUILTIN_BSWAP
        bool
+       def_bool y
        help
 	 Modern versions of GCC (since 4.4) have builtin functions
 	 for handling byte-swapping. Using these, instead of the old
