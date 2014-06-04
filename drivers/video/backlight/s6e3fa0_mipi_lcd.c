@@ -1970,7 +1970,7 @@ static int s6e3fa0_displayon(struct mipi_dsim_device *dsim)
 	s6e3fa0_power(lcd, FB_BLANK_UNBLANK);
 
 #ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_pannel_hook(POWER_SUSPEND_INACTIVE); // Yank555.lu : add hook to handle powersuspend tasks (wakeup)
+	set_power_suspend_state_panel_hook(POWER_SUSPEND_INACTIVE); // Yank555.lu : add hook to handle powersuspend tasks (wakeup)
 #endif
 
 	return 0;
@@ -1983,7 +1983,7 @@ static int s6e3fa0_suspend(struct mipi_dsim_device *dsim)
 	s6e3fa0_power(lcd, FB_BLANK_POWERDOWN);
 
 #ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_pannel_hook(POWER_SUSPEND_ACTIVE); // Yank555.lu : add hook to handle powersuspend tasks (sleep)
+	set_power_suspend_state_panel_hook(POWER_SUSPEND_ACTIVE); // Yank555.lu : add hook to handle powersuspend tasks (sleep)
 #endif
 
 	return 0;
