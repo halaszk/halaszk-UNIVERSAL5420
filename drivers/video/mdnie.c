@@ -220,6 +220,11 @@ static struct mdnie_tuning_info *mdnie_request_table(struct mdnie_info *mdnie)
 
 	mutex_lock(&mdnie->lock);
 
+	if (mdnie->negative == NEGATIVE_ON) {
+		table = &negative_table[mdnie->cabc];
+		goto exit;
+	}
+
 	if (ACCESSIBILITY_IS_VALID(mdnie->accessibility)) {
 		table = &accessibility_table[mdnie->cabc][mdnie->accessibility];
 		goto exit;
@@ -631,6 +636,45 @@ static ssize_t tuning_store(struct device *dev,
 	return count;
 }
 
+static ssize_t negative_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mdnie_info *mdnie = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%d\n", mdnie->negative);
+}
+
+static ssize_t negative_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mdnie_info *mdnie = dev_get_drvdata(dev);
+	unsigned int value;
+	int ret;
+
+	ret = kstrtoul(buf, 0, (unsigned long *)&value);
+
+	dev_info(dev, "%s :: value=%d\n", __func__, value);
+
+	if (ret < 0)
+		return ret;
+	else {
+		if (mdnie->negative == value)
+			return count;
+
+		if (value >= NEGATIVE_MAX)
+			value = NEGATIVE_OFF;
+
+		value = (value) ? NEGATIVE_ON : NEGATIVE_OFF;
+
+		mutex_lock(&mdnie->lock);
+		mdnie->negative = value;
+		mutex_unlock(&mdnie->lock);
+
+		mdnie_update(mdnie, 0);
+	}
+	return count;
+}
+
 static ssize_t accessibility_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -822,6 +866,7 @@ static struct device_attribute mdnie_attributes[] = {
 	__ATTR(cabc, 0664, dblc_cabc_show, dblc_cabc_store),
 #endif
 	__ATTR(tuning, 0664, tuning_show, tuning_store),
+	__ATTR(negative, 0664, negative_show, negative_store),
 	__ATTR(accessibility, 0664, accessibility_show, accessibility_store),
 #if !defined(CONFIG_FB_MDNIE_PWM)
 	__ATTR(color_correct, 0444, color_correct_show, NULL),
@@ -1060,6 +1105,7 @@ static int mdnie_probe(struct platform_device *pdev)
 	mdnie->mode = STANDARD;
 	mdnie->enable = FALSE;
 	mdnie->tuning = FALSE;
+	mdnie->negative = NEGATIVE_OFF;
 	mdnie->accessibility = ACCESSIBILITY_OFF;
 	mdnie->cabc = CABC_OFF;
 	mdnie->bypass = BYPASS_OFF;
@@ -1148,6 +1194,17 @@ static int mdnie_remove(struct platform_device *pdev)
 #endif
 
 	return 0;
+}
+
+void mdnie_toggle_negative(void)
+{
+	mutex_lock(&g_mdnie->lock);
+	g_mdnie->negative = (g_mdnie->negative == NEGATIVE_ON) ? NEGATIVE_OFF : NEGATIVE_ON;
+	mutex_unlock(&g_mdnie->lock);
+
+	printk("%s: %d\n", __func__, g_mdnie->negative);
+
+	mdnie_update(g_mdnie, 0);
 }
 
 static struct platform_driver mdnie_driver = {

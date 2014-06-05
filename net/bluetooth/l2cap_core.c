@@ -1143,7 +1143,7 @@ int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid, bdaddr_t *d
 	struct hci_conn *hcon;
 	struct hci_dev *hdev;
 	__u8 auth_type;
-	int err;
+	int err = 0;
 
 	BT_DBG("%s -> %s psm 0x%2.2x", batostr(src), batostr(dst),
 							chan->psm);
@@ -1501,6 +1501,7 @@ static int l2cap_ertm_send(struct l2cap_chan *chan)
 static int l2cap_retransmit_frames(struct l2cap_chan *chan)
 {
 	int ret;
+	int err = 0, sent = 0;
 
 	if (!skb_queue_empty(&chan->tx_q))
 		chan->tx_send_head = chan->tx_q.next;
@@ -1595,7 +1596,7 @@ static struct sk_buff *l2cap_create_connless_pdu(struct l2cap_chan *chan,
 {
 	struct l2cap_conn *conn = chan->conn;
 	struct sk_buff *skb;
-	int err, count, hlen = L2CAP_HDR_SIZE + L2CAP_PSMLEN_SIZE;
+	int err = 0, count = 0, hlen = L2CAP_HDR_SIZE + L2CAP_PSMLEN_SIZE;
 	struct l2cap_hdr *lh;
 
 	BT_DBG("chan %p len %d priority %u", chan, (int)len, priority);
@@ -1630,7 +1631,7 @@ static struct sk_buff *l2cap_create_basic_pdu(struct l2cap_chan *chan,
 {
 	struct l2cap_conn *conn = chan->conn;
 	struct sk_buff *skb;
-	int err, count, hlen = L2CAP_HDR_SIZE;
+	int err = 0, count = 0, hlen = L2CAP_HDR_SIZE;
 	struct l2cap_hdr *lh;
 
 	BT_DBG("chan %p len %d", chan, (int)len);
@@ -1664,7 +1665,8 @@ static struct sk_buff *l2cap_create_iframe_pdu(struct l2cap_chan *chan,
 {
 	struct l2cap_conn *conn = chan->conn;
 	struct sk_buff *skb;
-	int err, count, hlen;
+	int err = 0, count = 0, hlen = 0;
+	int reserve = 0;
 	struct l2cap_hdr *lh;
 
 	BT_DBG("chan %p len %d", chan, (int)len);

@@ -17,6 +17,7 @@
  *  kernel subsystems and hints as to where to find out what things do.
  */
 
+#define REALLY_WANT_TRACEPOINTS
 #include <linux/oom.h>
 #include <linux/mm.h>
 #include <linux/err.h>
@@ -39,6 +40,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/oom.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/memkill.h>
+
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks = 1;
@@ -58,8 +62,11 @@ void compare_swap_oom_score_adj(int old_val, int new_val)
 	struct sighand_struct *sighand = current->sighand;
 
 	spin_lock_irq(&sighand->siglock);
-	if (current->signal->oom_score_adj == old_val)
+	if (current->signal->oom_score_adj == old_val) {
 		current->signal->oom_score_adj = new_val;
+		delete_from_adj_tree(current);
+		add_2_adj_tree(current);
+	}
 	trace_oom_score_adj_update(current);
 	spin_unlock_irq(&sighand->siglock);
 }
@@ -80,6 +87,8 @@ int test_set_oom_score_adj(int new_val)
 	spin_lock_irq(&sighand->siglock);
 	old_val = current->signal->oom_score_adj;
 	current->signal->oom_score_adj = new_val;
+	delete_from_adj_tree(current);
+	add_2_adj_tree(current);
 	trace_oom_score_adj_update(current);
 	spin_unlock_irq(&sighand->siglock);
 
@@ -500,6 +509,11 @@ static void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 		task_pid_nr(victim), victim->comm, K(victim->mm->total_vm),
 		K(get_mm_counter(victim->mm, MM_ANONPAGES)),
 		K(get_mm_counter(victim->mm, MM_FILEPAGES)));
+	trace_oom_kill(
+		task_pid_nr(victim), victim->comm, K(victim->mm->total_vm),
+		K(get_mm_counter(victim->mm, MM_ANONPAGES)),
+		K(get_mm_counter(victim->mm, MM_FILEPAGES)),
+		victim->signal->oom_score_adj, order, victim_points);
 	task_unlock(victim);
 
 	/*
@@ -519,6 +533,8 @@ static void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 
 			task_lock(p);	/* Protect ->comm from prctl() */
 			pr_err("Kill process %d (%s) sharing same memory\n",
+				task_pid_nr(p), p->comm);
+			trace_oom_kill_shared(
 				task_pid_nr(p), p->comm);
 			task_unlock(p);
 			do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);

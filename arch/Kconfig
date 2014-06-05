@@ -96,6 +96,25 @@ config HAVE_EFFICIENT_UNALIGNED_ACCESS
 	  See Documentation/unaligned-memory-access.txt for more
 	  information on the topic of unaligned memory accesses.
 
+config ARCH_USE_BUILTIN_BSWAP
+       bool
+       help
+	 Modern versions of GCC (since 4.4) have builtin functions
+	 for handling byte-swapping. Using these, instead of the old
+	 inline assembler that the architecture code provides in the
+	 __arch_bswapXX() macros, allows the compiler to see what's
+	 happening and offers more opportunity for optimisation. In
+	 particular, the compiler will be able to combine the byteswap
+	 with a nearby load or store and use load-and-swap or
+	 store-and-swap instructions if the architecture has them. It
+	 should almost *never* result in code which is worse than the
+	 hand-coded assembler in <asm/swab.h>.  But just in case it
+	 does, the use of the builtins is optional.
+
+	 Any architecture with load-and-swap or store-and-swap
+	 instructions should set this. And it shouldn't hurt to set it
+	 on architectures that don't have such instructions.
+
 config HAVE_SYSCALL_WRAPPERS
 	bool
 
@@ -219,5 +238,15 @@ config HAVE_CMPXCHG_DOUBLE
 
 config ARCH_WANT_OLD_COMPAT_IPC
 	bool
+
+config HAVE_IRQ_EXIT_ON_IRQ_STACK
+	bool
+	help
+	  Architecture doesn't only execute the irq handler on the irq stack
+	  but also irq_exit(). This way we can process softirqs on this irq
+	  stack instead of switching to a new one when we call __do_softirq()
+	  in the end of an hardirq.
+	  This spares a stack switch and improves cache usage on softirq
+	  processing.
 
 source "kernel/gcov/Kconfig"

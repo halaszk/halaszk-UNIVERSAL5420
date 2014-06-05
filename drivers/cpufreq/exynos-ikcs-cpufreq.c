@@ -70,7 +70,7 @@ static unsigned int freq_max[CA_END] __read_mostly;	/* Maximum (Big/Little) cloc
 #ifdef CONFIG_ARM_EXYNOS5420_CPUFREQ
 #define STEP_LEVEL_CA7_MAX	750000
 #define COLD_VOLT_OFFSET	37500
-#define ENABLE_MIN_COLD		1
+#define ENABLE_MIN_COLD		0
 #else
 #define STEP_LEVEL_CA7_MAX	600000
 #define COLD_VOLT_OFFSET	75000
@@ -276,7 +276,7 @@ static int cpufreq_merge_tables(void)
 			size[CA7] * sizeof(struct cpufreq_frequency_table));
 
 	for (i = size[CA15]; i <= total_sz ; i++) {
-		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID) 
 			merge_freq_table[i].frequency >>= 1;
 	}
 
@@ -896,9 +896,9 @@ static ssize_t show_freq_table(struct kobject *kobj,
 	pr_len = (size_t)((PAGE_SIZE - 2) / tbl_sz);
 
 	for (i = 0; merge_freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID && 
-			merge_freq_table[i].frequency <= 1900000 &&
-			merge_freq_table[i].frequency >= 250000)
+		if (merge_freq_table[i].frequency != CPUFREQ_ENTRY_INVALID &&
+                        merge_freq_table[i].frequency <= 1900000 &&
+                        merge_freq_table[i].frequency >= 250000)
 			count += snprintf(&buf[count], pr_len, "%d ",
 				merge_freq_table[i].frequency);
         }

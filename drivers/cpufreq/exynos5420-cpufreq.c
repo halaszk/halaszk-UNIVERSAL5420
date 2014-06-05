@@ -521,13 +521,13 @@ static int exynos5420_bus_table_CA7[CPUFREQ_LEVEL_END_CA7] = {
 };
 
 static int exynos5420_bus_table_CA15[CPUFREQ_LEVEL_END_CA15] = {
-	800000,	/* 2.4 GHz */
-	800000,	/* 2.3 GHz */
-	800000,	/* 2.2 GHz */
-	800000,	/* 2.1 GHz */
-	800000,	/* 2.0 GHz */
-	733000,	/* 1.9 GHz */
-	733000,	/* 1.8 GHz */
+	933000,	/* 2.4 GHz */
+	933000,	/* 2.3 GHz */
+	933000,	/* 2.2 GHz */
+	933000,	/* 2.1 GHz */
+	933000,	/* 2.0 GHz */
+	933000,	/* 1.9 GHz */
+	800000,	/* 1.8 GHz */
 	733000,	/* 1.7 MHz */
 	733000,	/* 1.6 GHz */
 	667000,	/* 1.5 GHz */

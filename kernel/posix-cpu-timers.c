@@ -9,6 +9,7 @@
 #include <asm/uaccess.h>
 #include <linux/kernel_stat.h>
 #include <trace/events/timer.h>
+#include <linux/random.h>
 
 /*
  * Called after updating RLIMIT_CPU to run cpu timer and update
@@ -154,11 +155,19 @@ static void bump_cpu_timer(struct k_itimer *timer,
 
 static inline cputime_t prof_ticks(struct task_struct *p)
 {
-	return p->utime + p->stime;
+	cputime_t utime, stime;
+
+	task_cputime(p, &utime, &stime);
+
+	return utime + stime;
 }
 static inline cputime_t virt_ticks(struct task_struct *p)
 {
-	return p->utime;
+	cputime_t utime;
+
+	task_cputime(p, &utime, NULL);
+
+	return utime;
 }
 
 static int
@@ -215,30 +224,6 @@ static int cpu_clock_sample(const clockid_t which_clock, struct task_struct *p,
 		break;
 	}
 	return 0;
-}
-
-void thread_group_cputime(struct task_struct *tsk, struct task_cputime *times)
-{
-	struct signal_struct *sig = tsk->signal;
-	struct task_struct *t;
-
-	times->utime = sig->utime;
-	times->stime = sig->stime;
-	times->sum_exec_runtime = sig->sum_sched_runtime;
-
-	rcu_read_lock();
-	/* make sure we can trust tsk->thread_group list */
-	if (!likely(pid_alive(tsk)))
-		goto out;
-
-	t = tsk;
-	do {
-		times->utime += t->utime;
-		times->stime += t->stime;
-		times->sum_exec_runtime += task_sched_runtime(t);
-	} while_each_thread(tsk, t);
-out:
-	rcu_read_unlock();
 }
 
 static void update_gt_cputime(struct task_cputime *a, struct task_cputime *b)
@@ -494,16 +479,23 @@ static void cleanup_timers(struct list_head *head,
  */
 void posix_cpu_timers_exit(struct task_struct *tsk)
 {
+	cputime_t utime, stime;
+
+	add_device_randomness((const void*) &tsk->se.sum_exec_runtime,
+						sizeof(unsigned long long));
+	task_cputime(tsk, &utime, &stime);
 	cleanup_timers(tsk->cpu_timers,
-		       tsk->utime, tsk->stime, tsk->se.sum_exec_runtime);
+		       utime, stime, tsk->se.sum_exec_runtime);
 
 }
 void posix_cpu_timers_exit_group(struct task_struct *tsk)
 {
 	struct signal_struct *const sig = tsk->signal;
+	cputime_t utime, stime;
 
+	task_cputime(tsk, &utime, &stime);
 	cleanup_timers(tsk->signal->cpu_timers,
-		       tsk->utime + sig->utime, tsk->stime + sig->stime,
+		       utime + sig->utime, stime + sig->stime,
 		       tsk->se.sum_exec_runtime + sig->sum_sched_runtime);
 }
 
@@ -1247,11 +1239,14 @@ static inline int task_cputime_expired(const struct task_cputime *sample,
 static inline int fastpath_timer_check(struct task_struct *tsk)
 {
 	struct signal_struct *sig;
+	cputime_t utime, stime;
+
+	task_cputime(tsk, &utime, &stime);
 
 	if (!task_cputime_zero(&tsk->cputime_expires)) {
 		struct task_cputime task_sample = {
-			.utime = tsk->utime,
-			.stime = tsk->stime,
+			.utime = utime,
+			.stime = stime,
 			.sum_exec_runtime = tsk->se.sum_exec_runtime
 		};
 

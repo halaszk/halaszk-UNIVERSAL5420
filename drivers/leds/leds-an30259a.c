@@ -83,6 +83,15 @@
 
 #define	MAX_NUM_LEDS	3
 
+// instead of the typical max of 255, rom may be submitting RGB colors based on a skewed scale.
+// test for this by displaying a white notification (255/255/255) and then checking dmesg for
+// the number after "led-control: <color> was" to see what was actually requested.
+#define LED_R_SCALE		200
+#define LED_G_SCALE		139
+#define LED_B_SCALE		139
+
+int flg_system_noti = 0;
+
 u8 led_lowpower_mode = 0x0;
 
 static struct an30259_led_conf led_conf[] = {
@@ -153,6 +162,12 @@ static struct leds_control {
 	u8	fade_dt2;
 	u8	fade_dt3;
 	u8	fade_dt4;
+	int addend_red;
+	int addend_green;
+	int addend_blue;
+	int white_red;
+	int white_green;
+	int white_blue;
 } leds_control = {
 	.current_low = 5,
 	.current_high = 40,
@@ -164,6 +179,12 @@ static struct leds_control {
 	.fade_dt2 = 1,
 	.fade_dt3 = 2,
 	.fade_dt4 = 3,
+	.addend_red = 0,
+	.addend_green = -110,
+	.addend_blue = -100,
+	.white_red = 0,
+	.white_green = 65,
+	.white_blue = 80,
 };
 
 extern struct class *sec_class;
@@ -445,6 +466,7 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 	static int prev_delay_off_time[3] = { 0 };
 	static int prev_brightness[3] = { 0 };
 	int max_brightness;
+	int orig_brightness;
 
 	if (force) {
 		delay_on_time = prev_delay_on_time[led];
@@ -461,10 +483,26 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
 		return;
 	}
 
-	max_brightness = (led_lowpower_mode) ?
-			leds_control.current_low : leds_control.current_high;
+	orig_brightness = brightness;
+
+	if (led_lowpower_mode || flg_system_noti) {
+		max_brightness = leds_control.current_low;
+	} else {
+		max_brightness = leds_control.current_high;
+	}
 
 	brightness = (brightness * max_brightness) / LED_MAX_CURRENT;
+	
+	if (led == LED_R) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d RED\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	} else if (led == LED_G) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d GREEN\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	} else if (led == LED_B) {
+		printk(KERN_DEBUG "led-control: %d * %d / %d = %d BLUE\n", orig_brightness, max_brightness, LED_MAX_CURRENT, brightness);
+	}
+	
+	if (brightness < 1)
+		brightness = 1;
 
 	if (delay_on_time > SLPTT_MAX_VALUE)
 		delay_on_time = SLPTT_MAX_VALUE;
@@ -570,9 +608,15 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	unsigned int delay_on_time = 0;
 	unsigned int delay_off_time = 0;
 	struct an30259a_data *data = dev_get_drvdata(dev);
-	u8 led_r_brightness = 0;
-	u8 led_g_brightness = 0;
-	u8 led_b_brightness = 0;
+	int led_r_brightness = 0;
+	int led_g_brightness = 0;
+	int led_b_brightness = 0;
+	int led_r_brightness_orig = 0;
+	int led_g_brightness_orig = 0;
+	int led_b_brightness_orig = 0;
+	int led_r_brightness_wbcheck = 0;
+	int led_g_brightness_wbcheck = 0;
+	int led_b_brightness_wbcheck = 0;
 
 	retval = sscanf(buf, "0x%x %d %d", &led_brightness,
 				&delay_on_time, &delay_off_time);
@@ -590,6 +634,137 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	led_g_brightness = ((u32)led_brightness & LED_G_MASK)
 					>> LED_G_SHIFT;
 	led_b_brightness = ((u32)led_brightness & LED_B_MASK);
+	
+	printk(KERN_DEBUG "led-control: CALLING FOR %d/%d/%d\n", led_r_brightness, led_g_brightness, led_b_brightness);
+	
+	led_r_brightness_orig = led_r_brightness;
+	led_g_brightness_orig = led_g_brightness;
+	led_b_brightness_orig = led_b_brightness;
+	
+	led_r_brightness_wbcheck = (led_r_brightness * LED_MAX_CURRENT) / LED_R_SCALE;
+	printk(KERN_DEBUG "led-control: RED was %d out of %d adjusted to %d out of 255\n", led_r_brightness_orig, LED_R_SCALE, led_r_brightness_wbcheck);
+	led_g_brightness_wbcheck = (led_g_brightness * LED_MAX_CURRENT) / LED_G_SCALE;
+	printk(KERN_DEBUG "led-control: GREEN was %d out of %d adjusted to %d out of 255\n", led_g_brightness_orig, LED_G_SCALE, led_g_brightness_wbcheck);
+	led_b_brightness_wbcheck = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
+	printk(KERN_DEBUG "led-control: BLUE was %d out of %d adjusted to %d out of 255\n", led_b_brightness_orig, LED_B_SCALE, led_b_brightness_wbcheck);
+	
+	if ((led_r_brightness > 0 && led_r_brightness == led_g_brightness && led_r_brightness == led_b_brightness)
+		|| (led_r_brightness_wbcheck > 0 && led_r_brightness_wbcheck == led_g_brightness_wbcheck && led_r_brightness_wbcheck == led_b_brightness_wbcheck)) {
+		// white is being called for. adjust it for the most realistic result.
+		// actual white = 100% red, 30% green, 15% blue
+		
+		printk(KERN_DEBUG "led-control: neutral color detected. adjusting white balance for optimal result. rgb was: %d %d %d\n",
+			   led_r_brightness, led_g_brightness, led_b_brightness);
+		
+		led_r_brightness = led_r_brightness - ((leds_control.white_red * led_r_brightness) / 100);  // subtract 0% from red
+		led_g_brightness = led_g_brightness - ((leds_control.white_green * led_g_brightness) / 100);  // subtract 70% from green
+		led_b_brightness = led_b_brightness - ((leds_control.white_blue * led_b_brightness) / 100);  // subtract 85% from blue
+		
+		if (led_g_brightness < 3) {
+			led_g_brightness = 3;
+			led_b_brightness = 1;
+		}
+		
+		if (led_b_brightness < 1)
+			led_b_brightness = 1;
+		
+	} else {
+		
+		// a color other than white is being called for.
+		
+		if (led_r_brightness > 0) {
+			led_r_brightness += leds_control.addend_red;
+		}
+		
+		if (led_g_brightness > 0) {
+			led_g_brightness += leds_control.addend_green;
+		}
+		
+		if (led_r_brightness > 0) {
+			led_b_brightness += leds_control.addend_blue;
+		}
+		
+		if (led_r_brightness_orig > LED_R_SCALE || led_g_brightness_orig > LED_G_SCALE || led_b_brightness_orig > LED_B_SCALE) {
+			// use the existing scale.
+			
+			if (led_r_brightness > LED_MAX_CURRENT) {
+				led_r_brightness = LED_MAX_CURRENT;
+			} else if (led_r_brightness < 0) {
+				led_r_brightness = 0;
+			}
+			
+			if (led_g_brightness > LED_MAX_CURRENT) {
+				led_g_brightness = LED_MAX_CURRENT;
+			} else if (led_g_brightness < 0) {
+				led_g_brightness = 0;
+			}
+			
+			if (led_b_brightness > LED_MAX_CURRENT) {
+				led_b_brightness = LED_MAX_CURRENT;
+			} else if (led_b_brightness < 0) {
+				led_b_brightness = 0;
+			}
+			
+		} else {
+			// despite being set to 255/255/255, sometimes userspace actually sends something else, like 200/139/139.
+			// compensate for this and bring all colors to a scale of 0-255.
+			
+			if (led_r_brightness > LED_R_SCALE) {
+				led_r_brightness = LED_R_SCALE;
+			} else if (led_r_brightness < 0) {
+				led_r_brightness = 0;
+			}
+			
+			if (led_g_brightness > LED_G_SCALE) {
+				led_g_brightness = LED_G_SCALE;
+			} else if (led_g_brightness < 0) {
+				led_g_brightness = 0;
+			}
+			
+			if (led_b_brightness > LED_B_SCALE) {
+				led_b_brightness = LED_B_SCALE;
+			} else if (led_b_brightness < 0) {
+				led_b_brightness = 0;
+			}
+			
+			led_r_brightness = (led_r_brightness * LED_MAX_CURRENT) / LED_R_SCALE;
+			printk(KERN_DEBUG "led-control: RED was %d, adjusted by %d, and is now %d\n", led_r_brightness_orig, leds_control.addend_red, led_r_brightness);
+			led_g_brightness = (led_g_brightness * LED_MAX_CURRENT) / LED_G_SCALE;
+			printk(KERN_DEBUG "led-control: GREEN was %d, adjusted by %d, and is now %d\n", led_g_brightness_orig, leds_control.addend_green, led_g_brightness);
+			led_b_brightness = (led_b_brightness * LED_MAX_CURRENT) / LED_B_SCALE;
+			printk(KERN_DEBUG "led-control: BLUE was %d, adjusted by %d, and is now %d\n", led_b_brightness_orig, leds_control.addend_blue, led_b_brightness);
+		}
+		
+	}
+	
+	if (led_r_brightness_orig == 0 && led_g_brightness_orig == 23 && led_b_brightness_orig == 0) {
+		// charged.
+		led_r_brightness = 0;
+		led_g_brightness = 100;
+		led_b_brightness = 0;
+		flg_system_noti = 1;
+	} else if ((led_r_brightness_orig == 22 && led_g_brightness_orig == 23 && led_b_brightness_orig == 0)
+			   || (led_r_brightness_orig == 20 && led_g_brightness_orig == 13 && led_b_brightness_orig == 0)) {
+		// charging 70%-89%
+		led_r_brightness = 255;
+		led_g_brightness = 50;
+		led_b_brightness = 0;
+		flg_system_noti = 1;
+	} else if (led_r_brightness_orig == 25 && led_g_brightness_orig == 11 && led_b_brightness_orig == 0) {
+		// charging <70%
+		led_r_brightness = 255;
+		led_g_brightness = 10;
+		led_b_brightness = 0;
+		flg_system_noti = 1;
+	} else if (led_r_brightness_orig == 20 && led_g_brightness_orig == 6 && led_b_brightness_orig == 0) {
+		// charging even less than above.
+		led_r_brightness = 255;
+		led_g_brightness = 10;
+		led_b_brightness = 0;
+		flg_system_noti = 1;
+	} else {
+		flg_system_noti = 0;
+	}
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
 				delay_off_time, led_r_brightness, false);
@@ -600,7 +775,8 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 
 	leds_i2c_write_all(data->client);
 
-	printk(KERN_DEBUG "led_blink is called, Brightness:0x%X", led_brightness);
+	printk(KERN_DEBUG "led_blink is called, RED:%d, GREEN:%d, BLUE:%d. brightness:0x%X, powermode:%i, system_noti:%d",
+		   led_r_brightness, led_g_brightness, led_b_brightness, led_brightness, led_lowpower_mode, flg_system_noti);
 
 	return count;
 }
@@ -832,11 +1008,15 @@ static struct device_attribute leds_control_attrs[] = {
 	LEDS_ATTR(led_fade_in_time),	LEDS_ATTR(led_fade_out_time),
 	LEDS_ATTR(led_fade_dt1),	LEDS_ATTR(led_fade_dt2),
 	LEDS_ATTR(led_fade_dt3),	LEDS_ATTR(led_fade_dt4),
+	LEDS_ATTR(addend_red), LEDS_ATTR(addend_green),
+	LEDS_ATTR(addend_blue), LEDS_ATTR(white_red),
+	LEDS_ATTR(white_green), LEDS_ATTR(white_blue),
 };
 
 enum {
 	LOWPOWER_CURRENT = 0, HIGHPOWER_CURRENT, BLINK_DELAY, BLINK_FADING,
-	FADE_IN_TIME, FADE_OUT_TIME, FADE_DT1, FADE_DT2, FADE_DT3, FADE_DT4, 
+	FADE_IN_TIME, FADE_OUT_TIME, FADE_DT1, FADE_DT2, FADE_DT3, FADE_DT4,
+	ADDEND_RED, ADDEND_GREEN, ADDEND_BLUE, WHITE_RED, WHITE_GREEN, WHITE_BLUE,
 };
 
 static ssize_t show_leds_property(struct device *dev,
@@ -865,6 +1045,18 @@ static ssize_t show_leds_property(struct device *dev,
 			return sprintf(buf, "%d", leds_control.fade_dt3);
 		case FADE_DT4:
 			return sprintf(buf, "%d", leds_control.fade_dt4);
+		case ADDEND_RED:
+			return sprintf(buf, "%d", leds_control.addend_red);
+		case ADDEND_GREEN:
+			return sprintf(buf, "%d", leds_control.addend_green);
+		case ADDEND_BLUE:
+			return sprintf(buf, "%d", leds_control.addend_blue);
+		case WHITE_RED:
+			return sprintf(buf, "%d", leds_control.white_red);
+		case WHITE_GREEN:
+			return sprintf(buf, "%d", leds_control.white_green);
+		case WHITE_BLUE:
+			return sprintf(buf, "%d", leds_control.white_blue);
 	}
 	
 	return -EINVAL;
@@ -919,6 +1111,30 @@ static ssize_t store_leds_property(struct device *dev,
 		case FADE_DT4:
 			sanitize_min_max(val, 0, 10);
 			leds_control.fade_dt4 = val;
+			break;
+		case ADDEND_RED:
+			//sanitize_min_max(val, 0, 10);
+			leds_control.addend_red = val;
+			break;
+		case ADDEND_GREEN:
+			//sanitize_min_max(val, 0, 10);
+			leds_control.addend_green = val;
+			break;
+		case ADDEND_BLUE:
+			//sanitize_min_max(val, 0, 10);
+			leds_control.addend_blue = val;
+			break;
+		case WHITE_RED:
+			sanitize_min_max(val, 0, 100);
+			leds_control.white_red = val;
+			break;
+		case WHITE_GREEN:
+			sanitize_min_max(val, 0, 100);
+			leds_control.white_green = val;
+			break;
+		case WHITE_BLUE:
+			sanitize_min_max(val, 0, 100);
+			leds_control.white_blue = val;
 			break;
 	}
 	
