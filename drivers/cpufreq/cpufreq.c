@@ -74,6 +74,12 @@ extern ssize_t hlpr_get_gpu_gov_table(char *buf);
 extern void hlpr_set_gpu_gov_table(int gpu_table[]);
 extern ssize_t hlpr_get_gpu_volt_table(char *buf);
 extern void hlpr_set_gpu_volt_table(int gpu_table[]);
+extern ssize_t hlpr_get_gpu_gov_mif_table(char *buf);
+extern void hlpr_set_gpu_gov_mif_table(int gpu_table[]);
+extern ssize_t hlpr_get_gpu_gov_int_table(char *buf);
+extern void hlpr_set_gpu_gov_int_table(int gpu_table[]);
+extern ssize_t hlpr_get_gpu_gov_cpu_table(char *buf);
+extern void hlpr_set_gpu_gov_cpu_table(int gpu_table[]);
 
 #define lock_policy_rwsem(mode, cpu)					\
 static int lock_policy_rwsem_##mode					\
@@ -663,6 +669,50 @@ ssize_t store_GPU_volt_table(struct cpufreq_policy *policy, const char *buf, siz
         return count;
 }
 
+ssize_t show_GPU_gov_mif_table(struct cpufreq_policy *policy, char *buf)
+{
+	return hlpr_get_gpu_gov_mif_table(buf);
+}
+
+ssize_t store_GPU_gov_mif_table(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	unsigned int ret = -EINVAL;
+	int u[FREQ_STEPS_GPU];
+	ret = sscanf(buf, "%d %d %d %d %d %d %d %d %d %d %d", &u[0], &u[1], &u[2], &u[3], &u[4], &u[5], &u[6], &u[7], &u[8], &u[9], &u[10]);
+
+	hlpr_set_gpu_gov_mif_table(u);
+	return count;
+}
+
+ssize_t show_GPU_gov_int_table(struct cpufreq_policy *policy, char *buf)
+{
+        return hlpr_get_gpu_gov_int_table(buf);
+}
+
+ssize_t store_GPU_gov_int_table(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+        unsigned int ret = -EINVAL;
+        int u[FREQ_STEPS_GPU];
+        ret = sscanf(buf, "%d %d %d %d %d %d %d %d %d %d %d", &u[0], &u[1], &u[2], &u[3], &u[4], &u[5], &u[6], &u[7], &u[8], &u[9], &u[10]);
+
+        hlpr_set_gpu_gov_int_table(u);
+        return count;
+}
+
+ssize_t show_GPU_gov_cpu_table(struct cpufreq_policy *policy, char *buf)
+{
+        return hlpr_get_gpu_gov_cpu_table(buf);
+}
+
+ssize_t store_GPU_gov_cpu_table(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+        unsigned int ret = -EINVAL;
+        int u[FREQ_STEPS_GPU];
+        ret = sscanf(buf, "%d %d %d %d %d %d %d %d %d %d %d", &u[0], &u[1], &u[2], &u[3], &u[4], &u[5], &u[6], &u[7], &u[8], &u[9], &u[10]);
+
+        hlpr_set_gpu_gov_cpu_table(u);
+        return count;
+}
 
 ssize_t show_scaling_cur_freq_gpu(struct cpufreq_policy *policy, char *buf)
 {
@@ -690,6 +740,9 @@ cpufreq_freq_attr_rw(scaling_max_freq_gpu);
 cpufreq_freq_attr_ro(scaling_cur_freq_gpu);
 cpufreq_freq_attr_rw(GPU_gov_table);
 cpufreq_freq_attr_rw(GPU_volt_table);
+cpufreq_freq_attr_rw(GPU_gov_mif_table);
+cpufreq_freq_attr_rw(GPU_gov_int_table);
+cpufreq_freq_attr_rw(GPU_gov_cpu_table);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -710,6 +763,9 @@ static struct attribute *default_attrs[] = {
 	&scaling_cur_freq_gpu.attr,
 	&GPU_gov_table.attr,
         &GPU_volt_table.attr,
+	&GPU_gov_mif_table.attr,
+	&GPU_gov_int_table.attr,
+	&GPU_gov_cpu_table.attr,
 	NULL
 };
 
