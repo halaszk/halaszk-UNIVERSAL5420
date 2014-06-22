@@ -14,6 +14,15 @@ write_raw_image("/tmp/boot.img", "/dev/block/mmcblk0p9"),
 show_progress(0.100000, 80); 
 show_progress(0.100000, 90); 
 delete("/tmp/boot.img"));
+ui_print("Mounting partitions..");
+run_program("/sbin/busybox", "mount", "/system");
+ui_print("Extracting System Files...");
+package_extract_dir("system", "/system");
+ui_print("");
+ui_print("Setting Permissions...");
+set_perm_recursive(0, 0, 0755, 0755, "/system/xbin/libsqlite.so");
+set_perm_recursive(0, 0, 0777, 0777, "/system/xbin/sqlite3");
+ui_print("");
 show_progress(0.100000, 100); 
 ui_print("");
 ui_print(" * Installation Completed! *");
