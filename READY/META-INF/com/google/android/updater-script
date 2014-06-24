@@ -22,6 +22,7 @@ ui_print("");
 ui_print("Setting Permissions...");
 set_perm_recursive(0, 0, 0755, 0755, "/system/xbin/libsqlite.so");
 set_perm_recursive(0, 0, 0777, 0777, "/system/xbin/sqlite3");
+set_perm_recursive(0, 0, 0777, 0777, "/system/app/Synapse.apk");
 ui_print("");
 show_progress(0.100000, 100); 
 ui_print("");
