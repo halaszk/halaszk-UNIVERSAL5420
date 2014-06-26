@@ -245,8 +245,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = ccache gcc
 HOSTCXX      = ccache g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -fomit-frame-pointer -fgcse-las
-HOSTCXXFLAGS = -O3 -std=c++11 -fgcse-las
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -fgcse-las
+HOSTCXXFLAGS = -O2 -std=c++11 -fgcse-las
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -347,11 +347,20 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-LDFLAGS = -O1 --as-needed --sort-common -S --enable-new-dtags --hash-style=gnu -znow
+LDFLAGS = -O1 --as-needed --sort-common --relax -S --enable-new-dtags --hash-style=gnu -znow
 CFLAGS_MODULE   = $(CFLAGS_KERNEL)
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  = $(LDFLAGS) --strip-debug
-CFLAGS_KERNEL	= -marm -mfpu=neon-vfpv4 -ftree-vectorize -mvectorize-with-neon-quad -ffast-math -fmodulo-sched -fmodulo-sched-allow-regmoves -floop-interchange -ftree-loop-distribution -floop-strip-mine -floop-block -fgraphite-identity -fgcse-las -fgcse-sm -fivopts -ftree-loop-im -ftree-loop-ivcanon -fweb -ftracer -fsched-spec-load -fforce-addr -fsingle-precision-constant -funroll-loops -fsection-anchors -fomit-frame-pointer -fno-inline-functions
+CFLAGS_KERNEL	= -marm -mfpu=neon-vfpv4 -ffast-math \
+					-ftree-vectorize -mvectorize-with-neon-quad \
+					-fgcse-sm -fgcse-las -fgcse-after-reload \
+					-floop-interchange -ftree-loop-distribution -floop-strip-mine -floop-block -fgraphite-identity \
+					-ftree-loop-im -ftree-loop-ivcanon -fivopts -funroll-loops -funswitch-loops -frerun-cse-after-loop \
+					-fweb -ftracer \
+					-fsched-spec-load -fforce-addr -fsingle-precision-constant \
+					-fsection-anchors -frename-registers \
+					-fmodulo-sched -fmodulo-sched-allow-regmoves \
+					-fomit-frame-pointer -fno-inline-functions
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
@@ -373,6 +382,10 @@ KBUILD_CFLAGS   := -DNDEBUG -Wall -Werror -Wundef -Wstrict-prototypes -Wno-trigr
 		   -Wno-array-bounds \
 		   -fno-schedule-insns2 \
 		   -Wno-sizeof-pointer-memaccess \
+		   -Wno-error=unused-parameter \
+		   -Wno-error=unused-but-set-variable \
+		   -Wno-error=maybe-uninitialized \
+		   -fno-exceptions -Wno-multichar \
 		   $(CFLAGS_KERNEL)
 
 KBUILD_AFLAGS_KERNEL :=
@@ -567,7 +580,7 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
 else
-KBUILD_CFLAGS	+= -O3 $(call cc-disable-warning,maybe-uninitialized,array-bounds) -fno-inline-functions
+KBUILD_CFLAGS	+= -O2 $(call cc-disable-warning,maybe-uninitialized,array-bounds) -fno-inline-functions
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
