@@ -351,7 +351,7 @@ LDFLAGS = -O1 --as-needed --sort-common --relax -S --enable-new-dtags --hash-sty
 CFLAGS_MODULE   = $(CFLAGS_KERNEL)
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  = $(LDFLAGS) --strip-debug
-CFLAGS_KERNEL	= -marm -mfpu=neon-vfpv4 -ffast-math \
+CFLAGS_KERNEL	= -marm -munaligned-access -mfpu=neon-vfpv4 -ffast-math \
 					-ftree-vectorize -mvectorize-with-neon-quad \
 					-fgcse-sm -fgcse-las -fgcse-after-reload \
 					-floop-interchange -ftree-loop-distribution -floop-strip-mine -floop-block -fgraphite-identity \
