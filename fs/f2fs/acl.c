@@ -263,6 +263,7 @@ int f2fs_init_acl(struct inode *inode, struct inode *dir, struct page *ipage)
 #else
 		if (!acl)
 			inode->i_mode &= ~current_umask();
+#endif
 	}
 
 	if (!test_opt(sbi, POSIX_ACL) || !acl)
