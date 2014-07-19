@@ -178,11 +178,15 @@ static struct dw_mci_board universal5420_dwmci0_pdata __initdata = {
 	.ch_num			= 0,
 	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION |
 				  DW_MCI_QUIRK_HIGHSPEED |
+#if defined(CONFIG_N2A)
 				  DW_MCI_QUIRK_NO_DETECT_EBIT |
 				  DW_MMC_QUIRK_USE_FINE_TUNING,
-	.bus_hz			= 666 * 1000 * 1000 / 2,
+#else
+				  DW_MCI_QUIRK_NO_DETECT_EBIT,
+#endif
+	.bus_hz			= 666 * 1000 * 1000 / 4,
 	.caps			= MMC_CAP_CMD23 | MMC_CAP_8_BIT_DATA |
-				  MMC_CAP_UHS_DDR50 | MMC_CAP_UHS_SDR104 | MMC_CAP_1_8V_DDR |
+				  MMC_CAP_UHS_DDR50 | MMC_CAP_1_8V_DDR |
 				  MMC_CAP_ERASE | MMC_CAP_HW_RESET,
 	.caps2			= MMC_CAP2_HS200_1_8V_SDR | MMC_CAP2_HS200_1_8V_DDR |
 				  MMC_CAP2_CACHE_CTRL | MMC_CAP2_BROKEN_VOLTAGE |
