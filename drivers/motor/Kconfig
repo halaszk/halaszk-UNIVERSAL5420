@@ -56,3 +56,9 @@ config HAPTIC
 	help
 	  Say Y to enable Immersion TouchSense.
 
+config IMM_DRV_VERSION_3_7
+	tristate "Immersion 3.7 motor driver"
+	default n
+	help
+	  Say Y to enable Immersion 3.7 motor driver.
+

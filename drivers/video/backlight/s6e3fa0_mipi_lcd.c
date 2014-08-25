@@ -24,6 +24,8 @@
 #include <linux/rtc.h>
 #include <linux/reboot.h>
 #include <linux/gpio.h>
+#include <linux/notifier.h>
+#include <linux/fb.h>
 
 #include <video/mipi_display.h>
 #include <plat/dsim.h>
@@ -85,10 +87,13 @@ struct lcd_info {
 	unsigned int			current_elvss;
 	unsigned int			current_psre;
 	unsigned int			current_tset;
- 	unsigned int			ldi_enable;
+	unsigned int			ldi_enable;
 	unsigned int			power;
 	struct mutex			lock;
 	struct mutex			bl_lock;
+
+	struct notifier_block	fb_notif;
+	unsigned int			fb_unblank;
 
 	struct device			*dev;
 	struct lcd_device		*ld;
@@ -1242,26 +1247,16 @@ static int s6e3fa0_ldi_disable(struct lcd_info *lcd)
 	s5p_mipi_dsi_command_run(lcd->dsim);
 	mutex_unlock(&lcd->bl_lock);
 
-	msleep(35);
-
-	/* after display off there is okay to send the commands via MIPI DSI Command
-	because we don't need to worry about screen blinking. */
-	mutex_lock(&lcd->bl_lock);
-	lcd->dsim->use_ielcd_command = true;
-	s6e3fa0_write(lcd, SEQ_SLEEP_IN, ARRAY_SIZE(SEQ_SLEEP_IN));
-	lcd->dsim->use_ielcd_command = false;
-	s5p_mipi_dsi_command_run(lcd->dsim);
-	mutex_unlock(&lcd->bl_lock);
 #else
 	s6e3fa0_write(lcd, SEQ_DISPLAY_OFF, ARRAY_SIZE(SEQ_DISPLAY_OFF));
-
+#endif
 	msleep(35);
 
 	/* after display off there is okay to send the commands via MIPI DSI Command
 	because we don't need to worry about screen blinking. */
 	s6e3fa0_write(lcd, SEQ_SLEEP_IN, ARRAY_SIZE(SEQ_SLEEP_IN));
-#endif
 
+	
 	msleep(125);
 	dev_info(&lcd->ld->dev, "- %s\n", __func__);
 
@@ -1345,7 +1340,6 @@ static int s6e3fa0_get_power(struct lcd_device *ld)
 	return lcd->power;
 }
 
-
 static int s6e3fa0_set_brightness(struct backlight_device *bd)
 {
 	int ret = 0;
@@ -1361,7 +1355,7 @@ static int s6e3fa0_set_brightness(struct backlight_device *bd)
 		return -EINVAL;
 	}
 
-	if (lcd->ldi_enable) {
+	if (lcd->ldi_enable && lcd->fb_unblank) {
 		ret = update_brightness(lcd, 0, true);
 		if (ret < 0) {
 			dev_err(&lcd->ld->dev, "err in %s\n", __func__);
@@ -1394,6 +1388,41 @@ static const struct backlight_ops s6e3fa0_backlight_ops  = {
 	.get_brightness = s6e3fa0_get_brightness,
 	.update_status = s6e3fa0_set_brightness,
 };
+
+static int s6e3fa0_fb_notifier_callback(struct notifier_block *self,
+		unsigned long event, void *data)
+{
+	struct lcd_info *lcd;
+	struct fb_event *blank = (struct fb_event*) data;
+	unsigned int *value = (unsigned int*)blank->data;
+
+	lcd = container_of(self, struct lcd_info, fb_notif);
+
+	if (event == FB_EVENT_BLANK) {
+		switch (*value) {
+		case FB_BLANK_POWERDOWN:
+		case FB_BLANK_NORMAL:
+			lcd->fb_unblank = 0;
+			break;
+		case FB_BLANK_UNBLANK:
+			lcd->fb_unblank = 1;
+			update_brightness(lcd, 0, true);
+			break;
+		default:
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int s6e3fa0_register_fb(struct lcd_info *lcd)
+{
+	memset(&lcd->fb_notif, 0, sizeof(lcd->fb_notif));
+	lcd->fb_notif.notifier_call = s6e3fa0_fb_notifier_callback;
+
+	return fb_register_client(&lcd->fb_notif);
+}
 
 static ssize_t power_reduce_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -1856,6 +1885,7 @@ static int s6e3fa0_probe(struct mipi_dsim_device *dsim)
 	lcd->siop_enable = 0;
 	lcd->temperature = 1;
 	lcd->current_tset = TSET_25_DEGREES;
+	lcd->fb_unblank = 1;
 
 	ret = device_create_file(&lcd->ld->dev, &dev_attr_power_reduce);
 	if (ret < 0)
@@ -1906,6 +1936,10 @@ static int s6e3fa0_probe(struct mipi_dsim_device *dsim)
 		dev_err(&lcd->ld->dev, "failed to add sysfs entries, %d\n", __LINE__);
 
 	/* dev_set_drvdata(dsim->dev, lcd); */
+
+	ret = s6e3fa0_register_fb(lcd);
+	if (ret)
+		dev_err(&lcd->ld->dev, "failed to register fb notifier chain\n");
 
 	mutex_init(&lcd->lock);
 	mutex_init(&lcd->bl_lock);

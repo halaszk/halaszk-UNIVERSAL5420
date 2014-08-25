@@ -124,6 +124,7 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 						S5P_FIMV_D_DISPLAY_FIRST_ADDR)
 #define mfc_get_dec_first_addr()	readl(dev->regs_base + \
 						S5P_FIMV_D_DECODED_FIRST_ADDR)
+#define mfc_get_info_stage_counter()	readl(dev->regs_base + 0xF088)
 
 #define mb_width(x_size)		((x_size + 15) / 16)
 #define mb_height(y_size)		((y_size + 15) / 16)

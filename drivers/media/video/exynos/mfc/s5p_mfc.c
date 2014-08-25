@@ -752,6 +752,27 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 			break;
 		}
 	}
+
+	if (is_h264(ctx) && dec->is_dynamic_dpb) {
+		dst_frame_status = s5p_mfc_get_dspl_status()
+			& S5P_FIMV_DEC_STATUS_DECODING_STATUS_MASK;
+		if ((dst_frame_status == S5P_FIMV_DEC_STATUS_DISPLAY_ONLY) &&
+				!list_empty(&ctx->dst_queue) &&
+				(dec->ref_queue_cnt < ctx->dpb_count)) {
+			dst_buf = list_entry(ctx->dst_queue.next,
+						struct s5p_mfc_buf, list);
+			if (dst_buf->already) {
+				list_del(&dst_buf->list);
+				ctx->dst_queue_cnt--;
+
+				list_add_tail(&dst_buf->list, &dec->ref_queue);
+				dec->ref_queue_cnt++;
+
+				dst_buf->already = 0;
+				mfc_debug(2, "Move dst buf to ref buf\n");
+			}
+		}
+	}
 }
 
 static int s5p_mfc_find_start_code(unsigned char *src_mem, unsigned int remainSize)

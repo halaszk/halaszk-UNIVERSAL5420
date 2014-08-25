@@ -1438,10 +1438,22 @@ static int touchkey_i2c_check(struct touchkey_i2c *tkey_i2c)
 {
 	char data[3] = { 0, };
 	int ret = 0;
+	int retry;
 
-	ret = i2c_touchkey_read(tkey_i2c->client, KEYCODE_REG, data, 3);
-	if (ret < 0) {
-		dev_err(&tkey_i2c->client->dev, "Failed to read Module version\n");
+	for (retry = 0; retry < 3; ++retry) {
+		ret = i2c_touchkey_read(tkey_i2c->client, KEYCODE_REG, data, 3);
+		if (ret < 0) {
+			dev_err(&tkey_i2c->client->dev, "Failed to read fw version, retry %d\n", retry);
+			tkey_i2c->pdata->power_on(0);
+			msleep(10);
+			tkey_i2c->pdata->power_on(1);
+			msleep(50);
+			continue;
+		}
+		break;
+	}
+	if (ret < 0 && retry >= 3) {
+		dev_err(&tkey_i2c->client->dev, "Failed to read fw version\n");
 		tkey_i2c->fw_ver_ic = 0;
 		tkey_i2c->md_ver_ic = 0;
 		return ret;

@@ -33,6 +33,7 @@
 /* DDR200 RDDQS Enable*/
 #define DWMCI_TXDT_CRC_TIMER_FASTLIMIT(x)	(((x) & 0xFF) << 16)
 #define DWMCI_TXDT_CRC_TIMER_INITVAL(x)		(((x) & 0xFF) << 8)
+#define DWMCI_RESP_RCLK_MODE			BIT(5)
 #define DWMCI_BUSY_CHK_CLK_STOP_EN		BIT(2)
 #define DWMCI_RXDATA_START_BIT_SEL		BIT(1)
 #define DWMCI_RDDQS_EN				BIT(0)
@@ -100,11 +101,15 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 	struct dw_mci_clk *clk_tbl = pdata->clk_tbl;
 	u32 clksel, rddqs, dline;
 	u32 sclkin, cclkin;
+	unsigned char timing_org = timing;
 
-	if (timing > MMC_TIMING_MMC_HS200_DDR) {
+	if (timing > MMC_TIMING_MMC_HS200_DDR_ES) {
 		pr_err("%s: timing(%d): not suppored\n", __func__, timing);
 		return;
 	}
+
+	if (timing == MMC_TIMING_MMC_HS200_DDR_ES)
+		timing = MMC_TIMING_MMC_HS200_DDR;
 
 	sclkin = clk_tbl[timing].sclkin;
 	cclkin = clk_tbl[timing].cclkin;
@@ -123,6 +128,9 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 
 		if (!tuning) {
 			rddqs |= DWMCI_RDDQS_EN;
+			if (timing_org == MMC_TIMING_MMC_HS200_DDR_ES) {
+				rddqs |= DWMCI_RESP_RCLK_MODE;
+			}
 #if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 			dline = DWMCI_FIFO_CLK_DELAY_CTRL(0x2) | DWMCI_RD_DQS_DELAY_CTRL(110);
 #elif defined(CONFIG_N1A) || defined(CONFIG_N2A)

@@ -102,6 +102,7 @@ enum {
 	ADC_SMARTDOCK		= 0x10, /* 0x10000 40.2K ohm */
 	ADC_AUDIODOCK		= 0x12, /* 0x10010 64.9K ohm */
 	ADC_LANHUB		= 0x13, /* 0x10011 80.07K ohm */
+	ADC_PS_CABLE		= 0x14,	/* 0x10100 102K ohm */
 	ADC_CEA936ATYPE1_CHG	= 0x17,	/* 0x10111 200K ohm */
 	ADC_JIG_USB_OFF		= 0x18, /* 0x11000 255K ohm */
 	ADC_JIG_USB_ON		= 0x19, /* 0x11001 301K ohm */
@@ -376,6 +377,33 @@ static struct notifier_block nb_muic_dump_block = {
 };
 #endif
 /* DUMP */
+
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+/* When we use the PS cable, VBUS has an output */
+/* MUIC has to ignore that output */
+/* This function will control the CDETCTRL1 REG's bit0 (CHGDETEN) */
+static int max77803_muic_set_chgdeten(struct max77803_muic_info *info,
+				bool enable)
+{
+	int ret = 0, val;
+	const u8 reg = MAX77803_MUIC_REG_CDETCTRL1;
+	const u8 mask = CHGDETEN_MASK;
+	const u8 shift = CHGDETEN_SHIFT;
+
+	dev_info(info->dev, "%s called with %d\n", __func__, enable);
+
+	val = (enable ? 1 : 0);
+
+	ret = max77803_update_reg(info->muic, reg, (val << shift),
+				mask);
+	if (ret)
+		pr_err("%s fail to read reg[0x%02x], ret(%d)\n",
+				__func__, reg, ret);
+
+	return ret;
+
+}
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 
 static int max77803_muic_set_comp2_comn1_pass2
 	(struct max77803_muic_info *info, int type, int path)
@@ -2583,6 +2611,16 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 		}
 		break;
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		if (adc != ADC_PS_CABLE) {
+			dev_warn(info->dev, "%s: assume ps cable detach\n",
+					__func__);
+
+			info->cable_type = CABLE_TYPE_NONE_MUIC;
+		}
+		break;
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	default:
 		break;
 	}
@@ -2691,6 +2729,19 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 
 		break;
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_LANHUB */
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case ADC_PS_CABLE:
+		dev_info(info->dev, "%s: PS cable attached\n", __func__);
+		info->cable_type = CABLE_TYPE_PS_CABLE_MUIC;
+		ret = max77803_muic_set_chgdeten(info, false);
+		if (ret)
+			pr_err("%s fail to disable chgdet\n", __func__);
+
+		ret = max77803_muic_set_charging_type(info, false);
+		if (ret)
+			pr_err("%s fail to set chg type\n", __func__);
+		break;
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case ADC_JIG_UART_OFF:
 		max77803_muic_handle_jig_uart(info, vbvolt);
 		mdata->jig_state(true);
@@ -3130,6 +3181,19 @@ static int max77803_muic_handle_detach(struct max77803_muic_info *info, int irq)
 			info->cable_type = CABLE_TYPE_LANHUB;
 		break;
 #endif
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		dev_info(info->dev, "%s: PS cable\n", __func__);
+		info->cable_type = CABLE_TYPE_NONE_MUIC;
+		ret = max77803_muic_set_charging_type(info, true);
+		if (ret)
+			pr_err("%s fail to set chg type\n", __func__);
+
+		ret = max77803_muic_set_chgdeten(info, true);
+		if (ret)
+			pr_err("%s fail to enable chgdet\n", __func__);
+		break;
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case CABLE_TYPE_UNKNOWN_MUIC:
 		dev_info(info->dev, "%s: UNKNOWN\n", __func__);
 		info->cable_type = CABLE_TYPE_NONE_MUIC;
@@ -3220,12 +3284,21 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 #if !defined(CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK)
 	case ADC_AUDIODOCK:
 #endif /* !CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
-	case (ADC_AUDIODOCK + 2) ... (ADC_CEA936ATYPE1_CHG - 1):
+#if !defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
+	case ADC_LANHUB:
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_LANHUB */
+#if !defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case ADC_PS_CABLE:
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
+	case (ADC_PS_CABLE + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
 #endif /* CONFIG_MACH_GC1 */
 		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n",
 				__func__, adc);
 		intr = INT_DETACH;
 		break;
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case ADC_PS_CABLE:
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case (ADC_CEA936ATYPE1_CHG) ... (ADC_JIG_UART_ON):
 		if(info->cable_type != CABLE_TYPE_NONE_MUIC
 			&& chgtyp == CHGTYP_NO_VOLTAGE

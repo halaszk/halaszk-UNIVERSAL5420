@@ -40,7 +40,7 @@
 #endif
 #include "secfb_notify.h"
 #endif
-#include "mdnie_color_tone_5410.h"
+#include "mdnie_color_tone.h"
 
 #if defined(CONFIG_TDMB)
 #include "mdnie_dmb.h"
@@ -180,6 +180,16 @@ int s3c_mdnie_set_size(void)
 	return 0;
 }
 
+#if defined(CONFIG_FB_I80IF)
+static void mdnie_hw_trigger_set(struct mdnie_info *mdnie)
+{
+	struct platform_mdnie_data *pd = mdnie->pd;
+
+	if (pd->trigger_set)
+		pd->trigger_set(pd->fimd1_device);
+}
+#endif
+
 static int mdnie_send_sequence(struct mdnie_info *mdnie, const unsigned short *seq)
 {
 	int ret = 0, i = 0;
@@ -194,6 +204,10 @@ static int mdnie_send_sequence(struct mdnie_info *mdnie, const unsigned short *s
 		dev_err(mdnie->dev, "mdnie base is null\n");
 		return -EPERM;
 	}
+
+#if defined(CONFIG_FB_I80IF)
+	mdnie_hw_trigger_set(mdnie);
+#endif
 
 	mutex_lock(&mdnie->dev_lock);
 
@@ -1057,6 +1071,8 @@ static int mdnie_probe(struct platform_device *pdev)
 #if	defined(CONFIG_FB_DBLC_PWM)
 	mdnie->outdoormode = 0;
 #endif
+	mdnie->pd = pdev->dev.platform_data;
+
 	mutex_init(&mdnie->lock);
 	mutex_init(&mdnie->dev_lock);
 

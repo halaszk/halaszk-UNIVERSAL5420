@@ -1464,6 +1464,7 @@ int w1_ds28el15_write_authblockprotection(struct w1_slave *sl, uchar *data)
 		return cs;
 }
 
+#if !defined(CONFIG_HA)
 /*
  * get_array_value
  */
@@ -1493,6 +1494,7 @@ static int __init parse_tag_array(const struct tag *tag)
 	return ret;
 }
 __tagtable(ATAG_COVER_STR, parse_tag_array);
+#endif
 
 /*
  *  w1_ds28el15_verifymac

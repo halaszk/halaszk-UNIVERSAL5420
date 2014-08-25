@@ -11,7 +11,13 @@ struct platform_mdnie_data {
     int *br_table;
     int dft_bl;
 #endif
+	int (*trigger_set)(struct device *fimd);
+	struct device *fimd1_device;
 	struct lcd_platform_data	*lcd_pd;
 };
+
+#ifdef CONFIG_FB_I80IF
+extern int s3c_fb_enable_trigger_by_mdnie(struct device *fimd);
+#endif
 
 #endif

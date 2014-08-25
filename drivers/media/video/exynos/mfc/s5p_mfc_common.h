@@ -169,6 +169,7 @@ struct s5p_mfc_buf {
 		dma_addr_t stream;
 	} planes;
 	int used;
+	int already;
 };
 
 #define vb_to_mfc_buf(x)	\
@@ -899,6 +900,9 @@ static inline unsigned int mfc_version(struct s5p_mfc_dev *dev)
 					(dev->fw.date >= 0x131108))
 
 #define HW_LOCK_CLEAR_MASK		(0xFFFFFFFF)
+
+#define is_h264(ctx)		((ctx->codec_mode == S5P_FIMV_CODEC_H264_DEC) ||\
+				(ctx->codec_mode == S5P_FIMV_CODEC_H264_MVC_DEC))
 
 /* Extra information for Decoder */
 #define	DEC_SET_DUAL_DPB		(1 << 0)

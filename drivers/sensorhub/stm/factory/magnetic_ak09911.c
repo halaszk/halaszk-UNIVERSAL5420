@@ -21,8 +21,8 @@
 #define VENDOR_AK		"AKM"
 #define CHIP_ID_AK		"AK09911C"
 
-#define GM_DATA_SPEC_MIN	-6500
-#define GM_DATA_SPEC_MAX	6500
+#define GM_DATA_SPEC_MIN	-1600
+#define GM_DATA_SPEC_MAX	1600
 
 #define GM_SELFTEST_X_SPEC_MIN	-30
 #define GM_SELFTEST_X_SPEC_MAX	30
@@ -259,7 +259,7 @@ static ssize_t magnetic_check_cntl(struct device *dev,
 static ssize_t magnetic_get_selftest(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	s8 iResult[4] = {-1, };
+	s8 iResult[4] = {-1, -1, -1, -1};
 	char bufSelftset[22] = {0, };
 	char bufAdc[4] = {0, };
 	s16 iSF_X = 0, iSF_Y = 0, iSF_Z = 0;
@@ -379,7 +379,8 @@ Retry_selftest:
 		iADC_X, iADC_Y, iADC_Z, iSpecOutRetries);
 
 exit:
-	pr_info("[SSP] %s out\n", __func__);
+	pr_info("[SSP] %s out. Result = %d %d %d %d\n",
+		__func__, iResult[0], iResult[1], iResult[2], iResult[3]);
 
 	return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 		iResult[0], iResult[1], iSF_X, iSF_Y, iSF_Z,
@@ -420,7 +421,7 @@ static ssize_t raw_data_logging_store(struct device *dev,
 
 	if (dEnable) {
 		ssp_dbg("[SSP]: %s - add %u, New = %dns\n",
-			 __func__, 1 << GEOMAGNETIC_SENSOR, SENSOR_NS_DELAY_FASTEST);
+			 __func__, 1 << GEOMAGNETIC_SENSOR, dMsDelay);
 
 		iRet = send_instruction(data, GET_LOGGING, GEOMAGNETIC_SENSOR, uBuf, 4);
 		if (iRet == SUCCESS) {

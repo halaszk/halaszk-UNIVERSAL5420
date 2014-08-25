@@ -2817,6 +2817,7 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 		spin_unlock_irqrestore(&dev->irqlock, flags);
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		buf->used = 0;
+		buf->already = 0;
 		index = vb->v4l2_buf.index;
 		mfc_debug(2, "Dst queue: %p\n", &ctx->dst_queue);
 		mfc_debug(2, "Adding to dst: %p (0x%08lx)\n", vb,
@@ -2849,9 +2850,14 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 				/* This buffer is already referenced */
 				mfc_debug(2, "Already ref[%d], fd = %d\n",
 						index, dec->assigned_fd[index]);
-				list_add_tail(&buf->list, &dec->ref_queue);
-				dec->ref_queue_cnt++;
-				skip_add = 1;
+				if (is_h264(ctx)) {
+					mfc_debug(2, "Add to DPB list\n");
+					buf->already = 1;
+				} else {
+					list_add_tail(&buf->list, &dec->ref_queue);
+					dec->ref_queue_cnt++;
+					skip_add = 1;
+				}
 			}
 		} else {
 			set_bit(index, &dec->dpb_status);
