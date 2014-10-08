@@ -22,3 +22,4 @@ generic-y += siginfo.h
 generic-y += simd.h
 generic-y += sizes.h
 generic-y += unaligned.h
+generic-y += termios.h
