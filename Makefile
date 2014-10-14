@@ -380,7 +380,6 @@ KBUILD_CFLAGS   := -DNDEBUG -Wall -Werror -Wundef -Wstrict-prototypes -Wno-trigr
 		   -fno-delete-null-pointer-checks \
 		   -Wno-maybe-uninitialized \
 		   -Wno-array-bounds \
-		   -fno-schedule-insns2 \
 		   -Wno-sizeof-pointer-memaccess \
 		   -Wno-error=unused-parameter \
 		   -Wno-error=unused-but-set-variable \
