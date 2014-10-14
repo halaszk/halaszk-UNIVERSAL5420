@@ -117,13 +117,13 @@ static unsigned int clkdiv_cpu0_5420_CA7[CPUFREQ_LEVEL_END_CA7][5] = {
 	 */
 
 	/* ARM L0: 1.6GHz */
-	{ 0, 2, 7, 5, 3 },
+	{ 0, 3, 7, 5, 3 },
 
 	/* ARM L1: 1.5GMHz */
-	{ 0, 2, 7, 5, 3 },
+	{ 0, 3, 7, 5, 3 },
 
 	/* ARM L2: 1.4GMHz */
-	{ 0, 2, 7, 5, 3 },
+	{ 0, 3, 7, 5, 3 },
 
 	/* ARM L3: 1.3GHz */
 	{ 0, 2, 7, 5, 3 },
@@ -169,37 +169,37 @@ static unsigned int clkdiv_cpu0_5420_CA15[CPUFREQ_LEVEL_END_CA15][7] = {
 	 */
 
 	/* ARM L0: 2.4GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 5, 7, 7, 3, 0 },
 
 	/* ARM L1: 2.3GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 5, 7, 7, 3, 0 },
 
 	/* ARM L2: 2.2GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 5, 7, 7, 3, 0 },
 
 	/* ARM L3: 2.1GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 4, 7, 7, 3, 0 },
 
 	/* ARM L4: 2.0GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 4, 7, 7, 3, 0 },
 
 	/* ARM L5: 1.9GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 4, 7, 7, 3, 0 },
 
 	/* ARM L6: 1.8GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 4, 7, 7, 3, 0 },
 
 	/* ARM L7: 1.7GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 3, 7, 7, 3, 0 },
 
 	/* ARM L8: 1.6GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 3, 7, 7, 3, 0 },
 
 	/* ARM L9: 1.5GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 3, 7, 7, 3, 0 },
 
 	/* ARM L10: 1.4GHz */
-	{ 2, 7, 7, 3, 0 },
+	{ 3, 7, 7, 3, 0 },
 
 	/* ARM L11: 1.3GHz */
 	{ 2, 7, 7, 3, 0 },
@@ -346,7 +346,7 @@ static unsigned int exynos5420_kpll_pms_table_CA7[CPUFREQ_LEVEL_END_CA7] = {
 	((175 << 16) | (3 << 8) | (0x1)),
 
 	/* KPLL FOUT L10: 600MHz */
-	((100 << 16) | (2 << 8) | (0x1)),
+	((200 << 16) | (2 << 8) | (0x2)),
 
 	/* KPLL FOUT L11: 500MHz */
 	((250 << 16) | (3 << 8) | (0x2)),
@@ -355,7 +355,7 @@ static unsigned int exynos5420_kpll_pms_table_CA7[CPUFREQ_LEVEL_END_CA7] = {
 	((200 << 16) | (3 << 8) | (0x2)),
 
 	/* KPLL FOUT L13: 300MHz */
-	((100 << 16) | (2 << 8) | (0x2)),
+	((200 << 16) | (2 << 8) | (0x3)),
 
 	/* KPLL FOUT L14: 200MHz */
 	((200 << 16) | (3 << 8) | (0x3)),
@@ -417,7 +417,7 @@ static unsigned int exynos5420_apll_pms_table_CA15[CPUFREQ_LEVEL_END_CA15] = {
 	((175 << 16) | (3 << 8) | (0x1)),
 
 	/* APLL FOUT L18: 600MHz */
-	((100 << 16) | (2 << 8) | (0x1)),
+	((200 << 16) | (2 << 8) | (0x2)),
 
 	/* APLL FOUT L19: 500MHz */
 	((250 << 16) | (3 << 8) | (0x2)),
@@ -426,7 +426,7 @@ static unsigned int exynos5420_apll_pms_table_CA15[CPUFREQ_LEVEL_END_CA15] = {
 	((200 << 16) | (3 << 8) | (0x2)),
 
 	/* APLL FOUT L21: 300MHz */
-	((100 << 16) | (2 << 8) | (0x2)),
+	((200 << 16) | (2 << 8) | (0x3)),
 
 	/* APLL FOUT L22: 200MHz */
 	((200 << 16) | (3 << 8) | (0x3)),

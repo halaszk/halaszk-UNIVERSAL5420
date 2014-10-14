@@ -107,7 +107,6 @@ const struct cntry_locales_custom translate_custom_table[] = {
 #endif /* defined(BCM4330_CHIP) || defined(BCM4334_CHIP) || defined(BCM43241_CHIP) */
 #if defined(BCM4334_CHIP) || defined(BCM43241_CHIP)
 	{"RU", "RU", 13},
-	{"SG", "SG", 4},
 	{"US", "US", 46},
 	{"UA", "UA", 8},
 	{"CO", "CO", 4},
@@ -245,7 +244,6 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"RO", "RO", 4},
 	{"SN", "SN", 2},
 	{"RS", "RS", 2},
-	{"SG", "SG", 4},
 	{"SK", "SK", 4},
 	{"SI", "SI", 4},
 	{"ES", "ES", 4},

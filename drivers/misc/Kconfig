@@ -553,6 +553,13 @@ config MUIC_FULL_DUMP_ENABLE
 	help
 	  If you say yes here you will get full register dump of max77803
 
+config MUIC_MAX77803_SUPPORT_PS_CABLE
+	bool "MUIC_MAX77803_SUPPORT_PS_CABLE"
+	depends on MFD_MAX77803
+	default n
+	help
+	  If you say yes here you can recognize PS cable
+
 config WL127X_RFKILL
 	tristate "Bluetooth power control driver for TI wl127x"
 	depends on RFKILL

@@ -152,6 +152,8 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_OTG,
 	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
 	POWER_SUPPLY_TYPE_LAN_HUB,
+	POWER_SUPPLY_TYPE_MHL_USB,
+	POWER_SUPPLY_TYPE_POWER_SHARING,	/* Power sharing cable */
 };
 
 /*

@@ -368,6 +368,7 @@ static ssize_t mpu6500_gyro_selftest(struct device *dev,
 
 	if (total_count == 0) {
 		pr_err("[SSP] %s, total_count is 0. goto exit\n", __func__);
+		ret_val = 2;
 		goto exit;
 	}
 

@@ -59,6 +59,7 @@ enum ACCESSIBILITY {
 	ACCESSIBILITY_OFF,
 	NEGATIVE,
 	COLOR_BLIND,
+	SCREEN_CURTAIN,
 	ACCESSIBILITY_MAX,
 };
 
@@ -100,6 +101,8 @@ struct mdnie_info {
 	struct notifier_block secfb_notif;
 #endif
 
+
+	struct platform_mdnie_data *pd;
 };
 
 extern struct mdnie_info *g_mdnie;

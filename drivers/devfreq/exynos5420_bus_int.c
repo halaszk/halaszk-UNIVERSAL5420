@@ -25,6 +25,7 @@
 #include <linux/reboot.h>
 #include <linux/kobject.h>
 #include <linux/errno.h>
+#include <linux/delay.h>
 
 #include <mach/regs-clock.h>
 #include <mach/devfreq.h>
@@ -137,6 +138,13 @@ struct busfreq_data_int {
 
 	struct notifier_block tmu_notifier;
 	int busy;
+};
+
+struct busfreq_waiting_mux_state {
+    void __iomem *reg;
+    unsigned int shift;
+    unsigned int mask;
+    unsigned int valid_value;
 };
 
 /* TOP 0 */
@@ -580,6 +588,232 @@ static struct int_pm_clks *exynos5_int_pm_clks[] = {
 	&int_pm_clks_aclk_400_disp1,
 };
 
+static struct busfreq_waiting_mux_state busfreq_int_mux[] = {
+    {	/* EXYNOS5_CLKMUX_STAT_TOP10 */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+        .shift = 28,
+        .mask = 0x7,
+        .valid_value = 2,
+    }, {	/* aclk_200_fsys_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+        .shift = 28,
+        .mask = 0xF,
+        .valid_value = 3,
+    }, {	/* pclk_200_fsys_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+        .shift = 24,
+        .mask = 0x7,
+        .valid_value = 2,
+    }, {	/* pclk_200_fsys_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+        .shift = 24,
+        .mask = 0xF,
+        .valid_value = 3,
+    }, {	/* aclk_100_noc_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 20,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_100_noc_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 20,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_400_wcore_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 16,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_400_wcore_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_CMUTOP_SPARE3,
+            .shift = 3,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_400_wcore_mout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 16,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_200_fsys2_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 12,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_200_fsys2_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 12,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_200_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 8,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_200_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 8,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_400_mscl_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 4,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_400_mscl_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 4,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_400_isp_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP10,
+            .shift = 0,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_400_isp_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP0,
+            .shift = 0,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_166_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 24,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_166_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 24,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_266_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 20,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_266_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 20,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_66_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 8,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_66_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 8,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_333_432_isp_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 4,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_333_432_isp_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 4,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_333_432_isp0_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 12,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_333_432_isp0_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 12,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_333_432_gscl_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP11,
+            .shift = 0,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_333_432_gscl_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP1,
+            .shift = 0,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_300_gscl_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 28,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_300_gscl_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 28,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_300_disp1_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 24,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_300_disp1_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 24,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_300_jpeg_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 20,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_300_jpeg_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 20,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_266_g2d_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 12,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_266_g2d_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 12,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_333_g2d_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 8,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_333_g2d_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 8,
+            .mask = 0xF,
+            .valid_value = 3,
+    }, {	/* aclk_400_disp1_sw */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP12,
+            .shift = 4,
+            .mask = 0x7,
+            .valid_value = 2,
+    }, {	/* aclk_400_disp1_dout */
+        .reg = EXYNOS5_CLKMUX_STAT_TOP2,
+            .shift = 4,
+            .mask = 0xF,
+            .valid_value = 3,
+    }
+};
+
+static void exynos5_int_waiting_mux_status(void)
+{
+    int i;
+    int count;
+
+    for (i = 0; i < ARRAY_SIZE(busfreq_int_mux); ++i) {
+        count = 0;
+        while (((__raw_readl(busfreq_int_mux[i].reg) >> busfreq_int_mux[i].shift) & busfreq_int_mux[i].mask) > busfreq_int_mux[i].valid_value) {
+            if (++count > 1000) {
+                pr_err("DEVFREQ(MIF) : waiting mux is not completed(%d)\n", i);
+                return;
+            }
+            udelay(1);
+        }
+    }
+}
+
 #ifdef CONFIG_EXYNOS_THERMAL
 static unsigned int get_limit_voltage(unsigned int voltage, unsigned int volt_offset)
 {
@@ -797,6 +1031,8 @@ static int exynos5_int_busfreq_target(struct device *dev,
 
 		regulator_set_voltage(data->vdd_int, target_volt, target_volt + INT_VOLT_STEP);
 	}
+
+    exynos5_int_waiting_mux_status();
 
 	curr_int_freq = freq;
 	data->curr_opp = opp;

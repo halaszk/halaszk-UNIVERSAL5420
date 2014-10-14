@@ -442,6 +442,7 @@ struct s3c_fb {
 	struct mutex		clk_lock;
 	bool			clk_gating;
 	bool			clk_gate_lock;
+	struct mutex		gate_lock;
 	int			clk_gate_allow;
 	int			trig_state;
 	int			clk_idle_count;
@@ -759,20 +760,16 @@ static int s3c_fb_clk_validation(struct s3c_fb *sfb)
 #ifdef CONFIG_FB_I80IF
 static int s3c_fb_clk_lock(struct s3c_fb *sfb, bool en)
 {
-	mutex_lock(&sfb->update_regs_list_lock);
+	mutex_lock(&sfb->gate_lock);
 
 	if(en){
-		if(sfb->clk_gating) {
-			flush_kthread_worker(&sfb->control_clock_gating);
-			dev_warn(sfb->dev, "clock is enabled.()\n");
-		}
-		s3c_fb_enable_clk(sfb);
 		sfb->clk_gate_lock = true;
+		s3c_fb_enable_clk(sfb);
 	}
 	else
 		sfb->clk_gate_lock = false;
 
-	mutex_unlock(&sfb->update_regs_list_lock);
+	mutex_unlock(&sfb->gate_lock);
 	return (readl(gate_ip_disp1) & 0x1);
 }
 #endif
@@ -1938,6 +1935,27 @@ int s3c_fb_enable_trigger_by_dsim(struct device *fimd, unsigned int enable)
 	}
 
 	dev_info(sfb->dev, "%s: %d\n", __func__, enable);
+
+	return 0;
+}
+
+int s3c_fb_enable_trigger_by_mdnie(struct device *fimd)
+{
+	struct platform_device *pdev = to_platform_device(fimd);
+	struct s3c_fb *sfb = platform_get_drvdata(pdev);
+
+	if (!sfb->output_on) return 0;
+
+	sfb->clk_idle_count = 0;
+
+	flush_kthread_worker(&sfb->control_clock_gating);
+	s3c_fb_enable_clk(sfb);
+	if (!check_gate_disp1())
+		BUG();
+
+	s3c_fb_enable_trigger(sfb);
+
+	dev_info(sfb->dev, "%s: \n", __func__);
 
 	return 0;
 }
@@ -3172,8 +3190,12 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 	int count = 10;
 	int i;
 	pm_runtime_get_sync(sfb->dev);
+#ifdef CONFIG_FB_I80IF
+	if (!s3c_fb_clk_lock(sfb, true))
+		BUG();
+#else
 	s3c_fb_clk_ctrl(sfb, true);
-
+#endif
 	if (!check_gate_disp1())
 		BUG();
 	sfb->clk_gate_allow = GATE_DENY;
@@ -3229,8 +3251,11 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 				i, regs->vidw_buf_start[i],
 				readl(sfb->regs + SHD_VIDW_BUF_START(i)));
 	}
-
+#ifdef CONFIG_FB_I80IF
+	s3c_fb_clk_lock(sfb, false);
+#else
 	s3c_fb_clk_ctrl(sfb, false);
+#endif
 	pm_runtime_put_sync(sfb->dev);
 
 	sw_sync_timeline_inc(sfb->timeline, 1);
@@ -4409,6 +4434,8 @@ static void s3c_fb_control_clock_gating_handler(struct kthread_work *work)
 {
 	struct s3c_fb *sfb =
 		container_of(work, struct s3c_fb, control_clock_gating_work);
+
+	mutex_lock(&sfb->gate_lock);
 	if (s3c_fb_get_mipi_state(sfb) && sfb->clk_idle_count == 0) {
 		s3c_fb_enable_clk(sfb);
 		s3c_fb_enable_trigger(sfb);
@@ -4419,6 +4446,7 @@ static void s3c_fb_control_clock_gating_handler(struct kthread_work *work)
 			sfb->clk_gating = false;
 		}
 	}
+	mutex_unlock(&sfb->gate_lock);
 }
 #endif
 
@@ -4732,6 +4760,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	/* XXX need to cleanup on errors */
 
 #ifdef CONFIG_FB_I80IF
+	mutex_init(&sfb->gate_lock);
 	init_kthread_worker(&sfb->control_clock_gating);
 
 	sfb->control_clock_gating_thread = kthread_run(kthread_worker_fn,

@@ -3543,7 +3543,7 @@ static struct clk_ops exynos5420_epll_ops = {
 
 /* DPLL */
 static struct pll_div_data exynos5_dpll_div[] = {
-	{600000000, 2, 100, 1, 0,  0, 0},
+	{600000000, 2, 200, 2, 0,  0, 0},
 };
 
 PLL_2550(dpll_data, DPLL, exynos5_dpll_div);
@@ -3642,8 +3642,8 @@ static struct clk_ops exynos5420_mpll_ops = {
 
 /* RPLL */
 static struct vpll_div_data exynos5_rpll_div[] = {
-	{133000000, 3, 133, 3,     0, 0, 0, 0},
-	{266000000, 3, 133, 2,     0, 0, 0, 0},
+	{133000000, 3, 266, 4,     0, 0, 0, 0},
+	{266000000, 3, 266, 3,     0, 0, 0, 0},
 	{300000000, 2, 100, 2,     0, 0, 0, 0},
 };
 

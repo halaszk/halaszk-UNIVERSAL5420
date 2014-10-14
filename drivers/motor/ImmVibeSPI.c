@@ -57,34 +57,13 @@ extern void vibtonz_pwm(int nForce);
 */
 IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
 {
-    /*printk(KERN_ERR"[VIBRATOR] ImmVibeSPI_ForceOut_AmpDisable is called\n");*/
-#if 0
 	if (g_bAmpEnabled) {
-		DbgOut((KERN_DEBUG "ImmVibeSPI_ForceOut_AmpDisable.\n"));
-
 		g_bAmpEnabled = false;
-
-		/* Disable amp */
-
-
-		/* Disable PWM CLK */
-
-	}
-#endif
-
-	if (g_bAmpEnabled) {
-
-		g_bAmpEnabled = false;
-#if !defined(CONFIG_MACH_P4NOTE)
 		vibtonz_pwm(0);
 		vibtonz_en(false);
-#endif
+
 		if (regulator_hapticmotor_enabled == 1) {
 			regulator_hapticmotor_enabled = 0;
-/*
-			printk(KERN_DEBUG "tspdrv: %s (%d)\n", __func__,
-						regulator_hapticmotor_enabled);
-*/
 		}
 	}
 
@@ -96,32 +75,10 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex
 */
 IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex)
 {
-    /*printk(KERN_ERR"[VIBRATOR]ImmVibeSPI_ForceOut_AmpEnable is called\n");*/
-#if 0
-	if (!g_bAmpEnabled)	{
-		DbgOut((KERN_DEBUG "ImmVibeSPI_ForceOut_AmpEnable.\n"));
-
-		g_bAmpEnabled = true;
-
-		/* Generate PWM CLK with proper frequency(ex. 22400Hz) and 50% duty cycle.*/
-
-
-		/* Enable amp */
-
-	}
-#endif
-
 	if (!g_bAmpEnabled) {
-#if !defined(CONFIG_MACH_P4NOTE)
 		vibtonz_en(true);
-#endif
-
 		g_bAmpEnabled = true;
 		regulator_hapticmotor_enabled = 1;
-/*
-		printk(KERN_DEBUG "tspdrv: %s (%d)\n", __func__,
-					regulator_hapticmotor_enabled);
-*/
 	}
 
 	return VIBE_S_SUCCESS;
@@ -172,51 +129,32 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_Terminate(void)
 /*
 ** Called by the real-time loop to set PWM duty cycle
 */
+#if defined(CONFIG_IMM_DRV_VERSION_3_7)
+static bool g_bOutputDataBufferEmpty = 1;
+#endif	/* CONFIG_IMM_DRV_VERSION_3_7 */
+
 IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_SetSamples(VibeUInt8 nActuatorIndex,
 							VibeUInt16 nOutputSignalBitDepth,
 							VibeUInt16 nBufferSizeInBytes,
 							VibeInt8 * pForceOutputBuffer)
 {
-#if 0
 	VibeInt8 nForce;
 
-	switch (nOutputSignalBitDepth) {
-	case 8:
-		/* pForceOutputBuffer is expected to contain 1 byte */
-		if (nBufferSizeInBytes != 1) {
-			DbgOut((KERN_ERR "[ImmVibeSPI] ImmVibeSPI_ForceOut_SetSamples nBufferSizeInBytes =  %d\n", nBufferSizeInBytes));
-			return VIBE_E_FAIL;
-		}
-		nForce = pForceOutputBuffer[0];
-		break;
-	case 16:
-		/* pForceOutputBuffer is expected to contain 2 byte */
-		if (nBufferSizeInBytes != 2)
-			return VIBE_E_FAIL;
-
-		/* Map 16-bit value to 8-bit */
-		nForce = ((VibeInt16 *)pForceOutputBuffer)[0] >> 8;
-		break;
-	default:
-		/* Unexpected bit depth */
-		return VIBE_E_FAIL;
+#if defined(CONFIG_IMM_DRV_VERSION_3_7)
+	if (g_bOutputDataBufferEmpty) {
+		nActuatorIndex = 0;
+		nOutputSignalBitDepth = 8;
+		nBufferSizeInBytes = 1;
+		pForceOutputBuffer[0] = 0;
 	}
-
-	if (nForce == 0)
-		/* Set 50% duty cycle or disable amp */
-	else
-		/* Map force from [-127, 127] to [0, PWM_DUTY_MAX] */
-
-
-#endif
-
-	VibeInt8 nForce;
+#endif	/* CONFIG_IMM_DRV_VERSION_3_7 */
 
 	switch (nOutputSignalBitDepth) {
 	case 8:
 		/* pForceOutputBuffer is expected to contain 1 byte */
 		if (nBufferSizeInBytes != 1) {
-			DbgOut((KERN_ERR "[ImmVibeSPI] ImmVibeSPI_ForceOut_SetSamples nBufferSizeInBytes =  %d\n", nBufferSizeInBytes));
+			DbgOut((KERN_ERR "[ImmVibeSPI] ImmVibeSPI_ForceOut_SetSamples nBufferSizeInBytes =  %d\n",
+				nBufferSizeInBytes));
 			return VIBE_E_FAIL;
 		}
 		nForce = pForceOutputBuffer[0];
@@ -239,24 +177,12 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_SetSamples(VibeUInt8 nActuatorIndex
 		ImmVibeSPI_ForceOut_AmpDisable(0);
 	} else {
 		/* Map force from [-127, 127] to [0, PWM_DUTY_MAX] */
-		ImmVibeSPI_ForceOut_AmpEnable(0);
-#if !defined(CONFIG_MACH_P4NOTE)
 		vibtonz_pwm(nForce);
-#endif
+		ImmVibeSPI_ForceOut_AmpEnable(0);
 	}
 
 	return VIBE_S_SUCCESS;
 }
-
-#if 0	/* Unused */
-/*
-** Called to set force output frequency parameters
-*/
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_SetFrequency(VibeUInt8 nActuatorIndex, VibeUInt16 nFrequencyParameterID, VibeUInt32 nFrequencyParameterValue)
-{
-	return VIBE_S_SUCCESS;
-}
-#endif
 
 /*
 ** Called to get the device name (device name must be returned as ANSI char)

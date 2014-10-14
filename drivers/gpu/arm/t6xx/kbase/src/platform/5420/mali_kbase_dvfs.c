@@ -353,7 +353,11 @@ static int mali_dvfs_update_asv(int cmd)
 
 	if (cmd == ASV_CMD_DISABLE) {
 		for (i = 0; i < MALI_DVFS_STEP; i++) {
+#ifdef CONFIG_SUPPORT_WQXGA
+			mali_dvfs_infotbl[i].voltage = mali_dvfs_vol_default[i+1];
+#else
 			mali_dvfs_infotbl[i].voltage = mali_dvfs_vol_default[i];
+#endif  /* CONFIG_SUPPORT_WQXGA */
 		}
 		printk("mali_dvfs_update_asv use default table\n");
 		return ASV_STATUS_INIT;

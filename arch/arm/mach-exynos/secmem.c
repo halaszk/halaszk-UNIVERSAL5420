@@ -15,13 +15,15 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/mutex.h>
-#include <linux/pm_runtime.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
 #include <linux/export.h>
 #include <linux/pm_qos.h>
+#if !defined(CONFIG_SOC_EXYNOS5420)
+#include <linux/pm_runtime.h>
+#endif
 
 #include <asm/memory.h>
 #include <asm/cacheflush.h>
@@ -77,10 +79,12 @@ static void drm_enable_locked(struct secmem_info *info, bool enable)
 {
 	if (drm_onoff != enable) {
 #ifdef CONFIG_EXYNOS5_DEV_GSC
+#if !defined(CONFIG_SOC_EXYNOS5420)
 		if (enable)
 			pm_runtime_forbid(info->dev->parent);
 		else
 			pm_runtime_allow(info->dev->parent);
+#endif
 #endif
 		drm_onoff = enable;
 		/*
@@ -289,7 +293,9 @@ struct miscdevice secmem = {
 	.name	= SECMEM_DEV_NAME,
 	.fops	= &secmem_fops,
 #ifdef CONFIG_EXYNOS5_DEV_GSC
+#if !defined(CONFIG_SOC_EXYNOS5420)
 	.parent	= &exynos5_device_gsc0.dev,
+#endif
 #endif
 };
 
@@ -306,7 +312,9 @@ static int __init secmem_init(void)
 
 	crypto_driver = NULL;
 
+#if !defined(CONFIG_SOC_EXYNOS5420)
 	pm_runtime_enable(secmem.this_device);
+#endif
 #if defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ)
 	pm_qos_add_request(&exynos5_secmem_mif_qos, PM_QOS_BUS_THROUGHPUT, 0);
 #endif
@@ -319,8 +327,9 @@ static void __exit secmem_exit(void)
 #if defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ)
 	pm_qos_remove_request(&exynos5_secmem_mif_qos);
 #endif
-
+#if !defined(CONFIG_SOC_EXYNOS5420)
 	__pm_runtime_disable(secmem.this_device, false);
+#endif
 	misc_deregister(&secmem);
 }
 

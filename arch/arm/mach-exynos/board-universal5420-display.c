@@ -366,6 +366,10 @@ static struct lcd_platform_data s6e3fa0_platform_data = {
 #ifdef CONFIG_FB_S5P_MDNIE
 static struct platform_mdnie_data mdnie_data = {
 	.display_type	= -1,
+#if defined(CONFIG_FB_I80IF)
+	.trigger_set	= s3c_fb_enable_trigger_by_mdnie,
+	.fimd1_device	= &s5p_device_fimd1.dev,
+#endif
 };
 
 struct platform_device mdnie_device = {

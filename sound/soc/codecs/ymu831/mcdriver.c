@@ -57,6 +57,8 @@
 #define	T_CPMODE_IMPSENSE_BEFORE	(0)
 #define	T_CPMODE_IMPSENSE_AFTER		(2)
 
+#define	SENSEFIN_PATH_CUT		(1)
+
 static const struct MCDRV_PATH_INFO	gsPathInfoAllOff	= {
 	{{0x00AAAAAA}, {0x00AAAAAA} },	/* asMusicOut	*/
 	{{0x00AAAAAA}, {0x00AAAAAA} },	/* asExtOut	*/
@@ -2630,6 +2632,13 @@ static SINT32	irq_proc
 		}
 
 		McResCtrl_GetPathInfoVirtual(&sCurPathInfo);
+#if (SENSEFIN_PATH_CUT == 1)
+		if ((bSENSEFIN&MCB_SSENSEFIN) != 0) {
+			sCurPathInfo.asLout1[0].dSrcOnOff = 0x0a;
+			sCurPathInfo.asLout1[1].dSrcOnOff = 0x0a;
+			sCurPathInfo.asRc[0].dSrcOnOff = 0x0a;
+		}
+#endif
 		sdRet	= set_path(&sCurPathInfo);
 		bAP	= McResCtrl_GetRegVal(MCDRV_PACKET_REGTYPE_ANA, MCI_AP);
 		if ((bAP&MCB_AP_LDOD) != 0) {

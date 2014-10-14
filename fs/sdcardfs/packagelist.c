@@ -40,6 +40,7 @@ struct packagelist_data {
 	struct mutex hashtable_lock;
 	struct task_struct *thread_id;
 	gid_t write_gid;
+	char *strtok_last;
 	char read_buf[STRING_BUF_SIZE];
 	char event_buf[STRING_BUF_SIZE];
 	char app_name_buf[STRING_BUF_SIZE];
@@ -289,7 +290,7 @@ static int read_package_list(struct packagelist_data *pkgl_dat) {
 				return ret;
 			}
 
-			token = strtok(pkgl_dat->gids_buf, ",");
+			token = strtok_r(pkgl_dat->gids_buf, ",", &pkgl_dat->strtok_last);
 			while (token != NULL) {
 				if (!kstrtoul(token, 10, &ret_gid) &&
 						(ret_gid == pkgl_dat->write_gid)) {
@@ -301,7 +302,7 @@ static int read_package_list(struct packagelist_data *pkgl_dat) {
 					}
 					break;
 				}
-				token = strtok(NULL, ",");
+				token = strtok_r(NULL, ",", &pkgl_dat->strtok_last);
 			}
 		}
 	}

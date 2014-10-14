@@ -190,6 +190,7 @@ static struct dw_mci_board universal5420_dwmci0_pdata __initdata = {
 				  MMC_CAP_ERASE | MMC_CAP_HW_RESET,
 	.caps2			= MMC_CAP2_HS200_1_8V_SDR | MMC_CAP2_HS200_1_8V_DDR |
 				  MMC_CAP2_CACHE_CTRL | MMC_CAP2_BROKEN_VOLTAGE |
+				  MMC_CAP2_STROBE_ENHANCED |
 				  MMC_CAP2_NO_SLEEP_CMD | MMC_CAP2_POWEROFF_NOTIFY,
 	.fifo_depth		= 0x40,
 	.detect_delay_ms	= 200,
