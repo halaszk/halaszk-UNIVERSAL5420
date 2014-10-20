@@ -16,7 +16,7 @@
 
 #define DEBUG
 /* #define VERBOSE_DEBUG */
-/*#define SEC_TSP_DEBUG*/
+#define SEC_TSP_DEBUG
 /* #define SEC_TSP_VERBOSE_DEBUG */
 
 /* #define FORCE_FW_FLASH */
@@ -51,6 +51,7 @@
 #include <linux/platform_data/mms_ts.h>
 
 #include <asm/unaligned.h>
+extern unsigned int system_rev;
 
 #define MAX_FINGERS		10
 #define MAX_WIDTH		30
@@ -130,9 +131,11 @@ enum {
 /* Touch booster */
 #if defined(CONFIG_EXYNOS4_CPUFREQ) &&\
 	defined(CONFIG_BUSFREQ_OPP)
+#if 0
 #define TOUCH_BOOSTER			1
 #define TOUCH_BOOSTER_OFF_TIME		100
 #define TOUCH_BOOSTER_CHG_TIME		200
+#endif
 #else
 #define TOUCH_BOOSTER			0
 #endif
@@ -301,6 +304,11 @@ struct mms_fw_image {
 static void mms_ts_early_suspend(struct early_suspend *h);
 static void mms_ts_late_resume(struct early_suspend *h);
 #endif
+static int mms_ts_suspend(struct device *dev);
+static int mms_ts_resume(struct device *dev);
+
+static int mms_ts_input_open(struct input_dev *dev);
+static void mms_ts_input_close(struct input_dev *dev);
 
 #if TOUCH_BOOSTER
 static bool dvfs_lock_status = false;
@@ -453,29 +461,14 @@ static inline void mms_pwr_on_reset(struct mms_ts_info *info)
 {
 	struct i2c_adapter *adapter = to_i2c_adapter(info->client->dev.parent);
 
-	if (!info->pdata->mux_fw_flash) {
-		dev_info(&info->client->dev,
-			 "missing platform data, can't do power-on-reset\n");
-		return;
-	}
-
 	i2c_lock_adapter(adapter);
-	info->pdata->mux_fw_flash(true);
 
 	info->pdata->power(false);
-	gpio_direction_output(info->pdata->gpio_sda, 0);
-	gpio_direction_output(info->pdata->gpio_scl, 0);
-	gpio_direction_output(info->pdata->gpio_int, 0);
 	msleep(50);
 	info->pdata->power(true);
 	msleep(200);
 
-	info->pdata->mux_fw_flash(false);
 	i2c_unlock_adapter(adapter);
-
-	/* TODO: Seems long enough for the firmware to boot.
-	 * Find the right value */
-	msleep(250);
 }
 
 static void release_all_fingers(struct mms_ts_info *info)
@@ -710,9 +703,9 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				id, x, y, tmp[4], tmp[6], tmp[7]
 				, angle, palm);
 
-			if (finger_event_sz == 10)
+/*			if (finger_event_sz == 10)
 				dev_dbg(&client->dev, \
-					"pressure = %d\n", tmp[8]);
+					"pressure = %d\n", tmp[8]);*/
 		}
 #else
 #if 0
@@ -2186,7 +2179,7 @@ static void get_fw_ver_bin(void *device_data)
 
 	set_default_result(info);
 
-	snprintf(buff, sizeof(buff), "%#02x", FW_VERSION_4_8);
+	snprintf(buff, sizeof(buff), "ME0045%02x", FW_VERSION_4_8);
 
 	set_cmd_result(info, buff, strnlen(buff, sizeof(buff)));
 	info->cmd_state = 2;
@@ -2204,7 +2197,7 @@ static void get_fw_ver_ic(void *device_data)
 	set_default_result(info);
 
 	ver = info->fw_ic_ver;
-	snprintf(buff, sizeof(buff), "%#02x", ver);
+	snprintf(buff, sizeof(buff), "ME0045%02x", ver);
 
 	set_cmd_result(info, buff, strnlen(buff, sizeof(buff)));
 	info->cmd_state = 2;
@@ -2807,6 +2800,8 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 #endif
 	touch_is_pressed = 0;
 
+	dev_err(&client->dev, "mms_ts_probe\n");
+
 #if 0
 	gpio_request(GPIO_OLED_DET, "OLED_DET");
 	ret = gpio_get_value(GPIO_OLED_DET);
@@ -2859,12 +2854,18 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 		info->max_y = 1280;
 	}
 
+	if (system_rev >= 2) { /*real board*/
+		info->invert_x = 720;
+		info->invert_y = 1280;
+	}
 	snprintf(info->phys, sizeof(info->phys),
 		 "%s/input0", dev_name(&client->dev));
 	input_dev->name = "sec_touchscreen"; /*= "Melfas MMSxxx Touchscreen";*/
 	input_dev->phys = info->phys;
 	input_dev->id.bustype = BUS_I2C;
 	input_dev->dev.parent = &client->dev;
+	input_dev->open = mms_ts_input_open;
+	input_dev->close = mms_ts_input_close;
 
 	__set_bit(EV_ABS, input_dev->evbit);
 	__set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
@@ -2987,8 +2988,14 @@ static int __devexit mms_ts_remove(struct i2c_client *client)
 
 	return 0;
 }
+static void mms_ts_shutdown(struct i2c_client *client)
+{
+	struct mms_ts_info *info = i2c_get_clientdata(client);
 
-#if defined(CONFIG_PM) || defined(CONFIG_HAS_EARLYSUSPEND)
+	info->pdata->power(0);
+}
+
+#if defined(CONFIG_PM)
 static int mms_ts_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -3045,7 +3052,6 @@ static int mms_ts_resume(struct device *dev)
 	mms_set_noise_mode(info);
 	return 0;
 }
-#endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void mms_ts_early_suspend(struct early_suspend *h)
@@ -3063,7 +3069,28 @@ static void mms_ts_late_resume(struct early_suspend *h)
 	mms_ts_resume(&info->client->dev);
 }
 #endif
+static void mms_ts_input_close(struct input_dev *dev)
+{
+	struct mms_ts_info *info = input_get_drvdata(dev);
+	dev_info(&info->client->dev, "%s: users=%d\n", __func__,
+		   info->input_dev->users);
 
+	mms_ts_suspend(&info->client->dev);
+}
+
+static int mms_ts_input_open(struct input_dev *dev)
+{
+	struct mms_ts_info *info = input_get_drvdata(dev);
+
+	dev_info(&info->client->dev, "%s: users=%d\n", __func__,
+		   info->input_dev->users);
+
+	mms_ts_resume(&info->client->dev);
+
+	return 0;
+}
+#endif
+#if 0
 #if defined(CONFIG_PM) && !defined(CONFIG_HAS_EARLYSUSPEND)
 static const struct dev_pm_ops mms_ts_pm_ops = {
 	.suspend = mms_ts_suspend,
@@ -3074,6 +3101,7 @@ static const struct dev_pm_ops mms_ts_pm_ops = {
 	.restore = mms_ts_resume,
 #endif
 };
+#endif
 #endif
 
 static const struct i2c_device_id mms_ts_id[] = {
@@ -3086,10 +3114,13 @@ MODULE_DEVICE_TABLE(i2c, mms_ts_id);
 static struct i2c_driver mms_ts_driver = {
 	.probe = mms_ts_probe,
 	.remove = __devexit_p(mms_ts_remove),
+	.shutdown = mms_ts_shutdown,
 	.driver = {
 		   .name = MELFAS_TS_NAME,
+#if 0
 #if defined(CONFIG_PM) && !defined(CONFIG_HAS_EARLYSUSPEND)
 		   .pm = &mms_ts_pm_ops,
+#endif
 #endif
 		   },
 	.id_table = mms_ts_id,

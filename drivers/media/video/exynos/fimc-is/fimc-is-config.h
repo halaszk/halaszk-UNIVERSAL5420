@@ -27,6 +27,13 @@
 #define USE_OWN_FAULT_HANDLER
 /* #define ENABLE_MIF_400 */
 /* #define ENABLE_DTP */
+#define ENABLE_SENSOR_TIMEOUT
+
+#define CSI_VERSION_0000_0000	0x0
+#define CSI_VERSION_0310_0100	0x03100100
+
+#define FIMC_IS_VERSION_000	0x0
+#define FIMC_IS_VERSION_250	0x250
 
 #if defined(CONFIG_PM_DEVFREQ)
 #define ENABLE_DVFS
@@ -36,31 +43,47 @@
 #undef ENABLE_SETFILE
 #define SUPPORTED_IS_CMD_VER	132
 #define TARGET_SPI_CH_FOR_PERI	1
-#endif
+#define FIMC_IS_CSI_VERSION	CSI_VERSION_0000_0000
+#define FIMC_IS_VERSION		FIMC_IS_VERSION_000
 
-#if defined(CONFIG_SOC_EXYNOS5422)
+#elif defined(CONFIG_SOC_EXYNOS5422)
 #undef ENABLE_SETFILE
 #define SUPPORTED_IS_CMD_VER	132
+
 #define TARGET_SPI_CH_FOR_PERI	0
 #undef HAS_FW_CLOCK_GATE
-#endif
+#define FIMC_IS_CSI_VERSION	CSI_VERSION_0000_0000
+#define FIMC_IS_VERSION		FIMC_IS_VERSION_000
 
-#if defined(CONFIG_SOC_EXYNOS5260)
+#elif defined(CONFIG_SOC_EXYNOS5260)
 #undef ENABLE_SETFILE
 #undef ENABLE_DRC
+#undef ENABLE_CLOCK_GATE
 #undef ENABLE_FULL_BYPASS
-#define SUPPORTED_EARLY_BUF_DONE
+/* #define SUPPORTED_EARLY_BUF_DONE */
 #define SUPPORTED_IS_CMD_VER	131
 #define TARGET_SPI_CH_FOR_PERI	1
-#endif
+#define FIMC_IS_CSI_VERSION	CSI_VERSION_0310_0100
+#define FIMC_IS_VERSION		FIMC_IS_VERSION_000
 
-#if defined(CONFIG_SOC_EXYNOS3470)
+#elif defined(CONFIG_SOC_EXYNOS4415)
+#define SUPPORTED_IS_CMD_VER	132
+#define FIMC_IS_CSI_VERSION	CSI_VERSION_0310_0100
+#define FIMC_IS_VERSION		FIMC_IS_VERSION_250
+
+#elif defined(CONFIG_SOC_EXYNOS3470)
 #undef ENABLE_SETFILE
 #undef ENABLE_DRC
 #undef ENABLE_DVFS
 #undef ENABLE_FULL_BYPASS
 #define SUPPORTED_IS_CMD_VER	131
 #define TARGET_SPI_CH_FOR_PERI	1
+#define FIMC_IS_CSI_VERSION	CSI_VERSION_0000_0000
+#define FIMC_IS_VERSION		FIMC_IS_VERSION_000
+
+#else
+#error fimc-is driver can NOT support this platform
+
 #endif
 /*
  * -----------------------------------------------------------------------------
@@ -68,7 +91,7 @@
  * -----------------------------------------------------------------------------
  */
 
-/* #define DEBUG */
+#define DEBUG
 #define DBG_VIDEO
 #define DBG_DEVICE
 /* #define DBG_STREAMING */
@@ -76,7 +99,8 @@
 /* #define BUG_ON_ENABLE */
 /* #define FIXED_FPS_DEBUG */
 #define FIXED_FPS_VALUE 10
-/* #define DBG_FLITEISR */
+/*#define DBG_CSIISR*/
+/*#define DBG_FLITEISR*/
 #define FW_DEBUG
 #define RESERVED_MEM
 #define SCALER_PARALLEL_MODE
@@ -86,6 +110,7 @@
 /* #define PRINT_CAPABILITY */
 /* #define PRINT_BUFADDR */
 /* #define PRINT_DZOOM */
+/* #define PRINT_I2CCMD */
 #define ISDRV_VERSION 244
 
 #if (defined(BAYER_CROP_DZOOM) && defined(SCALER_CROP_DZOOM))
@@ -155,7 +180,7 @@
 
 /* debug message for video node */
 #define mdbgv_vid(fmt, args...) \
-	pr_info("[@][COM:V] " fmt, ##args)
+	pr_info("[@][VID:V] " fmt, ##args)
 
 #define mdbgv_sensor(fmt, this, args...) \
 	mdbg_common("[%d][SS%d:V] ", fmt, this->video->id, this->instance, ##args)

@@ -212,6 +212,7 @@ static ssize_t pn547_dev_write(struct file *filp, const char __user *buf,
 #endif
 	/* Write data */
 	do {
+		pn547_dev->client->adapter->timeout = msecs_to_jiffies(50); //50mSec
 		retry--;
 		ret = i2c_master_send(pn547_dev->client, tmp, count);
 		if (ret == count)

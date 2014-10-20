@@ -10,18 +10,24 @@
 #include <linux/errno.h>
 #include <linux/platform_device.h>
 #include <linux/clkdev.h>
+#include <linux/i2c.h>
 
 #include <plat/cpu.h>
 #include <plat/devs.h>
 #include <plat/fimg2d.h>
 #include <plat/jpeg.h>
+#include <plat/tv-core.h>
 #include <media/exynos_gscaler.h>
+#include <mach/hs-iic.h>
+#include <plat/iic.h>
 #include <mach/exynos-mfc.h>
 #include <mach/exynos-scaler.h>
 
 #include <linux/spi/spi.h>
 #include <plat/s3c64xx-spi.h>
 #include <mach/spi-clocks.h>
+#include <mach/exynos-tv.h>
+
 #include "board-universal5260.h"
 
 #ifdef CONFIG_ARM_EXYNOS5260_BUS_DEVFREQ
@@ -105,6 +111,29 @@ struct platform_device exynos_device_md1 = {
 	.id = 1,
 };
 
+#if defined(CONFIG_MACH_M2ALTE_KOR_SKT) \
+	|| defined(CONFIG_MACH_M2ALTE_KOR_KTT) || defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+static struct s3c64xx_spi_csinfo spi2_csi[] = {
+	[0] = {
+		.line           = EXYNOS5260_GPB1(1),
+		.set_level      = gpio_set_value,
+		.fb_delay       = 0x2,
+	},
+};
+
+static struct spi_board_info spi2_board_info[] __initdata = {
+	{
+		.modalias               = "spi_modem_boot",
+		.platform_data          = NULL,
+		.max_speed_hz           = 2 * 1000 * 1000,
+		.bus_num                = 2,
+		.chip_select            = 0,
+		.mode                   = SPI_MODE_0,
+		.controller_data        = &spi2_csi[0],
+	}
+};
+#endif
+
 static struct s3c64xx_spi_csinfo spi3_csi[] = {
 	[0] = {
 		.line           = EXYNOS5260_GPF1(1),
@@ -137,7 +166,19 @@ static struct platform_device *universal5260_media_devices[] __initdata = {
 	&exynos5_device_jpeg_hx,
 	&exynos5_device_scaler0,
 	&exynos5_device_scaler1,
+#if defined(CONFIG_MACH_M2ALTE_KOR_SKT) \
+	|| defined(CONFIG_MACH_M2ALTE_KOR_KTT) || defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+	&s3c64xx_device_spi2,
+#endif
 	&s3c64xx_device_spi3,
+#ifdef CONFIG_VIDEO_EXYNOS_TV
+	&s3c_device_i2c2,
+	&s5p_device_mixer,
+	&s5p_device_hdmi,
+#ifdef CONFIG_VIDEO_EXYNOS_HDMI_CEC
+	&s5p_device_cec,
+#endif
+#endif
 };
 
 static struct fimg2d_platdata fimg2d_data __initdata = {
@@ -158,7 +199,31 @@ static struct exynos_jpeg_platdata exynos5260_jpeg_hx_pd __initdata = {
 	.gateclk	= "jpeg-hx",
 };
 #endif
-
+#ifdef CONFIG_VIDEO_EXYNOS_TV
+#ifdef CONFIG_VIDEO_EXYNOS_HDMI_CEC
+static struct s5p_platform_cec hdmi_cec_data __initdata = {
+};
+#endif
+static struct s5p_mxr_platdata mxr_platdata __initdata = {
+	.ip_ver = IP_VER_TV_5R,
+};
+static struct s5p_hdmi_platdata hdmi_platdata __initdata = {
+	.ip_ver = IP_VER_TV_5R,
+};
+static struct i2c_board_info i2c_devs2[] __initdata = {
+	{
+		I2C_BOARD_INFO("exynos_hdcp", (0x74 >> 1)),
+	},
+	{
+		I2C_BOARD_INFO("exynos_edid", (0xA0 >> 1)),
+	},
+};
+static struct s3c2410_platform_i2c i2c2_data __initdata = {
+	.frequency	= 100*1000,
+	.sda_delay	= 100,
+	.bus_num = 6,
+};
+#endif
 void __init exynos5_universal5260_media_init(void)
 {
 #ifdef CONFIG_VIDEO_EXYNOS_MFC
@@ -189,6 +254,20 @@ void __init exynos5_universal5260_media_init(void)
 			&exynos5_device_scaler0);
 	s3c_set_platdata(&universal5260_mscl_pd, sizeof(universal5260_mscl_pd),
 			&exynos5_device_scaler1);
+#if defined(CONFIG_MACH_M2ALTE_KOR_SKT) \
+	|| defined(CONFIG_MACH_M2ALTE_KOR_KTT) || defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+	pr_err("%s: Setup spi-CH2 CS\n", __func__);
+	if (!exynos_spi_cfg_cs(spi2_csi[0].line, 2)) {
+		pr_err("%s: spi config gpio\n", __func__);
+		s3c64xx_spi2_set_platdata(&s3c64xx_spi2_pdata,
+				EXYNOS_SPI_SRCCLK_SCLK, ARRAY_SIZE(spi2_csi));
+
+		spi_register_board_info(spi2_board_info,
+				ARRAY_SIZE(spi2_board_info));
+	} else {
+		pr_err("%s: Error requesting gpio for SPI-CH2 CS\n", __func__);
+	}
+#endif
 	if (!exynos_spi_cfg_cs(spi3_csi[0].line, 3)) {
 		s3c64xx_spi3_set_platdata(&s3c64xx_spi3_pdata,
 				EXYNOS_SPI_SRCCLK_SCLK, ARRAY_SIZE(spi3_csi));
@@ -197,5 +276,16 @@ void __init exynos5_universal5260_media_init(void)
 				ARRAY_SIZE(spi3_board_info));
 	} else {
 		pr_err("%s: Error requesting gpio for SPI-CH1 CS\n", __func__);
-	}   
+	}
+#ifdef CONFIG_VIDEO_EXYNOS_TV
+	dev_set_name(&s5p_device_hdmi.dev, "exynos5-hdmi");
+	s5p_tv_setup();
+#ifdef CONFIG_VIDEO_EXYNOS_HDMI_CEC
+	s5p_hdmi_cec_set_platdata(&hdmi_cec_data);
+#endif
+	s3c_set_platdata(&mxr_platdata, sizeof(mxr_platdata), &s5p_device_mixer);
+	s5p_hdmi_set_platdata(&hdmi_platdata);
+	s3c_i2c2_set_platdata(&i2c2_data);
+	i2c_register_board_info(6, i2c_devs2, ARRAY_SIZE(i2c_devs2));
+#endif
 }

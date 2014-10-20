@@ -91,65 +91,74 @@
 #define THREE_AXIS		3
 
 /* HW self test */
-#define BYTES_PER_SENSOR	6
-#define DEF_ST_STABLE_TIME	200
-#define THREE_AXIS		3
-#define DEF_GYRO_WAIT_TIME	51
-#define DEF_ST_PRECISION	1000
-#define BIT_ACCEL_OUT		0x08
-#define BITS_GYRO_OUT		0x70
-#define FIFO_COUNT_BYTE		2
-#define BITS_SELF_TEST_EN	0xE0
+#define BYTES_PER_SENSOR		6
+#define DEF_ST_STABLE_TIME		200
+#define THREE_AXIS				3
+#define DEF_GYRO_WAIT_TIME		51
+#define DEF_ST_PRECISION		1000
+#define BITS_ACCEL_OUT			0x08
+#define BITS_GYRO_OUT			0x70
+#define FIFO_COUNT_BYTE			2
+#define BITS_SELF_TEST_EN		0xE0
 
-#define INIT_ST_SAMPLES		50
-#define INIT_ST_THRESHOLD	14
-#define DEF_ST_TRY_TIMES	2
+#define INIT_ST_SAMPLES			50
+#define INIT_ST_THRESHOLD		14
+#define DEF_ST_TRY_TIMES		2
 
-#define REG_ST_GCT_X		0xD
+#define REG_ST_GCT_X			0xD
 #define DEF_GYRO_CT_SHIFT_DELTA	500
 /* gyroscope Coriolis self test min and max bias shift (dps) */
 #define DEF_GYRO_CT_SHIFT_MIN	10
 #define DEF_GYRO_CT_SHIFT_MAX	105
-#define DEF_ST_OTP0_THRESH	60
-#define DEF_ST_ABS_THRESH	20
-#define DEF_ST_TOR		2
-#define DEF_GYRO_SCALE		131
+#define DEF_ST_OTP0_THRESH		60
+#define DEF_ST_ABS_THRESH		20
+#define DEF_ST_TOR				2
+#define DEF_GYRO_SCALE			131
 #define DEF_GYRO_SELFTEST_DPS	250
 #define DEF_SELFTEST_GYRO_SENS	(32768 / 250)
 
+#define DEF_ST_SCALE						(1L << 15)
+#define DEF_ACCEL_ST_AL_MIN					225
+#define DEF_ACCEL_ST_AL_MAX					675
+#define DEF_6500_ACCEL_ST_SHIFT_DELTA		500
+#define DEF_ST_6500_ACCEL_FS_MG				2000UL
+#define DEF_ST_MPU6500_ACCEL_LPF			2
+#define DEF_SELFTEST_6500_ACCEL_FS			(0 << 3)
+#define BIT_FIFO_SIZE_1K					0x40
+
 static const int gyro_6500_st_tb[256] = {
-	2621, 2648, 2674, 2701, 2728, 2755, 2783, 2811,
-	2839, 2867, 2896, 2925, 2954, 2983, 3013, 3043,
-	3074, 3105, 3136, 3167, 3199, 3231, 3263, 3296,
-	3329, 3362, 3395, 3429, 3464, 3498, 3533, 3569,
-	3604, 3640, 3677, 3714, 3751, 3788, 3826, 3864,
-	3903, 3942, 3981, 4021, 4061, 4102, 4143, 4185,
-	4226, 4269, 4311, 4354, 4398, 4442, 4486, 4531,
-	4577, 4622, 4669, 4715, 4762, 4810, 4858, 4907,
-	4956, 5005, 5055, 5106, 5157, 5209, 5261, 5313,
-	5366, 5420, 5474, 5529, 5584, 5640, 5696, 5753,
-	5811, 5869, 5928, 5987, 6047, 6107, 6168, 6230,
-	6292, 6355, 6419, 6483, 6548, 6613, 6680, 6746,
-	6814, 6882, 6951, 7020, 7091, 7161, 7233, 7305,
-	7378, 7452, 7527, 7602, 7678, 7755, 7832, 7911,
-	7990, 8070, 8150, 8232, 8314, 8397, 8481, 8566,
-	8652, 8738, 8826, 8914, 9003, 9093, 9184, 9276,
-	9369, 9462, 9557, 9653, 9749, 9847, 9945, 10044,
-	10145, 10246, 10349, 10452, 10557, 10662, 10769, 10877,
-	10985, 11095, 11206, 11318, 11432, 11546, 11661, 11778,
-	11896, 12015, 12135, 12256, 12379, 12502, 12627, 12754,
-	12881, 13010, 13140, 13272, 13404, 13538, 13674, 13810,
-	13949, 14088, 14229, 14371, 14515, 14660, 14807, 14955,
-	15104, 15255, 15408, 15562, 15718, 15875, 16034, 16194,
-	16356, 16519, 16685, 16851, 17020, 17190, 17362, 17536,
-	17711, 17888, 18067, 18248, 18430, 18614, 18801, 18989,
-	19179, 19370, 19564, 19760, 19957, 20157, 20358, 20562,
-	20768, 20975, 21185, 21397, 21611, 21827, 22045, 22266,
-	22488, 22713, 22940, 23170, 23401, 23635, 23872, 24111,
-	24352, 24595, 24841, 25089, 25340, 25594, 25850, 26108,
-	26369, 26633, 26899, 27168, 27440, 27714, 27992, 28271,
-	28554, 28840, 29128, 29419, 29714, 30011, 30311, 30614,
-	30920, 31229, 31542, 31857, 32176, 32497, 32822, 33151,
+	2620, 2646, 2672, 2699, 2726, 2753, 2781, 2808,
+	2837, 2865, 2894, 2923, 2952, 2981, 3011, 3041,
+	3072, 3102, 3133, 3165, 3196, 3228, 3261, 3293,
+	3326, 3359, 3393, 3427, 3461, 3496, 3531, 3566,
+	3602, 3638, 3674, 3711, 3748, 3786, 3823, 3862,
+	3900, 3939, 3979, 4019, 4059, 4099, 4140, 4182,
+	4224, 4266, 4308, 4352, 4395, 4439, 4483, 4528,
+	4574, 4619, 4665, 4712, 4759, 4807, 4855, 4903,
+	4953, 5002, 5052, 5103, 5154, 5205, 5257, 5310,
+	5363, 5417, 5471, 5525, 5581, 5636, 5693, 5750,
+	5807, 5865, 5924, 5983, 6043, 6104, 6165, 6226,
+	6289, 6351, 6415, 6479, 6544, 6609, 6675, 6742,
+	6810, 6878, 6946, 7016, 7086, 7157, 7229, 7301,
+	7374, 7448, 7522, 7597, 7673, 7750, 7828, 7906,
+	7985, 8065, 8145, 8227, 8309, 8392, 8476, 8561,
+	8647, 8733, 8820, 8909, 8998, 9088, 9178, 9270,
+	9363, 9457, 9551, 9647, 9743, 9841, 9939, 10038,
+	10139, 10240, 10343, 10446, 10550, 10656, 10763, 10870,
+	10979, 11089, 11200, 11312, 11425, 11539, 11654, 11771,
+	11889, 12008, 12128, 12249, 12371, 12495, 12620, 12746,
+	12874, 13002, 13132, 13264, 13396, 13530, 13666, 13802,
+	13940, 14080, 14221, 14363, 14506, 14652, 14798, 14946,
+	15096, 15247, 15399, 15553, 15709, 15866, 16024, 16184,
+	16346, 16510, 16675, 16842, 17010, 17180, 17352, 17526,
+	17701, 17878, 18057, 18237, 18420, 18604, 18790, 18978,
+	19167, 19359, 19553, 19748, 19946, 20145, 20347, 20550,
+	20756, 20963, 21173, 21385, 21598, 21814, 22033, 22253,
+	22475, 22700, 22927, 23156, 23388, 23622, 23858, 24097,
+	24338, 24581, 24827, 25075, 25326, 25579, 25835, 26093,
+	26354, 26618, 26884, 27153, 27424, 27699, 27976, 28255,
+	28538, 28823, 29112, 29403, 29697, 29994, 30294, 30597,
+	30903, 31212, 31524, 31839, 32157, 32479, 32804
 };
 
 
@@ -172,6 +181,8 @@ struct mpu6500_selftest {
 	unsigned char smplrt_div;
 	unsigned char user_ctrl;
 	unsigned char config;
+	unsigned char accel_config;
+	unsigned char accel_config2;
 	unsigned char gyro_config;
 	unsigned char int_enable;
 };
@@ -181,6 +192,8 @@ struct mpu6500_selftest {
 */
 
 static struct mpu6500_selftest mpu6500_selftest;
+
+static int mpu6500_accel_self_test(struct i2c_client *client, int *reg_avg, int *st_avg, int *ratio);
 
 short mpu6500_big8_to_int16(const unsigned char *big8)
 {
@@ -212,6 +225,18 @@ static int mpu6500_backup_register(struct i2c_client *client)
 		return result;
 
 	result =
+		mpu6500_i2c_read_reg(client, MPUREG_ACCEL_CONFIG,
+				 1, &mpu6500_selftest.accel_config);
+	if (result)
+		return result;
+
+	result =
+		mpu6500_i2c_read_reg(client, MPUREG_ACCEL_CONFIG2,
+				 1, &mpu6500_selftest.accel_config2);
+	if (result)
+		return result;
+
+	result =
 	    mpu6500_i2c_read_reg(client, MPUREG_USER_CTRL,
 				 1, &mpu6500_selftest.user_ctrl);
 	if (result)
@@ -237,18 +262,6 @@ static int mpu6500_recover_register(struct i2c_client *client)
 	int result = 0;
 
 	result =
-	    mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_1,
-					 mpu6500_selftest.pwm_mgmt[0]);
-	if (result)
-		return result;
-
-	result =
-	    mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_2,
-					 mpu6500_selftest.pwm_mgmt[1]);
-	if (result)
-		return result;
-
-	result =
 	    mpu6500_i2c_write_single_reg(client, MPUREG_CONFIG,
 					 mpu6500_selftest.config);
 	if (result)
@@ -257,6 +270,18 @@ static int mpu6500_recover_register(struct i2c_client *client)
 	result =
 	    mpu6500_i2c_write_single_reg(client, MPUREG_GYRO_CONFIG,
 					 mpu6500_selftest.gyro_config);
+	if (result)
+		return result;
+
+	result =
+	    mpu6500_i2c_write_single_reg(client, MPUREG_ACCEL_CONFIG,
+					 mpu6500_selftest.accel_config);
+	if (result)
+		return result;
+
+	result =
+	    mpu6500_i2c_write_single_reg(client, MPUREG_ACCEL_CONFIG2,
+					 mpu6500_selftest.accel_config2);
 	if (result)
 		return result;
 
@@ -275,6 +300,18 @@ static int mpu6500_recover_register(struct i2c_client *client)
 	result =
 	    mpu6500_i2c_write_single_reg(client, MPUREG_INT_ENABLE,
 					 mpu6500_selftest.int_enable);
+	if (result)
+		return result;
+
+	result =
+	    mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_2,
+					 mpu6500_selftest.pwm_mgmt[1]);
+	if (result)
+		return result;
+
+	result =
+	    mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_1,
+					 mpu6500_selftest.pwm_mgmt[0]);
 	if (result)
 		return result;
 
@@ -390,7 +427,7 @@ int mpu6500_selftest_run(struct i2c_client *client,
 		return result;
 	}
 
-	if (mpu6500_selftest.pwm_mgmt[0] & 0x40) {
+	if (mpu6500_selftest.pwm_mgmt[0] & 0x40 || mpu6500_selftest.pwm_mgmt[0] & 0x20) {
 		result = mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_1, 0x00);
 		if (result) {
 			printk(KERN_INFO "init PWR_MGMT error=%d", result);
@@ -477,6 +514,8 @@ int mpu6500_selftest_run(struct i2c_client *client,
 	if (result)
 	  return result;
 
+	mdelay(GYRO_WAIT_TIME);
+
 	// Enable gyro output to FIFO
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_FIFO_EN, BIT_GYRO_FIFO_EN);
 	if (result)
@@ -523,6 +562,7 @@ int mpu6500_selftest_run(struct i2c_client *client,
 		   avg[j] = (long)gyro_avg_tmp[j];
 		   avg[j] /= packet_count;
 	   }
+	    printk("\r\n Gyro Data [%d] [%d] [%d] \r\n", gyro_data[0][i],gyro_data[1][i],gyro_data[2][i]);
 	}
 
 
@@ -637,19 +677,27 @@ static int mpu6500_do_powerup(struct i2c_client *client)
 
 	mpu6500_i2c_read_reg(client, MPUREG_PWR_MGMT_2, 1, &reg);
 
-	reg &= ~(BIT_STBY_XG | BIT_STBY_YG | BIT_STBY_ZG);
+	reg &= ~(BIT_STBY_XG | BIT_STBY_YG | BIT_STBY_ZG |\
+		BIT_STBY_XA | BIT_STBY_YA | BIT_STBY_ZA);
+
 	mpu6500_i2c_write_single_reg(client, MPUREG_PWR_MGMT_2, reg);
+	mdelay(5);
 
 	return result;
 }
 
-static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *gyro_result)
+static int mpu6500_do_test(struct i2c_client *client, int self_test_flag,
+	int *gyro_result, int *accel_result, int sensors)
 {
 	int result, i, j, packet_size;
 	u8 data[BYTES_PER_SENSOR * 2], d;
 	int fifo_count, packet_count, ind, s;
 
-	packet_size = BYTES_PER_SENSOR;
+	if ((sensors & MPU6500_HWST_ALL) == MPU6500_HWST_ALL)
+		packet_size = BYTES_PER_SENSOR * 2;
+	else
+		packet_size = BYTES_PER_SENSOR;
+
 
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_INT_ENABLE, 0);
 	if (result)
@@ -670,10 +718,18 @@ static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *g
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_CONFIG, MPU_FILTER_184HZ);
 	if (result)
 		return result;
+	result = mpu6500_i2c_write_single_reg(client, MPUREG_ACCEL_CONFIG2,
+		DEF_ST_MPU6500_ACCEL_LPF | BIT_FIFO_SIZE_1K);
+	if (result)
+		return result;
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_SMPLRT_DIV, 0x0);
 	if (result)
 		return result;
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_GYRO_CONFIG, self_test_flag | (MPU_FS_250DPS << 3));
+	if (result)
+		return result;
+	result = mpu6500_i2c_write_single_reg(client, MPUREG_ACCEL_CONFIG,
+				self_test_flag | DEF_SELFTEST_6500_ACCEL_FS);
 	if (result)
 		return result;
 
@@ -685,14 +741,23 @@ static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *g
 			MPUREG_USER_CTRL, BIT_FIFO_EN);
 	if (result)
 		return result;
+	mdelay(DEF_GYRO_WAIT_TIME);
+	
 	/* enable sensor output to FIFO */
-	d = BITS_GYRO_OUT;
+	d = 0;
+	if (sensors & MPU6500_HWST_ACCEL)
+		d |= BITS_ACCEL_OUT;
+	if (sensors & MPU6500_HWST_GYRO)
+		d |= BITS_GYRO_OUT;
+
 	result = mpu6500_i2c_write_single_reg(client, MPUREG_FIFO_EN, d);
 	if (result)
 		return result;
 
-	for (i = 0; i < THREE_AXIS; i++)
+	for (i = 0; i < THREE_AXIS; i++) {
 		gyro_result[i] = 0;
+		accel_result[i] = 0;
+	}
 
 	s = 0;
 
@@ -717,8 +782,12 @@ static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *g
 		if (result)
 			return result;
 
-		i = 0;
+		if( packet_count < (INIT_ST_SAMPLES - 3)) {
+			printk(KERN_INFO "HW_SELF_TEST_PACKET_ERROR=%d", packet_count);
+		 	return -1;  
+		}
 
+		i = 0;
 		while ((i < packet_count) && (s < INIT_ST_SAMPLES)) {
 			result = mpu6500_i2c_read_reg(client, MPUREG_FIFO_R_W,
 				packet_size, data);
@@ -727,9 +796,18 @@ static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *g
 
 			ind = 0;
 
-			for (j = 0; j < THREE_AXIS; j++)
-			gyro_result[j] +=
-			(short)be16_to_cpup( (__be16 *)(&data[ind + 2 * j]));
+			if (sensors & MPU6500_HWST_ACCEL) {
+				for (j = 0; j < THREE_AXIS; j++)
+					accel_result[j] +=
+					(short)be16_to_cpup((__be16 *)(&data[2 * j]));
+
+				ind += BYTES_PER_SENSOR;
+			}
+
+			if (sensors & MPU6500_HWST_GYRO)
+				for (j = 0; j < THREE_AXIS; j++)
+					gyro_result[j] +=
+					(short)be16_to_cpup((__be16 *)(&data[ind + 2 * j]));
 
 			s++;
 			i++;
@@ -739,6 +817,9 @@ static int mpu6500_do_test(struct i2c_client *client, int self_test_flag, int *g
 	for (j = 0; j < THREE_AXIS; j++) {
 		gyro_result[j] = gyro_result[j]/s;
 		gyro_result[j] *= DEF_ST_PRECISION;
+
+		accel_result[j] = accel_result[j]/s;
+		accel_result[j] *= DEF_ST_PRECISION;
 	}
 
 	return 0;
@@ -804,13 +885,23 @@ static int mpu6500_gyro_self_test(struct i2c_client *client,
 	return ret_val;
 }
 
-
-int mpu6500_gyro_hw_self_check(struct i2c_client *client, int ratio[3])
+int mpu6500_hw_self_check(struct i2c_client *client, int gyro_ratio[3], int accel_ratio[3], int sensors)
 {
 	int result;
 	int gyro_bias_st[THREE_AXIS], gyro_bias_regular[THREE_AXIS];
+	int accel_bias_st[THREE_AXIS], accel_bias_regular[THREE_AXIS];
 	int test_times;
-	int gyro_result;
+	int gyro_result = 0;
+	int accel_result = 0;
+	int i = 0;
+
+	for (i = 0; i < 3; i++) {
+		if (gyro_ratio)
+			gyro_ratio[i] = 0;
+
+		if (accel_ratio)
+			accel_ratio[i] = 0;
+	}
 
 	/*backup registers */
 	result = mpu6500_backup_register(client);
@@ -825,7 +916,7 @@ int mpu6500_gyro_hw_self_check(struct i2c_client *client, int ratio[3])
 	/*get regular bias*/
 	test_times = DEF_ST_TRY_TIMES;
 	while (test_times > 0) {
-		result = mpu6500_do_test(client, 0, gyro_bias_regular);
+		result = mpu6500_do_test(client, 0, gyro_bias_regular,accel_bias_regular, sensors);
 		if (result == -EAGAIN)
 			test_times--;
 		else
@@ -837,8 +928,7 @@ int mpu6500_gyro_hw_self_check(struct i2c_client *client, int ratio[3])
 	/*get st bias*/
 	test_times = DEF_ST_TRY_TIMES;
 	while (test_times > 0) {
-		result = mpu6500_do_test(client,
-			BITS_SELF_TEST_EN, gyro_bias_st);
+		result = mpu6500_do_test(client, BITS_SELF_TEST_EN,gyro_bias_st, accel_bias_st, sensors);
 		if (result == -EAGAIN)
 			test_times--;
 		else
@@ -847,9 +937,17 @@ int mpu6500_gyro_hw_self_check(struct i2c_client *client, int ratio[3])
 	if (result)
 		goto test_fail;
 
-	gyro_result = mpu6500_gyro_self_test(client, gyro_bias_regular,
-		gyro_bias_st, ratio);
-	result = gyro_result;
+	if (sensors & MPU6500_HWST_ACCEL)
+		accel_result = mpu6500_accel_self_test(client,
+			accel_bias_regular, accel_bias_st, accel_ratio);
+	if (sensors & MPU6500_HWST_GYRO)
+		gyro_result = mpu6500_gyro_self_test(client,
+			gyro_bias_regular, gyro_bias_st, gyro_ratio);
+
+	if (accel_result)
+		result |= 0x1<<0;
+	if (gyro_result)
+		result |= 0x1<<1;
 
 err_state:
 test_fail:
@@ -862,4 +960,59 @@ test_fail:
 	pr_err("%s, gyro hw result = %d\n", __func__, result);
 
 	return result;
+}
+
+static int mpu6500_accel_self_test(struct i2c_client *client, int *reg_avg, int *st_avg, int *ratio)
+{
+	int result;
+	int ret_val;
+	int ct_shift_prod[3], st_shift_cust[3], st_shift_ratio[3];
+	int i;
+	u8 regs[3];
+
+#define ACCEL_ST_AL_MIN ((DEF_ACCEL_ST_AL_MIN * DEF_ST_SCALE \
+		/ DEF_ST_6500_ACCEL_FS_MG) * DEF_ST_PRECISION)
+#define ACCEL_ST_AL_MAX ((DEF_ACCEL_ST_AL_MAX * DEF_ST_SCALE \
+		/ DEF_ST_6500_ACCEL_FS_MG) * DEF_ST_PRECISION)
+
+	ret_val = 0;
+	result = mpu6500_i2c_read_reg(client,
+			MPUREG_SELF_TEST_X_ACCEL, 3, regs);
+	if (result)
+		return result;
+
+	for (i = 0; i < 3; i++) {
+		if (regs[i] != 0)
+			ct_shift_prod[i] = gyro_6500_st_tb[regs[i] - 1];
+		else
+			ct_shift_prod[i] = 0;
+	}
+
+	pr_info("reg_bias : %d, %d, %d \n", reg_avg[0], reg_avg[1], reg_avg[2]);
+	pr_info("st_avg : %d, %d, %d \n", st_avg[0], st_avg[1], st_avg[2]);
+
+	for (i = 0; i < 3; i++) {
+		st_shift_cust[i] = abs(reg_avg[i] - st_avg[i]);
+		if (ct_shift_prod[i]) {
+			st_shift_ratio[i] =
+				abs(st_shift_cust[i] / ct_shift_prod[i]
+					- DEF_ST_PRECISION);
+			ratio[i] = st_shift_ratio[i];
+			if (st_shift_ratio[i] > DEF_6500_ACCEL_ST_SHIFT_DELTA)
+				ret_val |= 1 << i;
+		} else {
+			if (st_shift_cust[i] < ACCEL_ST_AL_MIN)
+				ret_val |= 1 << i;
+			if (st_shift_cust[i] > ACCEL_ST_AL_MAX)
+				ret_val |= 1 << i;
+		}
+	}
+
+	pr_info("ct_shift_prod : %d %d %d\n",
+		ct_shift_prod[0], ct_shift_prod[1], ct_shift_prod[2]);
+	pr_info("st_shift_cust : %d %d %d\n",
+		st_shift_cust[0], st_shift_cust[1], st_shift_cust[2]);
+	pr_info("st_shift_ratio : %d %d %d\n",
+		st_shift_ratio[0], st_shift_ratio[1], st_shift_ratio[2]);
+	return ret_val;
 }

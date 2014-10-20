@@ -612,6 +612,7 @@ static void kbase_wait_write_flush(kbase_context *kctx)
  * zone is KBASE_REG_ZONE_TMEM, KBASE_REG_ZONE_PMEM, or KBASE_REG_ZONE_EXEC
  *
  */
+#define ALLOC_MAGIC (0x123D123D)
 struct kbase_va_region *kbase_alloc_free_region(kbase_context *kctx, u64 start_pfn, u32 nr_pages, u32 zone)
 {
 	struct kbase_va_region *new_reg;
@@ -632,6 +633,7 @@ struct kbase_va_region *kbase_alloc_free_region(kbase_context *kctx, u64 start_p
 
 	new_reg->kctx = kctx;
 	new_reg->flags = zone | KBASE_REG_FREE;
+	new_reg->magic = ALLOC_MAGIC;
 
 	if (KBASE_REG_ZONE_TMEM == zone || KBASE_REG_ZONE_EXEC == zone)
 		new_reg->flags |= KBASE_REG_GROWABLE;
@@ -1014,6 +1016,8 @@ mali_error kbase_mem_free_region(kbase_context *kctx, kbase_va_region *reg)
 		kbase_wait_write_flush(kctx);
 	}
 
+	reg->magic = 0x0;
+
 	/* This will also free the physical pages */
 	kbase_free_alloced_region(reg);
 
@@ -1035,7 +1039,6 @@ mali_error kbase_mem_free(kbase_context *kctx, mali_addr64 gpu_addr)
 	struct kbase_va_region *reg;
 
 	KBASE_DEBUG_ASSERT(kctx != NULL);
-
 	if (0 == gpu_addr) {
 		KBASE_DEBUG_PRINT_WARN(KBASE_MEM, "gpu_addr 0 is reserved for the ringbuffer and it's an error to try to free it using kbase_mem_free\n");
 		return MALI_ERROR_FUNCTION_FAILED;
@@ -1059,12 +1062,16 @@ mali_error kbase_mem_free(kbase_context *kctx, mali_addr64 gpu_addr)
 
 		/* Validate the region */
 		reg = kbase_region_tracker_find_region_base_address(kctx, gpu_addr);
+		if (reg->magic != ALLOC_MAGIC) {
+			KBASE_DEBUG_PRINT_ERROR(KBASE_MEM, "This region was already free.\n");
+			goto out_unlock;
+		}
+
 		if (!reg) {
 			KBASE_DEBUG_ASSERT_MSG(0, "Trying to free nonexistent region\n 0x%llX", gpu_addr);
 			err = MALI_ERROR_FUNCTION_FAILED;
 			goto out_unlock;
 		}
-
 		err = kbase_mem_free_region(kctx, reg);
 	}
 

@@ -60,7 +60,7 @@ static void report_rate(void *device_data);
 static void interrupt_control(void *device_data);
 #endif
 
-#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+#if defined(CONFIG_INPUT_BOOSTER)
 static void boost_level(void *device_data);
 #endif
 
@@ -113,7 +113,7 @@ struct ft_cmd ft_cmds[] = {
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	{FT_CMD("interrupt_control", interrupt_control),},
 #endif
-#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+#if defined(CONFIG_INPUT_BOOSTER)
 	{FT_CMD("boost_level", boost_level),},
 #endif
 	{FT_CMD("not_support_cmd", not_support_cmd),},
@@ -1625,7 +1625,7 @@ out:
 }
 #endif
 
-#if defined(TSP_BOOSTER) || defined(CONFIG_INPUT_BOOSTER)
+#if defined(CONFIG_INPUT_BOOSTER)
 static void boost_level(void *device_data)
 {
 	struct fts_ts_info *info = (struct fts_ts_info *)device_data;
@@ -1634,8 +1634,6 @@ static void boost_level(void *device_data)
 
 #ifdef CONFIG_INPUT_BOOSTER
 	max_level = BOOSTER_LEVEL_MAX;
-#elif defined(TSP_BOOSTER)
-	max_level = TSP_BOOSTER_LEVEL_MAX;
 #endif
 
 	set_default_result(info);
@@ -1646,8 +1644,6 @@ static void boost_level(void *device_data)
 	} else {
 #ifdef CONFIG_INPUT_BOOSTER
 		change_boost_level(info->cmd_param[0], BOOSTER_DEVICE_TOUCH);
-#elif defined(TSP_BOOSTER)
-		info->boost_level = info->cmd_param[0];
 #endif
 		tsp_debug_dbg(false, &info->client->dev,
 						"%s %d\n",

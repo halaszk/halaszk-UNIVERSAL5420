@@ -25,8 +25,15 @@
 #include <linux/dmi.h>
 #include "sched/sched.h"
 
+#ifdef CONFIG_EXYNOS_CORESIGHT_DEBUG
+#include <mach/coresight-debug.h>
+#endif
+
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
+#if defined(CONFIG_SOC_EXYNOS5260)
+extern void show_exynos_pmu(void);
+#endif
 
 /* Machine specific panic information string */
 char *mach_panic_string;
@@ -126,8 +133,16 @@ void panic(const char *fmt, ...)
 #endif
 
 #if defined(CONFIG_SOC_EXYNOS5260)
+	show_exynos_pmu();
+#endif
+
+#if defined(CONFIG_SOC_EXYNOS5260)
 	/* Excute kmsg_dump here to get backtrace in sec_dumper */
 	kmsg_dump(KMSG_DUMP_PANIC);
+#endif
+
+#ifdef CONFIG_EXYNOS_CORESIGHT_DEBUG
+	exynos_cs_show_pcval();
 #endif
 
 	sysrq_sched_debug_show();

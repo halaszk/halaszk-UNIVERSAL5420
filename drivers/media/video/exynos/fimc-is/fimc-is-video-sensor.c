@@ -185,8 +185,6 @@ static unsigned int fimc_is_sen_video_poll(struct file *file,
 	struct fimc_is_video_ctx *vctx = file->private_data;
 
 	ret = fimc_is_video_poll(file, vctx, wait);
-	if (ret)
-		merr("fimc_is_video_poll is fail(%d)", vctx, ret);
 
 	return ret;
 }
@@ -425,22 +423,21 @@ static int fimc_is_sen_video_s_input(struct file *file, void *priv,
 	unsigned int input)
 {
 	int ret = 0;
-	u32 drive;
+	u32 scenario;
 	struct fimc_is_video_ctx *vctx = file->private_data;
 	struct fimc_is_device_sensor *device;
 	struct fimc_is_framemgr *framemgr;
 
 	BUG_ON(!vctx);
 
-	mdbgv_sensor("%s(input : %d)\n", vctx, __func__, input);
+	mdbgv_sensor("%s(input : %08X)\n", vctx, __func__, input);
 
 	device = vctx->device;
 	framemgr = GET_DST_FRAMEMGR(vctx);
+	scenario = (input & SENSOR_SCENARIO_MASK) >> SENSOR_SCENARIO_SHIFT;
+	input = (input & SENSOR_MODULE_MASK) >> SENSOR_MODULE_SHIFT;
 
-	drive = input & SENSOR_DRIVING_MASK;
-	input = input & SENSOR_MODULE_MASK;
-
-	ret = fimc_is_sensor_s_input(device, input, drive);
+	ret = fimc_is_sensor_s_input(device, input, scenario);
 	if (ret) {
 		merr("fimc_is_sensor_s_input is fail(%d)", device, ret);
 		goto p_err;
@@ -457,12 +454,14 @@ static int fimc_is_sen_video_s_ctrl(struct file *file, void *priv,
 	struct fimc_is_video_ctx *vctx = file->private_data;
 	struct fimc_is_device_sensor *device;
 	struct v4l2_subdev *subdev_flite;
+	struct fimc_is_video *video;
 
 	BUG_ON(!ctrl);
 	BUG_ON(!vctx);
 
 	device = vctx->device;
-	if (!device) {
+	video = vctx->video;
+	if (!device || !video) {
 		err("device is NULL");
 		ret = -EINVAL;
 		goto p_err;
@@ -566,9 +565,52 @@ static int fimc_is_sen_video_s_ctrl(struct file *file, void *priv,
 		}
 		break;
 	default:
-		err("unsupported ioctl(%d)\n", ctrl->id);
-		ret = -EINVAL;
+		mutex_unlock(&video->lock);
+		ret = fimc_is_sensor_s_ctrl(device, ctrl);
+		if (ret) {
+			err("invalid ioctl(0x%08X) is requested", ctrl->id);
+			ret = -EINVAL;
+			goto p_err;
+		}
+		ret = mutex_lock_interruptible(&video->lock);
+		if (ret) {
+			err("mutex_lock_interruptible is fail(%d)", ret);
+			return ret;
+		}
 		break;
+	}
+
+p_err:
+	return ret;
+}
+
+static int fimc_is_sen_video_noti_ctrl(struct file *file, void *priv,
+	struct v4l2_control *ctrl)
+{
+	int ret = 0;
+	int err = 0;
+	struct fimc_is_video_ctx *vctx = file->private_data;
+	struct fimc_is_device_sensor *device;
+	struct fimc_is_video *video;
+
+	BUG_ON(!vctx);
+	BUG_ON(!ctrl);
+
+	device = vctx->device;
+	video = vctx->video;
+	if (!device || !video) {
+		err("device is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	mutex_unlock(&video->lock);
+	/* Do not insert critical code */
+	ret = fimc_is_sensor_noti_ctrl(device, ctrl);
+	err = mutex_lock_interruptible(&video->lock);
+	if (err) {
+		err("mutex_lock_interruptible is fail(%d)", ret);
+		return err;
 	}
 
 p_err:
@@ -580,39 +622,52 @@ static int fimc_is_sen_video_g_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	struct fimc_is_video_ctx *vctx = file->private_data;
-	struct fimc_is_device_sensor *sensor;
+	struct fimc_is_device_sensor *device;
+	struct fimc_is_video *video;
 
 	BUG_ON(!vctx);
 	BUG_ON(!ctrl);
 
-	sensor = vctx->device;
-	if (!sensor) {
-		err("sensor is NULL");
+	device = vctx->device;
+	video = vctx->video;
+	if (!device || !video) {
+		err("device is NULL");
 		ret = -EINVAL;
 		goto p_err;
 	}
 
 	switch (ctrl->id) {
 	case V4L2_CID_IS_G_STREAM:
-		if (sensor->instant_ret)
-			ctrl->value = sensor->instant_ret;
+		if (device->instant_ret)
+			ctrl->value = device->instant_ret;
 		else
-			ctrl->value = (test_bit(FIMC_IS_SENSOR_FRONT_START, &sensor->state) ?
+			ctrl->value = (test_bit(FIMC_IS_SENSOR_FRONT_START, &device->state) ?
 				IS_ENABLE_STREAM : IS_DISABLE_STREAM);
 		break;
 	case V4L2_CID_IS_G_BNS_SIZE:
 		{
 			u32 width, height;
 
-			width = fimc_is_sensor_g_bns_width(sensor);
-			height = fimc_is_sensor_g_bns_height(sensor);
+			width = fimc_is_sensor_g_bns_width(device);
+			height = fimc_is_sensor_g_bns_height(device);
 
 			ctrl->value = (width << 16) | height;
 		}
 		break;
 	default:
-		err("unsupported ioctl(%d)\n", ctrl->id);
-		ret = -EINVAL;
+		mutex_unlock(&video->lock);
+		//err("unsupported ioctl(%d)\n", ctrl->id);
+		ret = fimc_is_sensor_g_ctrl(device, ctrl);
+		if (ret) {
+			err("invalid ioctl(0x%08X) is requested", ctrl->id);
+			ret = -EINVAL;
+			goto p_err;
+		}
+		ret = mutex_lock_interruptible(&video->lock);
+		if (ret) {
+			err("mutex_lock_interruptible is fail(%d)", ret);
+			return ret;
+		}
 		break;
 	}
 
@@ -667,6 +722,78 @@ p_err:
 	return ret;
 }
 
+static int fimc_is_sen_video_s_ext_ctrls(struct file *file, void *priv,
+	struct v4l2_ext_controls *ctrl)
+{
+	int ret = 0;
+	struct fimc_is_video_ctx *vctx = file->private_data;
+	struct fimc_is_device_sensor *device;
+	struct v4l2_subdev *subdev_flite;
+
+	BUG_ON(!ctrl);
+	BUG_ON(!vctx);
+
+	device = vctx->device;
+	if (!device) {
+		err("device is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	subdev_flite = device->subdev_flite;
+	if (!subdev_flite) {
+		err("subdev_flite is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	ret = fimc_is_sensor_s_ext_ctrls(device, ctrl);
+	if (ret) {
+		err("v4l2_flite_call(s_ext_ctrls) is fail(%d)", ret);
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+p_err:
+	return ret;
+}
+
+static int fimc_is_sen_video_g_ext_ctrls(struct file *file, void *priv,
+	struct v4l2_ext_controls *ctrl)
+{
+	int ret = 0;
+	struct fimc_is_video_ctx *vctx = file->private_data;
+	struct fimc_is_device_sensor *device;
+	struct v4l2_subdev *subdev_flite;
+
+	BUG_ON(!ctrl);
+	BUG_ON(!vctx);
+
+	device = vctx->device;
+	if (!device) {
+		err("device is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	subdev_flite = device->subdev_flite;
+	if (!subdev_flite) {
+		err("subdev_flite is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	ret = fimc_is_sensor_g_ext_ctrls(device, ctrl);
+	if (ret) {
+		err("v4l2_flite_call(g_ext_ctrls) is fail(%d)", ret);
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+p_err:
+	return ret;
+}
+
 const struct v4l2_ioctl_ops fimc_is_sen_video_ioctl_ops = {
 	.vidioc_querycap		= fimc_is_sen_video_querycap,
 	.vidioc_enum_fmt_vid_cap_mplane	= fimc_is_sen_video_enum_fmt_mplane,
@@ -685,9 +812,12 @@ const struct v4l2_ioctl_ops fimc_is_sen_video_ioctl_ops = {
 	.vidioc_g_input			= fimc_is_sen_video_g_input,
 	.vidioc_s_input			= fimc_is_sen_video_s_input,
 	.vidioc_s_ctrl			= fimc_is_sen_video_s_ctrl,
+	.vidioc_noti_ctrl		= fimc_is_sen_video_noti_ctrl,
 	.vidioc_g_ctrl			= fimc_is_sen_video_g_ctrl,
 	.vidioc_g_parm			= fimc_is_sen_video_g_parm,
 	.vidioc_s_parm			= fimc_is_sen_video_s_parm,
+	.vidioc_s_ext_ctrls		= fimc_is_sen_video_s_ext_ctrls,
+	.vidioc_g_ext_ctrls		= fimc_is_sen_video_g_ext_ctrls,
 };
 
 static int fimc_is_sen_queue_setup(struct vb2_queue *vbq,

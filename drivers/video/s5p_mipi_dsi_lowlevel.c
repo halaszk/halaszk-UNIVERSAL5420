@@ -163,8 +163,13 @@ void s5p_mipi_dsi_init_config(struct mipi_dsim_device *dsim)
 	unsigned int cfg = (readl(dsim->reg_base + S5P_DSIM_CONFIG)) &
 		~(1 << 29) & ~(1 << 28) & ~(0x1f << 20) & ~(0x3 << 5);
 
-	if (soc_is_exynos5260())
-		cfg |= DSIM_CLKLANE_ENABLE;
+	/* clear first to setup clk lane toggle */
+	cfg &= ~(1 << DSIM_CLKLANE_SHIFT);
+
+	if (dsim->pd->dsim_config->e_interface == DSIM_VIDEO)
+		cfg |= (DSIM_CLKLANE_ENABLE << DSIM_CLKLANE_SHIFT);	/* enable */
+	else if (dsim->pd->dsim_config->e_interface == DSIM_COMMAND)
+		cfg |= (!DSIM_CLKLANE_ENABLE << DSIM_CLKLANE_SHIFT);	/* disable */
 
 	cfg |=	(dsim_config->auto_flush << 29) |
 		(dsim_config->eot_disable << 28) |
@@ -284,7 +289,6 @@ void s5p_mipi_dsi_pll_freq(struct mipi_dsim_device *dsim,
 
 	reg |= (pre_divider & 0x3f) << 13 | (main_divider & 0x1ff) << 4 |
 		(scaler & 0x7) << 1;
-
 	writel(reg, dsim->reg_base + S5P_DSIM_PLLCTRL);
 }
 
@@ -463,7 +467,7 @@ void s5p_mipi_dsi_dp_dn_swap(struct mipi_dsim_device *dsim,
 {
 	unsigned int reg;
 
-	if (soc_is_exynos5250()) {
+	if (soc_is_exynos5250() || soc_is_exynos3250() || soc_is_exynos3470() || soc_is_exynos3472()) {
 		reg = readl(dsim->reg_base + S5P_DSIM_PHYACCHR1);
 		reg &= ~(0x3 << 0);
 		reg |= (swap_en & 0x3) << 0;

@@ -145,10 +145,6 @@ void **s5p_mfc_mem_init_multi(struct device *dev, unsigned int ctx_num);
 void s5p_mfc_mem_cleanup_multi(void **alloc_ctxes, unsigned int ctx_num);
 
 void s5p_mfc_mem_set_cacheable(void *alloc_ctx, bool cacheable);
-void s5p_mfc_mem_clean_priv(void *vb_priv, void *start, off_t offset,
-							size_t size);
-void s5p_mfc_mem_inv_priv(void *vb_priv, void *start, off_t offset,
-							size_t size);
 int s5p_mfc_mem_clean_vb(struct vb2_buffer *vb, u32 num_planes);
 int s5p_mfc_mem_inv_vb(struct vb2_buffer *vb, u32 num_planes);
 int s5p_mfc_mem_flush_vb(struct vb2_buffer *vb, u32 num_planes);

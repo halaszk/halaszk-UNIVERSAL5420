@@ -376,9 +376,15 @@ static ssize_t write(struct file *file, const char *buf, size_t count,
 	}
 
 	/* Check buffer size */
-	if ((count <= SPI_HEADER_SIZE) || (count > SPI_BUFFER_SIZE)) {
+	if ((count < SPI_HEADER_SIZE) || (count > SPI_BUFFER_SIZE)) {
 		DbgOut((KERN_ERR "tspdrv: invalid write buffer size.\n"));
 		return 0;
+	}
+
+	if (count == SPI_HEADER_SIZE) {
+		g_bOutputDataBufferEmpty = 1;
+	} else {
+		g_bOutputDataBufferEmpty = 0;
 	}
 
 	/* Copy immediately the input buffer */
@@ -394,7 +400,7 @@ static ssize_t write(struct file *file, const char *buf, size_t count,
 		samples_buffer* pInputBuffer =	(samples_buffer *)
 			(&g_cWriteBuffer[i]);
 
-		if ((i + SPI_HEADER_SIZE) >= count) {
+		if ((i + SPI_HEADER_SIZE) > count) {
 			/*
 			** Index is about to go beyond the buffer size.
 			** (Should never happen).
@@ -521,6 +527,7 @@ static long unlocked_ioctl(struct file *file, unsigned int cmd,
 		break;
 
 	case TSPDRV_MAGIC_NUMBER:
+	case TSPDRV_SET_MAGIC_NUMBER:
 		file->private_data = (void *)TSPDRV_MAGIC_NUMBER;
 		break;
 
@@ -537,8 +544,14 @@ static long unlocked_ioctl(struct file *file, unsigned int cmd,
 		  * If a stop was requested, ignore the request as the amp
 		  * will be disabled by the timer proc when it's ready
 		  */
+#if 0
 		if (!g_bStopRequested)
 			ImmVibeSPI_ForceOut_AmpDisable(arg);
+#endif
+		g_bStopRequested = true;
+		/* Last data processing to disable amp and stop timer */
+		VibeOSKernelProcessData(NULL);
+		g_bIsPlaying = false;
 		wake_unlock(&vib_wake_lock);
 		break;
 

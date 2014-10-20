@@ -53,7 +53,7 @@ enum fimc_is_ischain_state {
 	FIMC_IS_ISCHAIN_REPROCESSING,
 };
 
-/*
+#ifdef CONFIG_CAMERA_EXTERNAL
 enum fimc_is_camera_device {
 	CAMERA_SINGLE_REAR,
 	CAMERA_SINGLE_FRONT,
@@ -78,7 +78,7 @@ struct fimc_is_from_info {
 	char		awb_ver[12];
 	char		shading_ver[12];
 };
-*/
+#endif
 
 struct fimc_is_ishcain_mem {
 	/* buffer base */
@@ -132,10 +132,10 @@ struct fimc_is_device_ischain {
 	u32					instance_sensor;
 	u32					module;
 	struct fimc_is_ishcain_mem		imemory;
-/*
+#ifdef CONFIG_CAMERA_EXTERNAL
 	struct fimc_is_from_info		finfo;
 	struct fimc_is_from_info		pinfo;
-*/
+#endif
 	struct is_region			*is_region;
 
 	bool					force_down;

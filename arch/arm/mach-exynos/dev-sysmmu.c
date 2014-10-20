@@ -351,7 +351,7 @@ static struct sysmmu_resource_map sysmmu_resmap5260[] __initdata = {
 	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	mfc_lr,	mfc_lr, "mfc"),
 	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	camif0,	flite0, "gscl_flite.0"),
 	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	camif1,	flite1, "gscl_flite.1"),
-	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	camif2,	flite2r, NULL),
+	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	camif2,	flite2r, "gscl_flite.2"),
 	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	scaler,	scaler, "mscl"),
 	SYSMMU_RESOURCE_MAPPING_CLKDEP(5260,	scaler1, scaler1, "mscl"),
 };
@@ -646,6 +646,7 @@ static struct sysmmu_tlbinv_map sysmmu_tlbinv5420[] __initdata = {
  *  - Before call: existing_master <- @sysmmu <- existing_master
  *  - After call : existing_master <- @dev <- @sysmmu
  */
+__attribute__ ((unused))
 static void __init platform_set_sysmmu(
 				struct device *sysmmu, struct device *dev)
 {
@@ -712,6 +713,12 @@ static void __init exynos4_sysmmu_init(void)
 		platform_set_sysmmu(&SYSMMU_PLATDEV(isp1).dev,
 						&exynos4_device_fimc_is.dev);
 	}
+#if defined(CONFIG_VIDEO_EXYNOS_FIMC_IS)
+	platform_set_sysmmu(&SYSMMU_PLATDEV(camif0).dev,
+						&exynos_device_fimc_is_sensor0.dev);
+	platform_set_sysmmu(&SYSMMU_PLATDEV(camif1).dev,
+						&exynos_device_fimc_is_sensor1.dev);
+#endif
 #endif
 }
 
@@ -863,6 +870,8 @@ static void __init exynos5_sysmmu_init(void)
 						&exynos5_device_fimc_is.dev);
 #elif defined(CONFIG_VIDEO_EXYNOS_FIMC_IS)
 	platform_set_sysmmu(&SYSMMU_PLATDEV(camif0).dev,
+					&exynos_device_fimc_is_sensor0.dev);
+	platform_set_sysmmu(&SYSMMU_PLATDEV(camif2).dev,
 					&exynos_device_fimc_is_sensor0.dev);
 	platform_set_sysmmu(&SYSMMU_PLATDEV(camif1).dev,
 					&exynos_device_fimc_is_sensor1.dev);

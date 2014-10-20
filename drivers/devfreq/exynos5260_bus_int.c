@@ -28,6 +28,10 @@
 #include <mach/regs-clock-exynos5260.h>
 #include <mach/tmu.h>
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+#include <mach/sec_debug.h>
+#endif
+
 #include "exynos5260_ppmu.h"
 #include "exynos_ppmu2.h"
 #include "devfreq_exynos.h"
@@ -506,6 +510,11 @@ static int exynos5_devfreq_int_set_freq(struct devfreq_data_int *data,
 	struct devfreq_clk_info *clk_info;
 	struct devfreq_clk_states *clk_states;
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"old:%7d new:%7d (INT)",
+	old_idx,target_idx );
+#endif
 	if (pm_qos_request_active(&exynos5_mif_qos)) {
 		if (target_idx <= LV0) {
 			pm_qos_update_request(&exynos5_mif_qos, 667000);
@@ -797,9 +806,12 @@ static int exynos5_devfreq_int_tmu_notifier(struct notifier_block *nb, unsigned 
 static int exynos5_devfreq_int_probe(struct platform_device *pdev)
 {
 	int ret = 0;
+	int index;
 	struct devfreq_data_int *data;
 	struct devfreq_notifier_block *devfreq_nb;
 	struct exynos_devfreq_platdata *plat_data;
+	struct opp *target_opp;
+        unsigned long freq;
 
 	if (exynos5_devfreq_int_init_clock()) {
 		ret = -EINVAL;
@@ -828,6 +840,32 @@ static int exynos5_devfreq_int_probe(struct platform_device *pdev)
 	data->volt_offset = COLD_VOLT_OFFSET;
 	data->dev = &pdev->dev;
 	data->vdd_int = regulator_get(NULL, "vdd_int");
+
+	rcu_read_lock();
+	freq = exynos5_devfreq_int_profile.initial_freq;
+	target_opp = devfreq_recommended_opp(data->dev, &freq, 0);
+	if (IS_ERR(target_opp)) {
+		rcu_read_unlock();
+		dev_err(data->dev, "DEVFREQ(MIF) : Invalid OPP to set voltagen");
+		ret = PTR_ERR(target_opp);
+		goto err_inittable;
+	}
+	data->old_volt = opp_get_voltage(target_opp);
+#ifdef CONFIG_EXYNOS_THERMAL
+	data->old_volt = get_limit_voltage(data->old_volt, data->volt_offset);
+#endif
+	rcu_read_unlock();
+	regulator_set_voltage(data->vdd_int, data->old_volt, data->old_volt + VOLT_STEP);
+	index = exynos5_devfreq_int_get_idx(devfreq_int_opp_list,
+			ARRAY_SIZE(devfreq_int_opp_list),
+			freq);
+	if (index < 0) {
+		pr_err("DEVFREQ(MIF) : Failed to find index abb\n");
+		ret = -EINVAL;
+		goto err_nb;
+	}
+	set_match_abb(ID_INT, devfreq_int_asv_abb[index]);
+
 	data->devfreq = devfreq_add_device(data->dev,
 						&exynos5_devfreq_int_profile,
 						&devfreq_simple_ondemand,

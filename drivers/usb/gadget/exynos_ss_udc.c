@@ -3184,6 +3184,9 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 					struct exynos_ss_udc, gadget);
 	int ret;
 
+	printk(KERN_INFO "usb: [%s] pullup = %d, vbus = %d\n",
+                           __func__, udc->pullup_state, is_active);
+
 	dev_dbg(udc->dev, "%s: pullup = %d, vbus = %d\n",
 			   __func__, udc->pullup_state, is_active);
 

@@ -552,54 +552,11 @@ static void s5pcsis_set_params(unsigned long mipi_reg_base,
 
 int enable_mipi(void)
 {
-	void __iomem *addr;
-	u32 cfg;
+	exynos_csis_phy_enable(0, 1);
+	exynos_csis_phy_enable(1, 1);
+	exynos_csis_phy_enable(2, 1);
 
-	addr = S5P_MIPI_DPHY_CONTROL(0);
-
-	cfg = __raw_readl(addr);
-	cfg = (cfg | S5P_MIPI_DPHY_SRESETN);
-	__raw_writel(cfg, addr);
-
-	if (1) {
-		cfg |= S5P_MIPI_DPHY_ENABLE;
-	} else if (!(cfg & (S5P_MIPI_DPHY_SRESETN | S5P_MIPI_DPHY_MRESETN)
-			& (~S5P_MIPI_DPHY_SRESETN))) {
-		cfg &= ~S5P_MIPI_DPHY_ENABLE;
-	}
-
-	__raw_writel(cfg, addr);
-
-
-	addr = S5P_MIPI_DPHY_CONTROL(1);
-
-	cfg = __raw_readl(addr);
-	cfg = (cfg | S5P_MIPI_DPHY_SRESETN);
-	__raw_writel(cfg, addr);
-
-	if (1) {
-		cfg |= S5P_MIPI_DPHY_ENABLE;
-	} else if (!(cfg & (S5P_MIPI_DPHY_SRESETN | S5P_MIPI_DPHY_MRESETN)
-			& (~S5P_MIPI_DPHY_SRESETN))) {
-		cfg &= ~S5P_MIPI_DPHY_ENABLE;
-	}
-
-	__raw_writel(cfg, addr);
-
-	addr = S5P_MIPI_DPHY_CONTROL(2);
-
-	cfg = __raw_readl(addr);
-	cfg = (cfg | S5P_MIPI_DPHY_SRESETN);
-	__raw_writel(cfg, addr);
-
-	cfg |= S5P_MIPI_DPHY_ENABLE;
-	if (!(cfg & (S5P_MIPI_DPHY_SRESETN | S5P_MIPI_DPHY_MRESETN)
-			& (~S5P_MIPI_DPHY_SRESETN)))
-		cfg &= ~S5P_MIPI_DPHY_ENABLE;
-
-	__raw_writel(cfg, addr);
 	return 0;
-
 }
 
 int start_mipi_csi(int channel, struct fimc_is_frame_info *f_frame,
@@ -1345,11 +1302,11 @@ void fimc_is_sensor_dtp(unsigned long data)
 	for (i = 0; i < framemgr->frame_cnt; i++) {
 		frame = &framemgr->frame[i];
 		if (frame->state == FIMC_IS_FRAME_STATE_REQUEST) {
-			pr_err("%s buffer done1!!!! %d \n", __func__, i);
+			pr_err("%s buffer done1!!!! %d\n", __func__, i);
 			fimc_is_frame_trans_req_to_com(framemgr, frame);
 			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
 		} else if (frame->state == FIMC_IS_FRAME_STATE_PROCESS) {
-			pr_err("%s buffer done2!!!! %d \n", __func__, i);
+			pr_err("%s buffer done2!!!! %d\n", __func__, i);
 			fimc_is_frame_trans_pro_to_com(framemgr, frame);
 			queue_done(vctx, queue, i, VB2_BUF_STATE_ERROR);
 		}

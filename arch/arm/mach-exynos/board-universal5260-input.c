@@ -34,13 +34,20 @@
 #ifdef CONFIG_TOUCHSCREEN_FTS
 #include <linux/i2c/fts.h>
 #endif
-
+#ifdef CONFIG_TOUCHSCREEN_MELFAS_M2
+#include <linux/platform_data/mms152_ts.h>
+#endif
 #ifdef CONFIG_INPUT_WACOM
 #include <linux/wacom_i2c.h>
 #endif
-
+#ifdef CONFIG_KEYBOARD_TC370L_TOUCHKEY
+#include <linux/i2c/tc370l_touchkey.h>
+#endif
 #ifdef CONFIG_INPUT_BOOSTER
 #include <linux/input/input_booster.h>
+#endif
+#ifdef CONFIG_TOUCHSCREEN_ZINITIX
+#include <linux/i2c/zinitix.h>
 #endif
 
 extern unsigned int system_rev;
@@ -66,6 +73,9 @@ static struct gpio_keys_button universal5260_button[] = {
 		.gpio = GPIO_VOLUP_BUTTON,
 		.desc = "gpio-keys: KEY_VOLUMEUP",
 		.active_low = 1,
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+		.wakeup = 1,
+#endif
 		.isr_hook = sec_debug_check_crash_key,
 		.debounce_interval = 10,
 	}, {
@@ -77,8 +87,24 @@ static struct gpio_keys_button universal5260_button[] = {
 		.isr_hook = sec_debug_check_crash_key,
 		.debounce_interval = 10,
 	},
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+		{
+		.code = KEY_CAMERA_FOCUS,
+		.gpio = GPIO_KEY_S1,
+		.desc = "gpio-keys: KEY_CAMERA_FOCUS",
+		.active_low = 1,
+		.isr_hook = sec_debug_check_crash_key,
+		.debounce_interval = 10,
+	}, {
+		.code = KEY_CAMERA,
+		.gpio = GPIO_KEY_S2,
+		.desc = "gpio-keys: KEY_CAMERA_SHUTTER",
+		.active_low = 1,
+		.isr_hook = sec_debug_check_crash_key,
+		.debounce_interval = 10,
+	},
+#endif
 };
-
 #ifdef CONFIG_TOUCHSCREEN_FTS
 struct fts_callbacks *fts_charger_callbacks;
 void fts_charger_infom(bool en)
@@ -113,6 +139,8 @@ static int fts_power(bool on)
 
 		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_SFN(0xf));
 		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_NONE);
+		s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_NONE);
+		s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_NONE);
 	} else {
 		gpio_direction_output(GPIO_TSP_POWER, 0);
 		if (regulator_is_enabled(regulator_avdd))
@@ -120,6 +148,8 @@ static int fts_power(bool on)
 
 		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_INPUT);
 		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_DOWN);
 	}
 
 	enabled = on;
@@ -195,6 +225,319 @@ void __init fts_tsp_init(void)
 	fts_verify_panel_revision();
 }
 #endif
+#ifdef CONFIG_TOUCHSCREEN_ZINITIX
+static int zinitix_power(bool on)
+{
+	struct regulator *regulator_avdd;
+	static bool enabled;
+
+	if (enabled == on)
+		return 0;
+
+	regulator_avdd = regulator_get(NULL, "tsp_avdd_3.3v");
+	if (IS_ERR(regulator_avdd)) {
+		printk(KERN_ERR "[TSP] tsp_avdd_3.3v regulator_get failed\n");
+		return PTR_ERR(regulator_avdd);
+	}
+
+	printk(KERN_ERR "[TSP] %s %s\n", __func__, on ? "on" : "off");
+
+	if (on) {
+		gpio_direction_output(GPIO_TSP_POWER, 1);
+		regulator_enable(regulator_avdd);
+
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_SFN(0xf));
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_NONE);
+	} else {
+		gpio_direction_output(GPIO_TSP_POWER, 0);
+		if (regulator_is_enabled(regulator_avdd))
+			regulator_disable(regulator_avdd);
+
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_INPUT);
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_DOWN);
+	}
+
+	enabled = on;
+	regulator_put(regulator_avdd);
+
+	return 0;
+}
+
+#define PROJECT_MEGA2	"MEGA2"
+
+static struct bt532_ts_platform_data zinitix_platformdata = {
+	.x_resolution	= 720,
+	.y_resolution	= 1280,
+	.page_size	= 128,
+	.orientation	= 0,
+	.gpio_int		= GPIO_TSP_INT,
+	.power		= zinitix_power,
+	.project_name	= PROJECT_MEGA2,
+};
+
+static struct i2c_board_info zinitix_i2c_devs[] = {
+	{
+		I2C_BOARD_INFO(ZINITIX_NAME, 0x20),
+		.platform_data = &zinitix_platformdata,
+	}
+};
+
+void __init zinitix_tsp_init(void)
+{
+	int gpio;
+	int ret;
+
+	gpio = GPIO_TSP_POWER;
+	ret = gpio_request_one(gpio, GPIOF_OUT_INIT_LOW, "GPIO_POWER");
+	if (ret)
+		printk(KERN_ERR "%s failed to request gpio(TSP_POWER)\n",
+			__func__);
+	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_DOWN);
+
+	gpio_request(GPIO_TSP_INT, "TSP_INT");
+	s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_SFN(0xf));
+	s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_UP);
+
+	zinitix_i2c_devs[0].irq = IRQ_EINT(14);
+	printk(KERN_ERR "%s touch : %d\n", __func__, zinitix_i2c_devs[0].irq);
+}
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_MELFAS_M2
+static struct i2c_board_info i2c_devs5_emul[];
+/* MELFAS TSP */
+static bool enabled;
+int TSP_VDD_18V(bool on)
+{
+	struct regulator *regulator;
+
+	if (enabled == on)
+		return 0;
+
+	regulator = regulator_get(NULL, "touch_1.8v");
+	if (IS_ERR(regulator))
+		return PTR_ERR(regulator);
+
+	if (on) {
+		regulator_enable(regulator);
+		/*printk(KERN_INFO "[TSP] melfas power on\n"); */
+	} else {
+		/*
+		 * TODO: If there is a case the regulator must be disabled
+		 * (e,g firmware update?), consider regulator_force_disable.
+		 */
+		if (regulator_is_enabled(regulator))
+			regulator_disable(regulator);
+	}
+
+	enabled = on;
+	regulator_put(regulator);
+
+	return 0;
+}
+
+int melfas_power(bool on)
+{
+	struct regulator *regulator_vdd;
+	struct regulator *regulator_avdd;
+
+	if (enabled == on)
+		return 0;
+
+	regulator_vdd = regulator_get(NULL, "touch_1.8v");
+	if (IS_ERR(regulator_vdd))
+			return PTR_ERR(regulator_vdd);
+
+	regulator_avdd = regulator_get(NULL, "tsp_avdd_3.3v");
+	if (IS_ERR(regulator_avdd))
+		return PTR_ERR(regulator_avdd);
+
+	printk(KERN_DEBUG "[TSP] %s %s\n", __func__, on ? "on" : "off");
+
+	if (on) {
+		regulator_enable(regulator_vdd);
+		regulator_enable(regulator_avdd);
+
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_SFN(0xf));
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_NONE);
+	} else {
+		/*
+		 * TODO: If there is a case the regulator must be disabled
+		 * (e,g firmware update?), consider regulator_force_disable.
+		 */
+		if (regulator_is_enabled(regulator_vdd))
+			regulator_disable(regulator_vdd);
+		if (regulator_is_enabled(regulator_avdd))
+			regulator_disable(regulator_avdd);
+
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_INPUT);
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_DOWN);
+	}
+
+	enabled = on;
+	regulator_put(regulator_vdd);
+	regulator_put(regulator_avdd);
+
+	return 0;
+}
+
+int is_melfas_vdd_on(void)
+{
+	int ret;
+	/* 3.3V */
+	static struct regulator *regulator;
+
+	if (!regulator) {
+		regulator = regulator_get(NULL, "tsp_avdd_3.3v");
+		if (IS_ERR(regulator)) {
+			ret = PTR_ERR(regulator);
+			pr_err("could not get touch, rc = %d\n", ret);
+			return ret;
+		}
+	}
+
+	if (regulator_is_enabled(regulator))
+		return 1;
+	else
+		return 0;
+}
+
+int melfas_mux_fw_flash(bool to_gpios)
+{
+	pr_info("%s:to_gpios=%d\n", __func__, to_gpios);
+
+	/* TOUCH_EN is always an output */
+	if (to_gpios) {
+		gpio_direction_output(GPIO_TSP_INT, 0);
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_OUTPUT);
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_NONE);
+
+		gpio_direction_output(GPIO_TSP_SCL_18V, 0);
+		s3c_gpio_cfgpin(GPIO_TSP_SCL_18V, S3C_GPIO_OUTPUT);
+		s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_NONE);
+
+		gpio_direction_output(GPIO_TSP_SDA_18V, 0);
+		s3c_gpio_cfgpin(GPIO_TSP_SDA_18V, S3C_GPIO_OUTPUT);
+		s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_NONE);
+
+	} else {
+		gpio_direction_output(GPIO_TSP_INT, 1);
+		gpio_direction_input(GPIO_TSP_INT);
+		s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_SFN(0xf));
+		/*s3c_gpio_cfgpin(GPIO_TSP_INT, S3C_GPIO_INPUT); */
+		s3c_gpio_setpull(GPIO_TSP_INT, S3C_GPIO_PULL_NONE);
+		/*S3C_GPIO_PULL_UP */
+
+		gpio_direction_output(GPIO_TSP_SCL_18V, 1);
+		gpio_direction_input(GPIO_TSP_SCL_18V);
+		s3c_gpio_cfgpin(GPIO_TSP_SCL_18V, S3C_GPIO_SFN(2));
+		s3c_gpio_setpull(GPIO_TSP_SCL_18V, S3C_GPIO_PULL_NONE);
+
+		gpio_direction_output(GPIO_TSP_SDA_18V, 1);
+		gpio_direction_input(GPIO_TSP_SDA_18V);
+		s3c_gpio_cfgpin(GPIO_TSP_SDA_18V, S3C_GPIO_SFN(2));
+		s3c_gpio_setpull(GPIO_TSP_SDA_18V, S3C_GPIO_PULL_NONE);
+	}
+	return 0;
+}
+
+int get_lcd_type;
+void __init midas_tsp_set_lcdtype(int lcd_type)
+{
+	get_lcd_type = lcd_type;
+}
+
+int melfas_get_lcdtype(void)
+{
+	return get_lcd_type;
+}
+struct tsp_callbacks *charger_callbacks;
+struct tsp_callbacks {
+	void (*inform_charger)(struct tsp_callbacks *, bool);
+};
+
+void tsp_charger_infom(bool en)
+{
+	if (charger_callbacks && charger_callbacks->inform_charger)
+		charger_callbacks->inform_charger(charger_callbacks, en);
+}
+
+static void melfas_register_callback(void *cb)
+{
+	charger_callbacks = cb;
+	pr_debug("[TSP] melfas_register_callback\n");
+}
+#ifdef CONFIG_LCD_FREQ_SWITCH
+struct tsp_lcd_callbacks *lcd_callbacks;
+struct tsp_lcd_callbacks {
+	void (*inform_lcd)(struct tsp_lcd_callbacks *, bool);
+};
+
+void tsp_lcd_infom(bool en)
+{
+	if (lcd_callbacks && lcd_callbacks->inform_lcd)
+		lcd_callbacks->inform_lcd(lcd_callbacks, en);
+}
+
+static void melfas_register_lcd_callback(void *cb)
+{
+	lcd_callbacks = cb;
+	pr_debug("[TSP] melfas_register_lcd_callback\n");
+}
+#endif
+
+static struct melfas_tsi_platform_data mms_ts_pdata = {
+	.max_x = 720,
+	.max_y = 1280,
+	.invert_x = 0,
+	.invert_y = 0,
+	.gpio_int = GPIO_TSP_INT,
+	.gpio_scl = GPIO_TSP_SCL_18V,
+	.gpio_sda = GPIO_TSP_SDA_18V,
+	.power = melfas_power,
+	.mux_fw_flash = melfas_mux_fw_flash,
+	.is_vdd_on = is_melfas_vdd_on,
+	.config_fw_version = "C115_Me_0121",
+	.lcd_type = melfas_get_lcdtype,
+	.register_cb = melfas_register_callback,
+#ifdef CONFIG_LCD_FREQ_SWITCH
+	.register_lcd_cb = melfas_register_lcd_callback,
+#endif
+};
+
+static struct i2c_board_info i2c_devs5[] = {
+	{
+	 I2C_BOARD_INFO(MELFAS_TS_NAME, 0x48),
+	 .platform_data = &mms_ts_pdata},
+};
+
+void __init midas_tsp_init(void)
+{
+	int gpio;
+	int ret;
+	printk(KERN_INFO "[TSP] midas_tsp_init() is called\n");
+
+	/* TSP_INT: XEINT_4 */
+	gpio = GPIO_TSP_INT;
+	ret = gpio_request(gpio, "TSP_INT");
+	if (ret)
+		pr_err("failed to request gpio(TSP_INT)\n");
+	s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(0xf));
+	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+
+	if (gpio_request(GPIO_TSP_SCL_18V, "GPIO_TSP_SCL"))
+		pr_err("failed to request gpio(GPIO_TSP_SCL)\n");
+
+	if (gpio_request(GPIO_TSP_SDA_18V, "GPIO_TSP_SDA"))
+		pr_err("failed to request gpio(GPIO_TSP_SDA)\n");
+
+	s5p_register_gpio_interrupt(gpio);
+	i2c_devs5[0].irq = gpio_to_irq(gpio);
+
+	printk(KERN_INFO "%s touch : %d\n", __func__, i2c_devs5[0].irq);
+
+}
+#endif /* CONFIG_TOUCHSCREEN_MELFAS_M2 */
 
 #ifdef CONFIG_KEYBOARD_CYPRESS_TOUCH
 static struct i2c_board_info i2c_devs10_emul[];
@@ -367,6 +710,173 @@ static struct touchkey_platform_data touchkey_pdata = {
 #endif
 };
 
+/* I2C10 */
+static struct i2c_board_info i2c_devs10_emul[] = {
+	{
+		I2C_BOARD_INFO("sec_touchkey", 0x20),
+		.platform_data = &touchkey_pdata,
+	},
+};
+#endif /*CONFIG_KEYBOARD_CYPRESS_TOUCH*/
+
+#ifdef CONFIG_KEYBOARD_TC370L_TOUCHKEY
+static bool tc370_power_enabled;
+static bool tc370_keyled_enabled;
+
+int tc370_keycode[] = { 0,
+	KEY_RECENT, KEY_BACK
+};
+
+int touchkey_power(bool on)
+{
+	struct regulator *regulator;
+
+	if (tc370_power_enabled == on)
+		return 0;
+
+	printk(KERN_DEBUG "[TK] %s %s\n",
+		__func__, on ? "on" : "off");
+
+	regulator = regulator_get(NULL, "vtouch_1.8v");
+	if (IS_ERR(regulator))
+		return PTR_ERR(regulator);
+	if (on) {
+		regulator_enable(regulator);
+		s3c_gpio_setpull(GPIO_2TOUCH_SCL, S3C_GPIO_PULL_NONE);
+		s3c_gpio_setpull(GPIO_2TOUCH_SDA, S3C_GPIO_PULL_NONE);
+		s3c_gpio_cfgpin(GPIO_2TOUCH_INT, S3C_GPIO_SFN(0xf));
+		if (system_rev == 2 || system_rev == 3)
+			s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_UP);
+		else
+			s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_NONE);
+	} else {
+		s3c_gpio_cfgpin(GPIO_2TOUCH_INT, S3C_GPIO_INPUT);
+		s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_SCL, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_SDA, S3C_GPIO_PULL_DOWN);
+		if (regulator_is_enabled(regulator))
+			regulator_disable(regulator);
+		else
+			regulator_force_disable(regulator);
+	}
+	regulator_put(regulator);
+
+	tc370_power_enabled = on;
+
+	return 0;
+}
+
+int touchkey_power_isp(bool on)
+{
+	struct regulator *regulator;
+
+	if (tc370_power_enabled == on)
+		return 0;
+
+	printk(KERN_DEBUG "[TK] %s %s\n",
+		__func__, on ? "on" : "off");
+
+	regulator = regulator_get(NULL, "vtouch_1.8v");
+	if (IS_ERR(regulator))
+		return PTR_ERR(regulator);
+	if (on) {
+		regulator_enable(regulator);
+		s3c_gpio_setpull(GPIO_2TOUCH_SCL, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_SDA, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_DOWN);
+	} else {
+		s3c_gpio_cfgpin(GPIO_2TOUCH_INT, S3C_GPIO_INPUT);
+		s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_SCL, S3C_GPIO_PULL_DOWN);
+		s3c_gpio_setpull(GPIO_2TOUCH_SDA, S3C_GPIO_PULL_DOWN);
+		if (regulator_is_enabled(regulator))
+			regulator_disable(regulator);
+		else
+			regulator_force_disable(regulator);
+	}
+	regulator_put(regulator);
+
+	tc370_power_enabled = on;
+
+	return 0;
+}
+
+int key_led_control(bool on)
+{
+	struct regulator *regulator;
+
+	if (tc370_keyled_enabled == on)
+		return 0;
+
+	printk(KERN_INFO "[TK] %s %s\n",
+		__func__, on ? "on" : "off");
+
+	regulator = regulator_get(NULL, "vtouch_3.3v");
+	if (IS_ERR(regulator))
+		return PTR_ERR(regulator);
+
+	if (on) {
+		regulator_enable(regulator);
+	} else {
+		if (regulator_is_enabled(regulator))
+			regulator_disable(regulator);
+		else
+			regulator_force_disable(regulator);
+	}
+	regulator_put(regulator);
+
+	tc370_keyled_enabled = on;
+
+	return 0;
+}
+
+static struct tc370_platform_data tc370_touchkey_pdata = {
+	.gpio_int = GPIO_2TOUCH_INT,
+	.gpio_sda = GPIO_2TOUCH_SDA,
+	.gpio_scl = GPIO_2TOUCH_SCL,
+	.key_num = ARRAY_SIZE(tc370_keycode),
+	.keycode = tc370_keycode,
+	.power = touchkey_power,
+	.power_isp = touchkey_power_isp,
+	.keyled = key_led_control,
+	.fw_name = "coreriver/tc370_m2.fw",
+};
+
+static struct i2c_board_info touchkey_i2c_data[] = {
+	{
+		I2C_BOARD_INFO(TC370_NAME, 0x20),
+		.platform_data = &tc370_touchkey_pdata,
+	},
+};
+
+extern unsigned int lcdtype;
+
+static void tc370_touchkey_init(void)
+{
+	gpio_request(GPIO_2TOUCH_INT, "TOUCH_INT");
+	s3c_gpio_setpull(GPIO_2TOUCH_INT, S3C_GPIO_PULL_UP);
+	s5p_register_gpio_interrupt(GPIO_2TOUCH_INT);
+	gpio_direction_input(GPIO_2TOUCH_INT);
+
+	touchkey_i2c_data[0].irq = gpio_to_irq(GPIO_2TOUCH_INT);
+	irq_set_irq_type(gpio_to_irq(GPIO_2TOUCH_INT), IRQF_TRIGGER_FALLING);
+	s3c_gpio_cfgpin(GPIO_2TOUCH_INT, S3C_GPIO_SFN(0xf));
+
+	printk(KERN_ERR "%s touchkey : %d\n",
+		__func__, touchkey_i2c_data[0].irq);
+
+	s3c_gpio_setpull(GPIO_2TOUCH_SCL, S3C_GPIO_PULL_DOWN);
+	s3c_gpio_setpull(GPIO_2TOUCH_SDA, S3C_GPIO_PULL_DOWN);
+
+	if (lcdtype != 0)
+		tc370_touchkey_pdata.panel_connect = true;
+	else
+		tc370_touchkey_pdata.panel_connect = false;
+
+}
+#endif /* CONFIG_KEYBOARD_TC370L_TOUCHKEY */
+
+#if defined(CONFIG_KEYBOARD_CYPRESS_TOUCH) || defined(CONFIG_KEYBOARD_TC370L_TOUCHKEY)
 static struct i2c_gpio_platform_data gpio_i2c_data10 = {
 	.sda_pin = GPIO_2TOUCH_SDA,
 	.scl_pin = GPIO_2TOUCH_SCL,
@@ -379,14 +889,23 @@ struct platform_device s3c_device_i2c10 = {
 	.dev.platform_data = &gpio_i2c_data10,
 };
 
-/* I2C10 */
-static struct i2c_board_info i2c_devs10_emul[] = {
-	{
-		I2C_BOARD_INFO("sec_touchkey", 0x20),
-		.platform_data = &touchkey_pdata,
-	},
-};
-#endif /*CONFIG_KEYBOARD_CYPRESS_TOUCH*/
+static void touchkey_init(void)
+{
+	printk(KERN_INFO"%s, system_rev : %d\n", __func__, system_rev);
+
+#if defined(CONFIG_KEYBOARD_TC370L_TOUCHKEY)
+	tc370_touchkey_init();
+	i2c_register_board_info(10, touchkey_i2c_data,
+		ARRAY_SIZE(touchkey_i2c_data));
+#endif
+
+#if defined(CONFIG_KEYBOARD_CYPRESS_TOUCH)
+	touchkey_init_hw();
+	i2c_register_board_info(10, i2c_devs10_emul,
+		ARRAY_SIZE(i2c_devs10_emul));
+#endif
+}
+#endif
 
 #ifdef CONFIG_INPUT_WACOM
 static struct wacom_g5_callbacks *wacom_callbacks;
@@ -729,7 +1248,7 @@ static struct platform_device universal5260_input_booster = {
 static struct platform_device *universal5260_input_devices[] __initdata = {
 	&s3c_device_i2c1,
 	&universal5260_gpio_keys,
-#ifdef CONFIG_KEYBOARD_CYPRESS_TOUCH
+#if defined(CONFIG_KEYBOARD_CYPRESS_TOUCH) || defined(CONFIG_KEYBOARD_TC370L_TOUCHKEY)
 	&s3c_device_i2c10,
 #endif
 #ifdef CONFIG_INPUT_WACOM
@@ -751,11 +1270,19 @@ struct exynos5_platform_i2c hs_i2c0_data __initdata = {
 
 void __init tsp_check_and_init(void)
 {
-	fts_tsp_init();
-#if defined(CONFIG_MACH_M2LTE)
+
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+	midas_tsp_init();
+//	s3c_i2c1_set_platdata(&touch_i2c5_platdata);
 	s3c_i2c1_set_platdata(NULL);
-	i2c_register_board_info(5, fts_i2c_devs, ARRAY_SIZE(fts_i2c_devs));
+	i2c_register_board_info(5, i2c_devs5, ARRAY_SIZE(i2c_devs5));
+#elif defined(CONFIG_TOUCHSCREEN_ZINITIX)
+	zinitix_tsp_init();
+	s3c_i2c1_set_platdata(NULL);
+	i2c_register_board_info(5, zinitix_i2c_devs, ARRAY_SIZE(zinitix_i2c_devs));
 #else
+	fts_tsp_init();
+
 	if (system_rev >= 0x1) {
 		s3c_i2c1_set_platdata(NULL);
 		i2c_register_board_info(5, fts_i2c_devs, ARRAY_SIZE(fts_i2c_devs));
@@ -776,12 +1303,10 @@ void __init exynos5_universal5260_input_init(void)
 
 	tsp_check_and_init();
 
-#ifdef CONFIG_KEYBOARD_CYPRESS_TOUCH
-	touchkey_init_hw();
-//	s3c_i2c6_set_platdata(NULL);
-	i2c_register_board_info(10, i2c_devs10_emul,
-		ARRAY_SIZE(i2c_devs10_emul));
+#if defined(CONFIG_KEYBOARD_CYPRESS_TOUCH) || defined(CONFIG_KEYBOARD_TC370L_TOUCHKEY)
+	touchkey_init();
 #endif
+
 #ifdef CONFIG_INPUT_WACOM
 	wacom_init();
 #endif
@@ -791,6 +1316,12 @@ void __init exynos5_universal5260_input_init(void)
 	s3c_gpio_cfgpin(GPIO_HALL_SENSOR_INT, S3C_GPIO_SFN(0xf));
 	s5p_register_gpio_interrupt(GPIO_HALL_SENSOR_INT);
 	gpio_direction_input(GPIO_HALL_SENSOR_INT);
+#endif
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+	s3c_gpio_setpull(GPIO_KEY_S1, S3C_GPIO_PULL_UP);
+	s3c_gpio_setpull(GPIO_KEY_S2, S3C_GPIO_PULL_UP);
+	s5p_register_gpio_interrupt(GPIO_KEY_S1);
+	s5p_register_gpio_interrupt(GPIO_KEY_S2);
 #endif
 	platform_add_devices(universal5260_input_devices,
 			ARRAY_SIZE(universal5260_input_devices));

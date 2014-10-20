@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_cdc.c 444405 2013-12-19 12:28:07Z $
+ * $Id: dhd_cdc.c 449353 2014-01-16 21:34:16Z $
  *
  * BDC is like CDC, except it includes a header for data packets to convey
  * packet priority over the bus, and flags (e.g. to indicate checksum status
@@ -529,7 +529,6 @@ dhd_prot_detach(dhd_pub_t *dhd)
 void
 dhd_prot_dstats(dhd_pub_t *dhd)
 {
-#ifdef CUSTOMER_HW4
 	/* No stats from dongle added yet, copy bus stats */
 	dhd->dstats.tx_packets = dhd->tx_packets;
 	dhd->dstats.tx_errors = dhd->tx_errors;
@@ -538,16 +537,6 @@ dhd_prot_dstats(dhd_pub_t *dhd)
 	dhd->dstats.rx_dropped = dhd->rx_dropped;
 	dhd->dstats.multicast = dhd->rx_multicast;
 	return;
-#else
-	int ret = 0;
-
-	dngl_stats_t  *dstats = &dhd->dstats;
-	strcpy((char *) dstats, "dngl_stats");
-	ret = dhd_wl_ioctl_cmd(dhd, WLC_GET_VAR, dstats, sizeof(dngl_stats_t), FALSE, 0);
-	if (ret < 0)
-		DHD_TRACE(("%s: Error\n", __FUNCTION__));
-	return;
-#endif /* CUSTOMER_HW4 */
 }
 
 int

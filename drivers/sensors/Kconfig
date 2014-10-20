@@ -74,4 +74,15 @@ config SENSORS_SX9500
 
 	  Say N here if you do not use cm3323.
 
+config SENSORS_GP2A30
+	depends on I2C
+	tristate "GP2AP030A00F driver"
+	default n
+	help
+	  Say Y here if you use GP2AP030A00F.
+	  This option enables lproximity & light sensors using
+	  SHARP GP2AP030A00F device driver.
+
+	  Say N here if you do not use GP2AP030A00F.
+
 source "drivers/sensors/mpu6500/Kconfig"

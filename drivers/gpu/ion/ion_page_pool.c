@@ -43,8 +43,10 @@ static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 	/* this is only being used to flush the page for dma,
 	   this api is not really suitable for calling from a driver
 	   but no better way to flush a page for dma exist at this time */
+#ifndef CONFIG_ION_EXYNOS
 	__dma_page_cpu_to_dev(page, 0, PAGE_SIZE << pool->order,
 			      DMA_BIDIRECTIONAL);
+#endif
 	return page;
 }
 
@@ -200,35 +202,37 @@ static int ion_page_pool_shrink(struct shrinker *shrinker,
 	struct ion_page_pool *pool;
 	int nr_freed = 0;
 	int i;
-	bool high;
 	int nr_to_scan = sc->nr_to_scan;
-
-	high = sc->gfp_mask & __GFP_HIGHMEM;
-
+	bool high = false;
+    
 	if (nr_to_scan == 0)
-		return ion_page_pool_total(high);
+		return ion_page_pool_total(true);
 
 	plist_for_each_entry(pool, &pools, list) {
 		for (i = 0; i < nr_to_scan; i++) {
 			struct page *page;
 
 			mutex_lock(&pool->mutex);
-			if (high && pool->high_count) {
-				page = ion_page_pool_remove(pool, true);
-			} else if (pool->low_count) {
-				page = ion_page_pool_remove(pool, false);
+			if (pool->low_count) {
+				high = false;
+			} else if (pool->high_count) {
+				high = true;
 			} else {
 				mutex_unlock(&pool->mutex);
 				break;
 			}
+			page = ion_page_pool_remove(pool, high);
 			mutex_unlock(&pool->mutex);
 			ion_page_pool_free_pages(pool, page);
 			nr_freed += (1 << pool->order);
+			pr_debug("%s: page pool free %d %s pages from pool order %d\n",
+					__func__, 1 << pool->order,
+					high ? "high" : "low", pool->order);
 		}
 		nr_to_scan -= i;
 	}
 
-	return ion_page_pool_total(high);
+	return ion_page_pool_total(true);
 }
 
 struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
@@ -244,7 +248,7 @@ struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
 	pool->gfp_mask = gfp_mask;
 	pool->order = order;
 	mutex_init(&pool->mutex);
-	plist_node_init(&pool->list, order);
+	plist_node_init(&pool->list, -order);
 	plist_add(&pool->list, &pools);
 
 	return pool;

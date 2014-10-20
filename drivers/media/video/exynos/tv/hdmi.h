@@ -33,7 +33,7 @@
 #define INFOFRAME_CNT          2
 
 /* default preset configured on probe */
-#define HDMI_DEFAULT_PRESET	V4L2_DV_1080P60
+#define HDMI_DEFAULT_PRESET	V4L2_DV_720P60
 
 #define HDMI_VSI_VERSION	0x01
 #define HDMI_AVI_VERSION	0x02
@@ -52,9 +52,11 @@
 #define AVI_ITU709			(2 << 6)
 
 /* HDMI audio configuration value */
-#define DEFAULT_SAMPLE_RATE	44100
+#define DEFAULT_SAMPLE_RATE	48000
 #define DEFAULT_BITS_PER_SAMPLE	16
-#define DEFAULT_SAMPLE_SIZE	24
+#define AUDIO_CHANNEL_MASK		(0xFF)
+#define AUDIO_BIT_RATE_MASK		(0x7 << 16)
+#define AUDIO_SAMPLE_RATE_MASK	(0x7F << 19)
 
 /* HDMI pad definitions */
 #define HDMI_PAD_SINK		0
@@ -361,6 +363,9 @@ struct hdmi_device {
 
 	/** mutex for protection of fields below */
 	struct mutex mutex;
+#ifdef CONFIG_VIDEO_MHL_SII8246
+	struct switch_dev audio_ch_switch;
+#endif
 };
 
 struct hdmi_conf {
@@ -378,6 +383,7 @@ extern const struct hdmiphy_conf hdmiphy_conf[];
 extern const int hdmi_pre_cnt;
 extern const int hdmiphy_conf_cnt;
 extern const u8 *hdmiphy_preset2conf(u32 preset);
+extern struct pm_qos_request exynos5_tv_mif_qos;
 
 const struct hdmi_3d_info *hdmi_preset2info(u32 preset);
 
@@ -432,7 +438,7 @@ int edid_update(struct hdmi_device *hdev);
 u32 edid_enum_presets(struct hdmi_device *hdev, int index);
 u32 edid_preferred_preset(struct hdmi_device *hdev);
 bool edid_supports_hdmi(struct hdmi_device *hdev);
-int edid_max_audio_channels(struct hdmi_device *hdev);
+u32 edid_audio_informs(struct hdmi_device *hdev);
 int edid_source_phy_addr(struct hdmi_device *hdev);
 
 static inline
@@ -490,5 +496,24 @@ static inline void hdmi_read_bytes(struct hdmi_device *hdev, u32 reg_id,
 	for (i = 0; i < bytes; ++i)
 		buf[i] = readb(hdev->regs + reg_id + i * 4);
 }
+
+#ifdef CONFIG_VIDEO_MHL_SII8246
+
+enum extension_edid_db {
+	DATABLOCK_AUDIO = 1,
+	DATABLOCK_VIDEO,
+	DATABLOCK_VENDOR,
+	DATABLOCK_SPEAKERS,
+};
+
+/* HDMI EDID Extension Data Block Tags  */
+#define HDMI_EDID_EX_DATABLOCK_TAG_MASK		0xE0
+#define HDMI_EDID_EX_DATABLOCK_LEN_MASK		0x1F
+#define HDMI_EDID_EX_SUPPORTS_AI_MASK		0x80
+#define HDMI_AUDIO_FORMAT_MAX_LENGTH		10
+#define EDID_MAX_LENGTH	512
+
+int hdmi_send_audio_info(int onoff, struct hdmi_device *hdev);
+#endif/* CONFIG_VIDEO_MHL_SII8246 */
 
 #endif /* SAMSUNG_HDMI_H */

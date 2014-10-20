@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfgp2p.c 446310 2014-01-03 12:41:49Z $
+ * $Id: wl_cfgp2p.c 454364 2014-02-10 09:20:25Z $
  *
  */
 #include <typedefs.h>
@@ -455,13 +455,8 @@ wl_cfgp2p_ifadd(struct bcm_cfg80211 *cfg, struct ether_addr *mac, u8 if_type,
 	err = wldev_iovar_setbuf(ndev, "p2p_ifadd", &ifreq, sizeof(ifreq),
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, &cfg->ioctl_buf_sync);
 
-	if (unlikely(err < 0)) {
+	if (unlikely(err < 0))
 		printk("'cfg p2p_ifadd' error %d\n", err);
-		CFGP2P_ERR(("---"MACDBG" %s %u\n",
-			MAC2STRDBG(ifreq.addr.octet),
-			(if_type == WL_P2P_IF_GO) ? "go" : "client",
-				(chspec & WL_CHANSPEC_CHAN_MASK) >> WL_CHANSPEC_CHAN_SHIFT));
-	}
 	else if (if_type == WL_P2P_IF_GO) {
 		err = wldev_ioctl(ndev, WLC_SET_SCB_TIMEOUT, &scb_timeout, sizeof(u32), true);
 		if (unlikely(err < 0))
@@ -1872,9 +1867,6 @@ wl_cfgp2p_tx_action_frame(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	if ((evt_ret = wl_cfg80211_apply_eventbuffer(bcmcfg_to_prmry_ndev(cfg), cfg, &buf)) < 0)
 		return evt_ret;
 
-	if (bssidx == P2PAPI_BSSCFG_PRIMARY)
-		bssidx =  wl_to_p2p_bss_bssidx(cfg, P2PAPI_BSSCFG_DEVICE);
-
 	cfg->af_sent_channel  = af_params->channel;
 #ifdef WL_CFG80211_SYNC_GON
 	cfg->af_tx_sent_jiffies = jiffies;
@@ -2095,6 +2087,9 @@ wl_cfgp2p_down(struct bcm_cfg80211 *cfg)
 			if (index != WL_INVALID)
 				wl_cfgp2p_clear_management_ie(cfg, index);
 	}
+#if defined(WL_CFG80211_P2P_DEV_IF)
+	wl_cfgp2p_del_p2p_disc_if(wdev, cfg);
+#endif /* WL_CFG80211_P2P_DEV_IF */
 	wl_cfgp2p_deinit_priv(cfg);
 	return 0;
 }
@@ -2126,11 +2121,21 @@ wl_cfgp2p_set_p2p_noa(struct bcm_cfg80211 *cfg, struct net_device *ndev, char* b
 		if (duration != -1)
 			cfg->p2p->noa.desc[0].duration = duration;
 
-		if (cfg->p2p->noa.desc[0].count != 255) {
+		if (cfg->p2p->noa.desc[0].count < 255 && cfg->p2p->noa.desc[0].count > 1) {
+			cfg->p2p->noa.desc[0].start = 0;
+			dongle_noa.type = WL_P2P_SCHED_TYPE_ABS;
+			dongle_noa.action = WL_P2P_SCHED_ACTION_NONE;
+			dongle_noa.option = WL_P2P_SCHED_OPTION_TSFOFS;
+		}
+		else if (cfg->p2p->noa.desc[0].count == 1) {
 			cfg->p2p->noa.desc[0].start = 200;
 			dongle_noa.type = WL_P2P_SCHED_TYPE_REQ_ABS;
 			dongle_noa.action = WL_P2P_SCHED_ACTION_GOOFF;
 			dongle_noa.option = WL_P2P_SCHED_OPTION_TSFOFS;
+		}
+		else if (cfg->p2p->noa.desc[0].count == 0) {
+			cfg->p2p->noa.desc[0].start = 0;
+			dongle_noa.action = WL_P2P_SCHED_ACTION_RESET;
 		}
 		else {
 			/* Continuous NoA interval. */
@@ -2588,19 +2593,19 @@ wl_cfgp2p_add_p2p_disc_if(struct bcm_cfg80211 *cfg)
 	struct ether_addr primary_mac;
 
 	if (!cfg)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	WL_TRACE(("Enter\n"));
 
 	if (cfg->p2p_wdev) {
 		CFGP2P_ERR(("p2p_wdev defined already.\n"));
-		return NULL;
+		return ERR_PTR(-ENFILE);
 	}
 
 	wdev = kzalloc(sizeof(*wdev), GFP_KERNEL);
 	if (unlikely(!wdev)) {
 		WL_ERR(("Could not allocate wireless device\n"));
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	memset(&primary_mac, 0, sizeof(primary_mac));
@@ -2611,6 +2616,11 @@ wl_cfgp2p_add_p2p_disc_if(struct bcm_cfg80211 *cfg)
 	wdev->wiphy = cfg->wdev->wiphy;
 	wdev->iftype = NL80211_IFTYPE_P2P_DEVICE;
 	memcpy(wdev->address, &cfg->p2p->dev_addr, ETHER_ADDR_LEN);
+
+#if defined(WL_NEWCFG_PRIVCMD_SUPPORT)
+	if (cfg->p2p_net)
+		memcpy(cfg->p2p_net->dev_addr, &cfg->p2p->dev_addr, ETHER_ADDR_LEN);
+#endif /* WL_NEWCFG_PRIVCMD_SUPPORT */
 
 	/* store p2p wdev ptr for further reference. */
 	cfg->p2p_wdev = wdev;

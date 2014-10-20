@@ -934,6 +934,15 @@ config USB_ANDROID_SAMSUNG_SIDESYNC
 		If you enable this option,
 		SideSync will be added to android composite.
 
+config USB_LOCK_SUPPORT_FOR_MDM
+	boolean "Samsung USB_LOCK function for MDM"
+	depends on USB_G_ANDROID
+	help
+	  Support USB lock for SDS MDM function.
+	  If you enable this option,
+	  USB is not connected to the work in office.
+	  Of employees who have installed MDM(SDS).
+
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET

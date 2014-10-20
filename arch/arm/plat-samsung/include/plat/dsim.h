@@ -262,6 +262,8 @@ struct mipi_dsim_device {
 	unsigned int			e_clk_src;
 	bool				enabled;
 
+	struct mutex			lock;
+
 	struct s5p_platform_mipi_dsim	*pd;
 
 	struct notifier_block		fb_notif;
@@ -276,7 +278,6 @@ struct mipi_dsim_device {
  * @dsim_lcd_info: pointer to structure for configuring
  *	mipi-dsi based lcd panel.
  * @mipi_power: callback pointer for enabling or disabling mipi power.
- * @part_reset: callback pointer for reseting mipi phy.
  * @init_d_phy: callback pointer for enabing d_phy of dsi master.
  * @get_fb_frame_done: callback pointer for getting frame done status of
  *	the display controller(FIMD).
@@ -291,7 +292,6 @@ struct s5p_platform_mipi_dsim {
 
 	int (*mipi_power) (struct mipi_dsim_device *dsim, unsigned int
 		enable);
-	int (*part_reset) (struct mipi_dsim_device *dsim);
 	int (*init_d_phy) (int id, bool on);
 	int (*get_fb_frame_done) (struct fb_info *info);
 	void (*trigger) (struct fb_info *info);
@@ -318,9 +318,6 @@ struct mipi_dsim_lcd_driver {
  * register mipi_dsim_lcd_driver object defined by lcd panel driver
  * to mipi-dsi driver.
  */
-extern int s5p_dsim_part_reset(struct mipi_dsim_device *dsim);
-extern int s5p_dsim_init_d_phy(struct mipi_dsim_device *dsim,
-	unsigned int enable);
 extern void s5p_dsim0_set_platdata(struct s5p_platform_mipi_dsim *pd);
 extern void s5p_dsim1_set_platdata(struct s5p_platform_mipi_dsim *pd);
 #endif /* _DSIM_H */

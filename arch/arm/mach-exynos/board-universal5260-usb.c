@@ -22,8 +22,12 @@
 #include <mach/usb3-drd.h>
 #include <mach/usb-switch.h>
 
-#if defined(CONFIG_MFD_MAX77803)
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77804k-private.h>
+#else
+#ifdef CONFIG_MFD_MAX77803
 #include <linux/mfd/max77803-private.h>
+#endif
 #endif
 
 #if defined(CONFIG_USB_HOST_NOTIFY)

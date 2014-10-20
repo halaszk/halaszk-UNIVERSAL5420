@@ -18,8 +18,12 @@
 #include "gpio-hl3g-rev00.h"
 #elif defined(CONFIG_MACH_HLLTE)
 #include "gpio-hllte-rev00.h"
-#elif defined(CONFIG_MACH_M2LTE)
-#include "gpio-m2lte-rev00.h"
+#elif defined(CONFIG_MACH_M2ALTE)
+#include "gpio-m2alte-rev00.h"
+#elif defined(CONFIG_MACH_M2A3G)
+#include "gpio-m2a3g-rev00.h"
+#elif defined(CONFIG_MACH_MEGA2ELTE)
+#include "gpio-mega2elte-rev00.h"
 #endif
 
 #endif

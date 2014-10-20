@@ -101,7 +101,7 @@ static int fimc_is_comp_spi_burst_write(struct spi_device *spi,
 		if (ret) {
 			err("spi write error - can't write data");
 			goto p_err;
-			break;
+			//break;
 		}
 	}
 

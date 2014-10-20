@@ -18,21 +18,17 @@
 #endif
 
 /* GPIO_LEVEL_NONE = 2, GPIO_LEVEL_LOW = 0 */
+static unsigned int nfc_gpio_table[][4] = {
 #if defined(CONFIG_PN547_NFC)
-static unsigned int nfc_gpio_table[][4] = {
 	{GPIO_NFC_IRQ, S3C_GPIO_INPUT, 2, S3C_GPIO_PULL_DOWN},
 	{GPIO_NFC_EN, S3C_GPIO_OUTPUT, 0, S3C_GPIO_PULL_NONE},
 	{GPIO_NFC_FIRMWARE, S3C_GPIO_OUTPUT, 0, S3C_GPIO_PULL_NONE},
-};
-#endif
-#if defined(CONFIG_SEC_NFC)
-static unsigned int nfc_gpio_table[][4] = {
+#elif defined(CONFIG_SEC_NFC)
 	{GPIO_NFC_IRQ, S3C_GPIO_INPUT, 2, S3C_GPIO_PULL_DOWN},
 	{GPIO_NFC_EN, S3C_GPIO_OUTPUT, 0, S3C_GPIO_PULL_NONE},
 	{GPIO_NFC_FIRMWARE, S3C_GPIO_OUTPUT, 0, S3C_GPIO_PULL_NONE},
-};
 #endif
-
+};
 
 static inline void nfc_setup_gpio(void)
 {
@@ -80,8 +76,7 @@ static struct i2c_board_info i2c_dev_nfc[] __initdata = {
 		.irq = IRQ_EINT(11),
 		.platform_data = &pn547_pdata,
 	},
-#endif
-#if defined(CONFIG_SEC_NFC)
+#elif defined(CONFIG_SEC_NFC)
     {
 		I2C_BOARD_INFO("sec-nfc", 0x27),
 		.irq = IRQ_EINT(11),

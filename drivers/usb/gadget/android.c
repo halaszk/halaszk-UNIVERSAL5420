@@ -72,6 +72,10 @@
 #include "rndis.c"
 #include "f_diag.c"
 #include "f_dm.c"
+ // HSIC
+#include "u_ctrl_hsic.c"
+#include "u_data_hsic.c"
+#include "f_qc_acm.c"
 
 MODULE_AUTHOR("Mike Lockwood");
 MODULE_DESCRIPTION("Android Composite USB Driver");
@@ -142,6 +146,9 @@ struct android_dev {
 	bool sw_connected;
 	struct work_struct work;
 	char ffs_aliases[256];
+#ifdef CONFIG_USB_LOCK_SUPPORT_FOR_MDM
+	int usb_lock;
+#endif
 };
 
 static struct class *android_class;
@@ -1229,6 +1236,91 @@ static struct android_usb_function diag_function = {
 	.attributes	= diag_function_attributes,
 };
 
+ // HSIC
+/* SERIAL */
+static char serial_transports[32]="HSIC";	/*enabled FSERIAL ports - "tty[,sdio]"*/
+static ssize_t serial_transports_store(
+		struct device *device, struct device_attribute *attr,
+		const char *buff, size_t size)
+{
+	strlcpy(serial_transports, buff, sizeof(serial_transports));
+
+	return size;
+}
+
+static DEVICE_ATTR(transports, S_IWUSR, NULL, serial_transports_store);
+static struct device_attribute *serial_function_attributes[] =
+					 { &dev_attr_transports, NULL };
+
+static int serial_function_init(struct android_usb_function *f, struct usb_composite_dev *cdev)
+{
+	char *name;
+	char buf[32], *b;
+	int err = -1;
+	static int ports = 0;
+	int ret=0;
+	struct usb_configuration *c;
+
+	if (!cdev)
+	{
+		printk("usb: serial_function_init : cdev null \r\n");
+		goto out;
+	}
+
+	c = cdev->config;	
+
+	strlcpy(buf, serial_transports, sizeof(buf));
+	b = strim(buf);
+
+	while (b) {
+		name = strsep(&b, ",");
+
+		if (name) {
+			err = gserial_init_port(ports, name);
+			if (err) {
+				pr_err("serial: Cannot open port '%s'", name);
+				goto out;
+			}
+			ports++;
+		}
+	}
+	err = gport_setup(c);
+	if (err) {
+		pr_err("serial: Cannot setup transports");
+		goto out;
+	}	
+out:	
+	return ret;
+}
+
+static void serial_function_cleanup(struct android_usb_function *f)
+{
+	gserial_cleanup();
+}
+
+static int serial_function_bind_config(struct android_usb_function *f,
+					struct usb_configuration *c)
+{
+	int err = -1;
+
+	err = gser_bind_config(c, 0);
+	if (err) {
+		pr_err("serial: bind_config failed for port ");
+		goto out;
+	}
+
+out:
+	return err;
+}
+
+static struct android_usb_function serial_function = {
+	.name		= "serial",
+	.init	= serial_function_init,
+	.cleanup	= serial_function_cleanup,
+	.bind_config	= serial_function_bind_config,
+	.attributes	= serial_function_attributes,
+};
+ 
 static int dm_function_bind_config(struct android_usb_function *f,
 					struct usb_configuration *c)
 {
@@ -1323,6 +1415,8 @@ static struct android_usb_function *supported_functions[] = {
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_SIDESYNC
 	&conn_gadget_function,
 #endif
+ // HSIC
+	&serial_function,
 	NULL
 };
 
@@ -1872,6 +1966,48 @@ macos_show(struct device *pdev, struct device_attribute *attr, char *buf)
 	return sprintf(buf, "%d\n", value);
 }
 #endif
+
+#ifdef CONFIG_USB_LOCK_SUPPORT_FOR_MDM
+static void android_disconnect(struct usb_gadget *gadget);
+static ssize_t show_usb_device_lock_state(struct device *pdev,
+		struct device_attribute *attr, char *buf)
+{
+	struct android_dev *dev = dev_get_drvdata(pdev);
+
+	if (!dev->usb_lock)
+		return snprintf(buf, PAGE_SIZE, "USB_UNLOCK\n");
+	else
+		return snprintf(buf, PAGE_SIZE, "USB_LOCK\n");
+}
+
+static ssize_t store_usb_device_lock_state(struct device *pdev,
+		struct device_attribute *attr, const char *buff, size_t count)
+{
+	struct android_dev *dev = dev_get_drvdata(pdev);
+	struct usb_composite_dev *cdev = dev->cdev;
+
+	if (!strncmp(buff, "0", 1)){
+		mutex_lock(&dev->mutex);
+		dev->usb_lock = 0;
+		android_enable(dev);
+		mutex_unlock(&dev->mutex);
+	} else if (!strncmp(buff, "1", 1)){
+		pr_info("[%s][%d] : usb disconnect for support MDM\n",
+			__func__,__LINE__);
+		mutex_lock(&dev->mutex);
+		dev->usb_lock = 1;
+		android_disconnect(cdev->gadget);
+		android_disable(dev);
+		mutex_unlock(&dev->mutex);
+	} else {
+		pr_warn("%s: Wrong command\n", __func__);
+		return count;
+	}
+
+	return count;
+}
+#endif
+
 static DEVICE_ATTR(bcdUSB, S_IRUGO | S_IWUSR, bcdUSB_show, NULL);
 
 static DEVICE_ATTR(functions, S_IRUGO | S_IWUSR, functions_show,
@@ -1883,6 +2019,11 @@ static DEVICE_ATTR(usb30en,S_IRUGO | S_IWUSR, usb30en_show, usb30en_store);
 static DEVICE_ATTR(macos,S_IRUGO | S_IWUSR, macos_show, NULL);
 static DEVICE_ATTR(ss_host_available,S_IRUGO | S_IWUSR, ss_host_available_show, NULL);
 #endif
+#ifdef CONFIG_USB_LOCK_SUPPORT_FOR_MDM
+static DEVICE_ATTR(usb_lock, S_IRUGO | S_IWUSR,
+		show_usb_device_lock_state, store_usb_device_lock_state);
+#endif
+
 static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_idVendor,
 	&dev_attr_idProduct,
@@ -1901,6 +2042,9 @@ static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_usb30en,
 	&dev_attr_macos,
 	&dev_attr_ss_host_available,
+#endif
+#ifdef CONFIG_USB_LOCK_SUPPORT_FOR_MDM
+	&dev_attr_usb_lock,
 #endif
 	NULL
 };

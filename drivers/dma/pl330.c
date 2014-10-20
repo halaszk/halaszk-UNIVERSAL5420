@@ -2140,7 +2140,7 @@ static int dmac_alloc_resources(struct pl330_dmac *pl330)
 	struct pl330_info *pi = pl330->pinfo;
 	int chans = pi->pcfg.num_chan;
 	int ret;
-	const char *adma_name;
+	const char *adma_name = NULL;
 
 	if (soc_is_exynos5260()) {
 		adma_name = "dma-pl330.2";
@@ -2151,7 +2151,8 @@ static int dmac_alloc_resources(struct pl330_dmac *pl330)
 	 * A channel's buffer offset is (Channel_Id * MCODE_BUFF_PERCHAN)
 	 */
 
-	if (ADMA_MCODE_BASE && !strncmp(adma_name, dev_name(pi->dev), strlen(adma_name))) {
+	if (adma_name && ADMA_MCODE_BASE &&
+			!strncmp(adma_name, dev_name(pi->dev), strlen(adma_name))) {
 		pl330->mcode_bus = ADMA_MCODE_BASE;
 		pl330->mcode_cpu = ioremap(ADMA_MCODE_BASE, (chans * pi->mcbufsz));
 	} else {
@@ -2169,7 +2170,8 @@ static int dmac_alloc_resources(struct pl330_dmac *pl330)
 	if (ret) {
 		dev_err(pi->dev, "%s:%d Can't to create channels for DMAC!\n",
 			__func__, __LINE__);
-		if (ADMA_MCODE_BASE && !strncmp(adma_name, dev_name(pi->dev), strlen(adma_name))) {
+		if (adma_name && ADMA_MCODE_BASE &&
+				!strncmp(adma_name, dev_name(pi->dev), strlen(adma_name))) {
 			iounmap(pl330->mcode_cpu);
 			pl330->mcode_bus = 0;
 		} else {

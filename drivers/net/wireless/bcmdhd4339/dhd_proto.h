@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 1999-2013, Broadcom Corporation
+ * Copyright (C) 1999-2014, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_proto.h 426380 2013-09-27 18:42:29Z $
+ * $Id: dhd_proto.h 455951 2014-02-17 10:52:22Z $
  */
 
 #ifndef _dhd_proto_h_
@@ -36,6 +36,10 @@
 #ifndef IOCTL_RESP_TIMEOUT
 #define IOCTL_RESP_TIMEOUT  2000  /* In milli second default value for Production FW */
 #endif /* IOCTL_RESP_TIMEOUT */
+
+#ifndef MFG_IOCTL_RESP_TIMEOUT
+#define MFG_IOCTL_RESP_TIMEOUT  20000  /* In milli second default value for MFG FW */
+#endif /* MFG_IOCTL_RESP_TIMEOUT */
 
 /*
  * Exported from the dhd protocol module (dhd_cdc, dhd_rndis)

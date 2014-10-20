@@ -15,23 +15,13 @@
 #ifndef __MACH_EXYNOS_BOARD_UNIVERSAL5260_PMIC_H
 #define __MACH_EXYNOS_BOARD_UNIVERSAL5260_PMIC_H
 
-#if defined(CONFIG_MACH_HLLTE)
+
 extern void board_hl_pmic_init(void);
-#elif defined(CONFIG_MACH_HL3G)
-extern void board_hl_pmic_init(void);
-#elif defined(CONFIG_MACH_M2LTE)
-extern void board_hl_pmic_init(void);
-#endif
 
 void __init exynos5_universal5260_pmic_init(void)
 {
-#if defined(CONFIG_MACH_HLLTE)
 	board_hl_pmic_init();
-#elif defined(CONFIG_MACH_HL3G)
-	board_hl_pmic_init();
-#elif defined(CONFIG_MACH_M2LTE)
-	board_hl_pmic_init();	
-#endif
+
 }
 
 #endif /* __MACH_EXYNOS_BOARD_UNIVERSAL5260_PMIC_H */

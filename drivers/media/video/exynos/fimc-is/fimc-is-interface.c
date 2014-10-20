@@ -1907,9 +1907,8 @@ static inline void wq_func_schedule(struct fimc_is_interface *itf,
 static void interface_timer(unsigned long data)
 {
 	u32 shot_count, scount_3ax, scount_isp;
-	u32 fcount, i, j;
+	u32 fcount, i;
 	unsigned long flags;
-	void __iomem *regs;
 	struct fimc_is_interface *itf = (struct fimc_is_interface *)data;
 	struct fimc_is_core *core;
 	struct fimc_is_device_ischain *device;
@@ -2011,21 +2010,14 @@ static void interface_timer(unsigned long data)
 				atomic_set(&itf->shot_check[i], 0);
 				atomic_set(&itf->shot_timeout[i], 0);
 			} else {
-				pr_err("\n### firmware messsage dump ###\n");
 				fimc_is_hw_logdump(itf);
-
-				pr_err("\n### MCUCTL dump ###\n");
-				regs = itf->com_regs;
-				for (j = 0; j < 64; ++j)
-					pr_err("MCTL[%d] : %08X\n", j, readl(regs + (4 * j)));
+				fimc_is_hw_regdump(itf);
 
 				if (itf->need_iflag &&
 					readl(&itf->com_regs->shot_iflag)) {
 					pr_err("\n### MCUCTL check ###\n");
 					fimc_is_clr_intr(itf, INTR_SHOT_DONE);
-
-					for (j = 0; j < 64; ++j)
-						pr_err("MCTL[%d] : %08X\n", j, readl(regs + (4 * j)));
+					fimc_is_hw_regdump(itf);
 				}
 #ifdef BUG_ON_ENABLE
 				BUG();
@@ -2056,13 +2048,8 @@ static void interface_timer(unsigned long data)
 				atomic_read(&itf->sensor_timeout[i]),
 				atomic_read(&itf->sensor_check[i]));
 
-			pr_err("\n### firmware messsage dump ###\n");
 			fimc_is_hw_logdump(itf);
-
-			pr_err("\n### MCUCTL dump ###\n");
-			regs = itf->com_regs;
-			for (j = 0; j < 64; ++j)
-				pr_err("MCTL[%d] : %08X\n", j, readl(regs + (4 * j)));
+			fimc_is_hw_regdump(itf);
 #ifdef BUG_ON_ENABLE
 			BUG();
 #endif
@@ -2070,8 +2057,7 @@ static void interface_timer(unsigned long data)
 		}
 	}
 
-	mod_timer(&itf->timer, jiffies +
-		(FIMC_IS_COMMAND_TIMEOUT/TRY_TIMEOUT_COUNT));
+	mod_timer(&itf->timer, jiffies + (FIMC_IS_COMMAND_TIMEOUT/TRY_TIMEOUT_COUNT));
 }
 
 static irqreturn_t interface_isr(int irq, void *data)
@@ -2404,9 +2390,12 @@ int fimc_is_hw_logdump(struct fimc_is_interface *this)
 	struct fimc_is_core *core;
 
 	if (!test_bit(IS_IF_STATE_OPEN, &this->state)) {
-		err("interface is closed");
-		return 0;
+		warn("interface is closed");
+		count = -EINVAL;
+		goto p_err;
 	}
+
+	pr_err("\n### firmware messsage dump ###\n");
 
 	core = (struct fimc_is_core *)this->core;
 	sentence_i = 0;
@@ -2450,16 +2439,45 @@ int fimc_is_hw_logdump(struct fimc_is_interface *this)
 		printk(KERN_ERR "end\n");
 	}
 
+p_err:
 	return count;
+}
+
+int fimc_is_hw_regdump(struct fimc_is_interface *this)
+{
+	int ret = 0;
+	u32 i;
+	void __iomem *regs;
+
+	if (!test_bit(IS_IF_STATE_OPEN, &this->state)) {
+		warn("interface is closed");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	info("\n### MCUCTL dump ###\n");
+	regs = this->com_regs;
+	for (i = 0; i < 64; ++i)
+		info("MCTL[%d] : %08X\n", i, readl(regs + (4 * i)));
+
+p_err:
+	return ret;
 }
 
 int fimc_is_hw_memdump(struct fimc_is_interface *this,
 	u32 start,
 	u32 end)
 {
+	int ret = 0;
 	u32 *cur;
 	u32 items, offset;
 	char term[50], sentence[250];
+
+	if (!test_bit(IS_IF_STATE_OPEN, &this->state)) {
+		warn("interface is closed");
+		ret = -EINVAL;
+		goto p_err;
+	}
 
 	cur = (u32 *)start;
 	items = 0;
@@ -2484,7 +2502,10 @@ int fimc_is_hw_memdump(struct fimc_is_interface *this,
 		items++;
 	}
 
-	return (u32)cur - end;
+	ret = (u32)cur - end;
+
+p_err:
+	return ret;
 }
 
 int fimc_is_hw_enum(struct fimc_is_interface *this)

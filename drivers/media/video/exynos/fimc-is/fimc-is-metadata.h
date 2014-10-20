@@ -516,9 +516,10 @@ enum stats_mode {
 };
 
 enum stats_lowlightmode {
-	STATE_LLS_NONE = 0,
-	STATE_LLS_LEVEL_LOW,
-	STATE_LLS_LEVEL_HIGH
+    STATE_LLS_NONE = 0,
+    STATE_LLS_LEVEL_LOW,
+    STATE_LLS_LEVEL_HIGH,
+    STATE_LLS_LEVEL_SIS
 };
 
 struct camera2_stats_ctl {
@@ -1002,6 +1003,10 @@ struct camera2_flash_uctl {
 	struct camera2_flash_ctl ctl;
 };
 
+struct camera2_bayer_uctl {
+    struct camera2_scaler_ctl ctl;
+};
+
 struct camera2_bayer_udm {
 	uint32_t	width;
 	uint32_t	height;
@@ -1056,7 +1061,7 @@ struct camera2_udm {
 	struct camera2_internal_udm	internal;
 	/* Add udm for bayer down size. */
 	struct camera2_bayer_udm	bayer;
-	struct camera2_pdaf_udm	 	pdaf;
+	struct camera2_pdaf_udm	pdaf;
 };
 
 struct camera2_shot {

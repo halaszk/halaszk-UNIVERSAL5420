@@ -79,8 +79,11 @@ static int exynos_cfg_i2s_gpio(struct platform_device *pdev)
 				{ EXYNOS5420_GPB1(0), 5, S3C_GPIO_SFN(2) }
 	};
 	struct exynos_gpio_cfg exynos5260_cfg[2] = {
-				{ EXYNOS5260_GPZ0(0), 7, S3C_GPIO_SFN(2) },
+				{ EXYNOS5260_GPZ0(0), 7, S3C_GPIO_SFN(2) }
+#if !defined(CONFIG_MACH_M2ALTE_KOR_SKT) && !defined(CONFIG_MACH_M2ALTE_KOR_KTT) && !defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+				,
 				{ EXYNOS5260_GPB0(0), 5, S3C_GPIO_SFN(2) }
+#endif
 	};
 
 	if (pdev->id < 0 || pdev->id >= I2S_MAX_DEV) {
@@ -285,8 +288,11 @@ static int exynos_pcm_cfg_gpio(struct platform_device *pdev)
 				{ EXYNOS5420_GPB1(0), 5, S3C_GPIO_SFN(3) }
 	};
 	struct exynos_gpio_cfg exynos5260_cfg[2] = {
-				{ EXYNOS5260_GPZ0(0),  5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5260_GPZ0(0),  5, S3C_GPIO_SFN(3) }
+#if !defined(CONFIG_MACH_M2ALTE_KOR_SKT) && !defined(CONFIG_MACH_M2ALTE_KOR_KTT) && !defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+				,
 				{ EXYNOS5260_GPB0(0), 5, S3C_GPIO_SFN(3) }
+#endif
 	};
 
 	if (pdev->id < 0 || pdev->id >= PCM_MAX_DEV) {
@@ -484,7 +490,9 @@ static int exynos_spdif_cfg_gpio(struct platform_device *pdev)
 #ifdef CONFIG_MACH_XYREF5260
 		s3c_gpio_cfgpin_range(EXYNOS5260_GPB0(2), 1, S3C_GPIO_SFN(4));
 #else
+#if !defined(CONFIG_MACH_M2ALTE_KOR_SKT) && !defined(CONFIG_MACH_M2ALTE_KOR_KTT) && !defined(CONFIG_MACH_M2ALTE_KOR_LGT)
 		s3c_gpio_cfgpin_range(EXYNOS5260_GPB0(1), 2, S3C_GPIO_SFN(4));
+#endif
 #endif
 	}
 

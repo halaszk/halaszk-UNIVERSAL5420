@@ -20,4 +20,5 @@ struct panel_info {
 
 int exynos_fimd_set_rate(struct device *dev, const char *clk_name, const char *parent_clk_name, struct panel_info *info);
 void exynos5_keep_disp_clock(struct device *dev);
+int exynos_clk_recover_rate(struct clk *clk);
 

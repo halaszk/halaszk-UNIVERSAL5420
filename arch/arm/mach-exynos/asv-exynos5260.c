@@ -102,6 +102,9 @@
 #define VOL_925000			925000
 #define VOL_950000			950000
 
+#define LOT_ID_REG			(S5P_VA_CHIPID + 0x14)
+#define LOT_ID_LEN			(5)
+
 struct asv_reference {
 	unsigned int ids_value;
 	unsigned int hpm_value;
@@ -252,7 +255,23 @@ static void exynos5260_set_abb(struct asv_info *asv_inform)
 	set_abb(target_reg, target_value);
 }
 
-static struct abb_common exynos5260_abb_common = {
+static struct abb_common exynos5260_abb_arm = {
+	.set_target_abb = exynos5260_set_abb,
+};
+
+static struct abb_common exynos5260_abb_kfc = {
+	.set_target_abb = exynos5260_set_abb,
+};
+
+static struct abb_common exynos5260_abb_g3d = {
+	.set_target_abb = exynos5260_set_abb,
+};
+
+static struct abb_common exynos5260_abb_mif = {
+	.set_target_abb = exynos5260_set_abb,
+};
+
+static struct abb_common exynos5260_abb_int = {
 	.set_target_abb = exynos5260_set_abb,
 };
 
@@ -805,7 +824,7 @@ struct asv_info exynos5260_asv_member[] = {
 		.asv_type	= ID_ARM,
 		.name		= "VDD_ARM",
 		.ops		= &exynos5260_asv_ops_arm,
-		.abb_info	= &exynos5260_abb_common,
+		.abb_info	= &exynos5260_abb_arm,
 		.asv_group_nr	= ASV_GRP_NR(ARM),
 		.dvfs_level_nr	= DVFS_LEVEL_NR(ARM),
 		.max_volt_value = MAX_VOLT(ARM),
@@ -813,7 +832,7 @@ struct asv_info exynos5260_asv_member[] = {
 		.asv_type	= ID_KFC,
 		.name		= "VDD_KFC",
 		.ops		= &exynos5260_asv_ops_kfc,
-		.abb_info	= &exynos5260_abb_common,
+		.abb_info	= &exynos5260_abb_kfc,
 		.asv_group_nr	= ASV_GRP_NR(KFC),
 		.dvfs_level_nr	= DVFS_LEVEL_NR(KFC),
 		.max_volt_value = MAX_VOLT(KFC),
@@ -821,7 +840,7 @@ struct asv_info exynos5260_asv_member[] = {
 		.asv_type	= ID_INT,
 		.name		= "VDD_INT",
 		.ops		= &exynos5260_asv_ops_int,
-		.abb_info	= &exynos5260_abb_common,
+		.abb_info	= &exynos5260_abb_int,
 		.asv_group_nr	= ASV_GRP_NR(INT),
 		.dvfs_level_nr	= DVFS_LEVEL_NR(INT),
 		.max_volt_value = MAX_VOLT(INT),
@@ -829,7 +848,7 @@ struct asv_info exynos5260_asv_member[] = {
 		.asv_type	= ID_MIF,
 		.name		= "VDD_MIF",
 		.ops		= &exynos5260_asv_ops_mif,
-		.abb_info	= &exynos5260_abb_common,
+		.abb_info	= &exynos5260_abb_mif,
 		.asv_group_nr	= ASV_GRP_NR(MIF),
 		.dvfs_level_nr	= DVFS_LEVEL_NR(MIF),
 		.max_volt_value = MAX_VOLT(MIF),
@@ -837,7 +856,7 @@ struct asv_info exynos5260_asv_member[] = {
 		.asv_type	= ID_G3D,
 		.name		= "VDD_G3D",
 		.ops		= &exynos5260_asv_ops_g3d,
-		.abb_info	= &exynos5260_abb_common,
+		.abb_info	= &exynos5260_abb_g3d,
 		.asv_group_nr	= ASV_GRP_NR(G3D),
 		.dvfs_level_nr	= DVFS_LEVEL_NR(G3D),
 		.max_volt_value = MAX_VOLT(G3D),
@@ -902,6 +921,30 @@ static struct syscore_ops exynos5260_asv_syscore_ops = {
 	.resume		= exynos5260_asv_resume,
 };
 
+static void exynos5260_get_lot_id(struct asv_common *asv_info)
+{
+	unsigned int lid_reg = 0;
+	unsigned int rev_lid = 0;
+	unsigned int i;
+	unsigned int tmp;
+
+	lid_reg = __raw_readl(LOT_ID_REG);
+
+	for (i = 0; i < 32; i++) {
+		tmp = (lid_reg >> i) & 0x1;
+		rev_lid += tmp << (31 - i);
+	}
+
+	asv_info->lot_name[0] = 'N';
+	lid_reg = (rev_lid >> 11) & 0x1FFFFF;
+
+	for (i = 4; i >= 1; i--) {
+		tmp = lid_reg % 36;
+		lid_reg /= 36;
+		asv_info->lot_name[i] = (tmp < 10) ? (tmp + '0') : ((tmp - 10) + 'A');
+	}
+}
+
 int exynos5260_init_asv(struct asv_common *asv_info)
 {
 	struct clk *clk_abb;
@@ -925,6 +968,9 @@ int exynos5260_init_asv(struct asv_common *asv_info)
 		return -EINVAL;
 	}
 	clk_enable(clk_abb);
+
+	exynos5260_get_lot_id(asv_info);
+	pr_info("EXYNOS5260 ASV : LOT_ID : %s\n", asv_info->lot_name);
 
 	chip_id2_value = __raw_readl(CHIP_ID2_REG);
 

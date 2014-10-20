@@ -149,12 +149,28 @@ config LCD_MIPI_S6E8AA0
 	  If you have an LCD_MIPI_S6E8AA0 MIPI LCD Panel, say Y to enable its
 	  LCD control driver.
 
+config LCD_MIPI_S6E8AA0A02
+	tristate "720 X 1280 S6E8AA0A02 AMOLED LCD Driver"
+	depends on BACKLIGHT_CLASS_DEVICE
+	default n
+	help
+	  If you have an LCD_MIPI_S6E8AA0A02 MIPI LCD Panel, say Y to enable its
+	  LCD control driver.
+
 config LCD_MIPI_D6EA8061
 	tristate "720 X 1280 D6EA8061 AMOLED LCD Driver"
 	depends on BACKLIGHT_CLASS_DEVICE
 	default n
 	help
 	  If you have an LCD_MIPI_D6EA8061 MIPI LCD Panel, say Y to enable its
+	  LCD control driver.
+
+config LCD_MIPI_HX8394
+	tristate "720 X 1280 HX8394 TFT LCD Driver"
+	depends on BACKLIGHT_CLASS_DEVICE
+	default n
+	help
+	  If you have an LCD_MIPI_HX8394 MIPI LCD Panel, say Y to enable its
 	  LCD control driver.
 
 config LCD_MIPI_S6E3FA0

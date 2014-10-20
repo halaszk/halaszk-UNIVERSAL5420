@@ -94,6 +94,10 @@ enum s5m87xx_rtc_reg {
 
 #define RTC_WUDR_SHIFT		4
 #define RTC_WUDR_MASK		(1 << RTC_WUDR_SHIFT)
+#if defined(CONFIG_RTC_ALARM_BOOT)
+#define RTC_WAKE_SHIFT		3
+#define RTC_WAKE_MASK		(1 << RTC_WAKE_SHIFT)
+#endif
 #define RTC_TCON_SHIFT		2
 #define RTC_TCON_MASK		(1 << RTC_TCON_SHIFT)
 #define RTC_RUDR_SHIFT		0

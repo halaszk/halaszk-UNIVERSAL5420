@@ -98,10 +98,8 @@ static struct regulator_consumer_supply s2m_ldo25_consumer[] = {
         REGULATOR_SUPPLY("main_cam_core_1v2", NULL), /*for evt1*/
 };
 
-#if !defined(CONFIG_MACH_M2LTE)
 static struct regulator_consumer_supply s2m_ldo26_consumer =
 	REGULATOR_SUPPLY("main_cam_core_1v1", NULL); /*for evt0*/
-#endif
 
 static struct regulator_init_data s2m_buck1_data = {
 	.constraints	= {
@@ -433,7 +431,6 @@ static struct regulator_init_data s2m_ldo22_data = {
 	.consumer_supplies	= &s2m_ldo22_consumer,
 };
 
-#if !defined(CONFIG_MACH_M2LTE)
 static struct regulator_init_data s2m_ldo23_data_evt0 = {
 	.constraints	= {
 		.name		= "GES_LED (3.3V)",
@@ -449,7 +446,6 @@ static struct regulator_init_data s2m_ldo23_data_evt0 = {
 	.num_consumer_supplies	= 2,
 	.consumer_supplies	= s2m_ldo23_consumer,
 };
-#endif
 
 static struct regulator_init_data s2m_ldo23_data = {
 	.constraints	= {
@@ -482,7 +478,6 @@ static struct regulator_init_data s2m_ldo24_data = {
 	.consumer_supplies	= &s2m_ldo24_consumer,
 };
 
-#if !defined(CONFIG_MACH_M2LTE)
 static struct regulator_init_data s2m_ldo25_data_evt0 = {
 	.constraints	= {
 		.name		= "Main Camera IO (1.8V)",
@@ -499,7 +494,6 @@ static struct regulator_init_data s2m_ldo25_data_evt0 = {
 	.num_consumer_supplies	= 2,
 	.consumer_supplies	= s2m_ldo25_consumer,
 };
-#endif
 
 static struct regulator_init_data s2m_ldo25_data = {
 	.constraints	= {
@@ -517,7 +511,6 @@ static struct regulator_init_data s2m_ldo25_data = {
 	.consumer_supplies	= s2m_ldo25_consumer,
 };
 
-#if !defined(CONFIG_MACH_M2LTE)
 static struct regulator_init_data s2m_ldo26_data_evt0 = {
 	.constraints	= {
 		.name		= "Main Camera Core (1.1V)",
@@ -560,7 +553,6 @@ static struct sec_regulator_data exynos_regulators_evt0[] = {
 	{S2MPA01_LDO25, &s2m_ldo25_data_evt0},
 	{S2MPA01_LDO26, &s2m_ldo26_data_evt0},
 };
-#endif
 
 static struct sec_regulator_data exynos_regulators[] = {
 	{S2MPA01_BUCK1, &s2m_buck1_data},
@@ -659,7 +651,6 @@ static struct sec_pmic_platform_data exynos5_s2m_pdata = {
 	.buck4_ramp_enable	= 1,
 };
 
-#if !defined(CONFIG_MACH_M2LTE)
 static struct i2c_board_info s3c_i2c_devs1[] __initdata = {
 	{
 		I2C_BOARD_INFO("sec-pmic", 0xCC >> 1),
@@ -667,7 +658,6 @@ static struct i2c_board_info s3c_i2c_devs1[] __initdata = {
 		.irq		= UNIVERSAL5260_PMIC_EINT,
 	},
 };
-#endif
 
 struct s3c2410_platform_i2c s3c_i2c_data1 __initdata = {
 	.bus_num	= 5,
@@ -708,10 +698,6 @@ void __init board_hl_pmic_init(void)
 		s2m_ldo22_data.constraints.max_uV = 1800000;
 	}
 
-#if defined(CONFIG_MACH_M2LTE)
-	exynos5_hs_i2c0_set_platdata(&hs_i2c0_data);
-	i2c_register_board_info(0, hs_i2c_devs0, ARRAY_SIZE(hs_i2c_devs0));
-#else
 	if( system_rev <= 3 ){
 		exynos5_s2m_pdata.num_regulators = ARRAY_SIZE(exynos_regulators_evt0),
 		exynos5_s2m_pdata.regulators = exynos_regulators_evt0;
@@ -725,7 +711,7 @@ void __init board_hl_pmic_init(void)
 		exynos5_hs_i2c0_set_platdata(&hs_i2c0_data);
 		i2c_register_board_info(0, hs_i2c_devs0, ARRAY_SIZE(hs_i2c_devs0));
 	}
-#endif
+
 	platform_add_devices(universal5260_power_devices,
 			ARRAY_SIZE(universal5260_power_devices));
 }

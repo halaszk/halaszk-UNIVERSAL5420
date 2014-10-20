@@ -46,6 +46,8 @@
 
 #include <asm/uaccess.h>
 
+#include "../core/core.h"
+
 #include "queue.h"
 
 MODULE_ALIAS("mmc:block");
@@ -67,6 +69,8 @@ MODULE_ALIAS("mmc:block");
 #define PACKED_CMD_VER		0x01
 #define PACKED_CMD_RD		0x01
 #define PACKED_CMD_WR		0x02
+
+#define MMC_WR_TIMEOUT_MS       (10 * 1000)     /* 10 sec timeout for write */
 
 static DEFINE_MUTEX(block_mutex);
 
@@ -368,6 +372,44 @@ out:
 	return ERR_PTR(err);
 }
 
+struct scatterlist *mmc_blk_get_sg(struct mmc_card *card,
+     unsigned char *buf, int *sg_len, int size)
+{
+	struct scatterlist *sg;
+	struct scatterlist *sl;
+	int total_sec_cnt, sec_cnt;
+	int max_seg_size, len;
+
+	total_sec_cnt = size;
+	max_seg_size = card->host->max_seg_size;
+	len = (size - 1 + max_seg_size) / max_seg_size;
+	sl = kmalloc(sizeof(struct scatterlist) * len, GFP_KERNEL);
+
+	if (!sl) {
+		return NULL;
+	}
+	sg = (struct scatterlist *)sl;
+	sg_init_table(sg, len);
+
+	while (total_sec_cnt) {
+		if (total_sec_cnt < max_seg_size)
+			sec_cnt = total_sec_cnt;
+		else
+			sec_cnt = max_seg_size;
+			sg_set_page(sg, virt_to_page(buf), sec_cnt, offset_in_page(buf));
+			buf = buf + sec_cnt;
+			total_sec_cnt = total_sec_cnt - sec_cnt;
+			if (total_sec_cnt == 0)
+				break;
+			sg = sg_next(sg);
+	}
+
+	if (sg)
+		sg_mark_end(sg);
+	*sg_len = len;
+	return sl;
+}
+
 static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	struct mmc_ioc_cmd __user *ic_ptr)
 {
@@ -377,7 +419,7 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	struct mmc_command cmd = {0};
 	struct mmc_data data = {0};
 	struct mmc_request mrq = {NULL};
-	struct scatterlist sg;
+	struct scatterlist *sg = 0;
 	int err = 0;
 
 	/*
@@ -409,12 +451,13 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	cmd.flags = idata->ic.flags;
 
 	if (idata->buf_bytes) {
-		data.sg = &sg;
-		data.sg_len = 1;
+		int len;
 		data.blksz = idata->ic.blksz;
 		data.blocks = idata->ic.blocks;
 
-		sg_init_one(data.sg, idata->buf, idata->buf_bytes);
+		sg = mmc_blk_get_sg(card, idata->buf, &len, idata->buf_bytes);
+		data.sg = sg;
+		data.sg_len = len;
 
 		if (idata->ic.write_flag)
 			data.flags = MMC_DATA_WRITE;
@@ -494,6 +537,8 @@ cmd_rel_host:
 
 cmd_done:
 	mmc_blk_put(md);
+	if (sg)
+		kfree(sg);
 
 err_kfree:
 	kfree(idata->buf);
@@ -504,9 +549,28 @@ err_kfree:
 static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned int cmd, unsigned long arg)
 {
+	struct mmc_blk_data *md = bdev->bd_disk->private_data;
+	struct mmc_card *card = md->queue.card;
 	int ret = -EINVAL;
+
 	if (cmd == MMC_IOC_CMD)
 		ret = mmc_blk_ioctl_cmd(bdev, (struct mmc_ioc_cmd __user *)arg);
+	else if(cmd == MMC_IOC_CLOCK)
+	{
+		unsigned int clock = (unsigned int)arg;
+		if( clock < card->host->f_min )
+			clock = card->host->f_min;
+
+		mmc_set_clock(card->host, clock);
+		ret = 0;
+	}
+	else if(cmd == MMC_IOC_BUSWIDTH)
+	{
+		unsigned int width = (unsigned int)arg;
+		mmc_set_bus_width(card->host, width);
+		ret = 0;
+	}
+
 	return ret;
 }
 
@@ -1074,6 +1138,7 @@ static int mmc_blk_err_check(struct mmc_card *card,
 	if ((!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) ||
 			(mq_mrq->packed_cmd == MMC_PACKED_WR_HDR)) {
 		u32 status;
+		unsigned long timeout = jiffies + msecs_to_jiffies(MMC_WR_TIMEOUT_MS);
 		do {
 			int err = get_card_status(card, &status, 5);
 			if (err) {
@@ -1081,13 +1146,30 @@ static int mmc_blk_err_check(struct mmc_card *card,
 				       req->rq_disk->disk_name, err);
 				return MMC_BLK_CMD_ERR;
 			}
+
+			if (R1_CURRENT_STATE(status) < R1_STATE_TRAN) {
+				pr_err("%s: error %d status is abnormal %#x.\n",
+						req->rq_disk->disk_name, err,
+						status);
+				return MMC_BLK_CMD_ERR;
+			}
+
 			/*
 			 * Some cards mishandle the status bits,
 			 * so make sure to check both the busy
 			 * indication and the card state.
 			 */
-		} while (!(status & R1_READY_FOR_DATA) ||
-			 (R1_CURRENT_STATE(status) == R1_STATE_PRG));
+		} while ((!(status & R1_READY_FOR_DATA) ||
+			 (R1_CURRENT_STATE(status) == R1_STATE_PRG)) &&
+			 time_before(jiffies, timeout));
+
+		/* in case of card stays on program status in 10 secs */
+		if (time_after_eq(jiffies, timeout)) {
+			pr_err("%s: error %d hang on checking status %#x.\n",
+					req->rq_disk->disk_name, -ETIMEDOUT,
+					status);
+			return MMC_BLK_CMD_ERR;
+		}
 	}
 
 	if (brq->data.error) {
@@ -1295,7 +1377,8 @@ static void mmc_blk_rw_rq_prep(struct mmc_queue_req *mqrq,
 	brq->data.sg_len = mmc_queue_map_sg(mq, mqrq);
 
 	/* Apply : retrying CMD for Data CRC errors */
-	brq->cmd.retries = 3;
+	if (mmc_card_mmc(card))
+		brq->cmd.retries = 3;
 
 	/*
 	 * Adjust the sg list so it is the same size as the
@@ -1848,6 +1931,15 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 				break;
 			}
 			/*
+			 * case : SDcard Sector 0 read data error even single read
+			 * skip reading other blocks.
+			 */
+			if (mmc_card_sd(card) &&
+					(unsigned)blk_rq_pos(req) == 0 &&
+					brq->data.error)
+				goto cmd_abort;
+
+			/*
 			 * After an error, we redo I/O one sector at a
 			 * time, so we only reach here after trying to
 			 * read a single sector.
@@ -1906,9 +1998,14 @@ snd_packed_rd:
 		spin_lock_irq(&md->lock);
 		if (mmc_card_removed(card))
 			req->cmd_flags |= REQ_QUIET;
-		while (ret)
-			ret = __blk_end_request(req, -EIO,
-					blk_rq_cur_bytes(req));
+		if (mmc_card_sd(card) && mmc_card_removed(card)) {
+			if (ret)
+				__blk_end_request_all(req, -EIO);
+		} else {
+			while (ret)
+				ret = __blk_end_request(req, -EIO,
+						blk_rq_cur_bytes(req));
+		}
 		spin_unlock_irq(&md->lock);
 	} else {
 		mmc_blk_abort_packed_req(mq, mq_rq);
@@ -2275,11 +2372,6 @@ force_ro_fail:
 
 	return ret;
 }
-
-#define CID_MANFID_SANDISK	0x2
-#define CID_MANFID_TOSHIBA	0x11
-#define CID_MANFID_MICRON	0x13
-#define CID_MANFID_SAMSUNG	0x15
 
 static const struct mmc_fixup blk_fixups[] =
 {

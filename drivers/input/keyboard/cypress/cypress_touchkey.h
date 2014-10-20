@@ -60,7 +60,9 @@
 #endif
 
 /* Flip cover*/
+#if !defined(CONFIG_MACH_M2ALTE) && !defined(CONFIG_MACH_M2A3G)
 #define TKEY_FLIP_MODE 
+#endif
 
 #ifdef TKEY_FLIP_MODE
 #define TK_BIT_FLIP	0x08
@@ -74,14 +76,20 @@
 
 /* Boot-up Firmware Update */
 #define TK_HAS_FIRMWARE_UPDATE
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+#define TK_UPDATABLE_BD_ID	10
+#else
 #define TK_UPDATABLE_BD_ID	0
+#endif
 
 /* for HA */
 #define FW_PATH "cypress/cypress_hl.fw"
 #define TKEY_MODULE07_HWID 8
 #define TKEY_FW_PATH "/sdcard/cypress/fw.bin"
 
-/*#define TK_USE_2KEY_TYPE_M0*/
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+#define TK_USE_2KEY_TYPE_M0
+#endif
 
 /* LCD Type check*/
 #if defined(CONFIG_HA) || \
@@ -132,7 +140,7 @@ enum BOOST_LEVEL {
 #endif
 
 #if defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G)
-//#define TKEY_GRIP_MODE
+#define TKEY_GRIP_MODE
 #endif
 
 #if defined(TK_INFORM_CHARGER)

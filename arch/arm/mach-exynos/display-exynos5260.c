@@ -10,6 +10,7 @@
 #include <linux/fb.h>
 #include <linux/clk.h>
 #include <linux/gcd.h>
+#include <linux/clk-provider.h>
 
 #include <plat/cpu.h>
 #include <plat/clock.h>
@@ -18,6 +19,14 @@
 #include <plat/clock-clksrc.h>
 
 #include "display-exynos5260.h"
+
+struct disp_clk {
+	struct list_head	list;
+	char			*name;
+	unsigned long		rate;
+};
+
+static LIST_HEAD(disp_clk_list);
 
 void __init exynos5_keep_disp_clock(struct device *dev)
 {
@@ -29,6 +38,35 @@ void __init exynos5_keep_disp_clock(struct device *dev)
 	}
 
 	clk_enable(clk);
+}
+
+int exynos_clk_recover_rate(struct clk *clk)
+{
+	struct disp_clk *pos;
+
+	list_for_each_entry(pos, &disp_clk_list, list) {
+		if (!strcmp(pos->name, clk->name)) {
+			clk_set_rate(clk, pos->rate);
+			return 0;
+		}
+	}
+
+	/* if you can't search name, it means initial state, so add it */
+	pos = kzalloc(sizeof(struct disp_clk), GFP_KERNEL);
+	if (!pos) {
+		pr_err("fail to allocate %s\n", __func__);
+		return -ENOMEM;
+	}
+
+	pos->rate = clk_get_rate(clk);
+	pos->name = kzalloc(strlen(clk->name) + 1, GFP_KERNEL);
+	strcpy(pos->name, clk->name);
+
+	list_add(&pos->list, &disp_clk_list);
+
+	pr_info("backup %s clk rate as %ld\n", clk->name, clk_get_rate(clk));
+
+	return 0;
 }
 
 static unsigned long __init get_clk_rate(struct clk *clk, struct clk *clk_parent, struct panel_info *info)
@@ -48,7 +86,7 @@ static unsigned long __init get_clk_rate(struct clk *clk, struct clk *clk_parent
 
 	if (info->limit) {
 		div_limit = DIV_ROUND_CLOSEST(rate_parent, rate * info->limit);
-		clkval_f = gcd(div, div_limit);
+		clkval_f = (max(div, div_limit) > div_max) ? gcd(div, div_limit) : 1;
 		div /= clkval_f;
 	}
 
@@ -99,6 +137,8 @@ int __init exynos_fimd_set_rate(struct device *dev, const char *clk_name,
 
 	pr_info("%s: %ld, %s: %ld, clkdiv: 0x%08x\n", clk_parent->name, clk_get_rate(clk_parent),
 		clk->name, clk_get_rate(clk), __raw_readl(clksrc->reg_div.reg));
+
+	exynos_clk_recover_rate(clk);
 
 	clk_put(clk);
 	clk_put(clk_parent);

@@ -244,7 +244,7 @@ signed char fDetectHiLoTransition(void)
 	//dog_kick();
 	iTimer = TRANSITION_TIMEOUT;
 	/*printk(KERN_INFO
-	       "Generate clocks for the target to pull SDATA High\n");*/
+	       "touchkey:Generate clocks for the target to pull SDATA High\n");*/
 	while (1) {
 		SCLKLow();
 		if (fSDATACheck())	// exit once SDATA goes HI
@@ -260,7 +260,7 @@ signed char fDetectHiLoTransition(void)
 	// Generate Clocks and wait for Target to pull SDATA Low again
 	iTimer = TRANSITION_TIMEOUT;	// reset the timeout counter
 	/*printk(KERN_INFO
-	"Generate Clocks and wait for Target to pull SDATA Low again\n");*/
+	"touchkey:Generate Clocks and wait for Target to pull SDATA Low again\n");*/
 	while (1) {
 		SCLKLow();	//issp_test_20100709 unblock
 		if (!fSDATACheck()) {	// exit once SDATA returns LOW
@@ -272,7 +272,7 @@ signed char fDetectHiLoTransition(void)
 			return (ERROR);
 		}
 	}
-	//printk("fDetectHiLoTransition OUT!!!!\n");
+	//printk(KERN_DEBUG"fDetectHiLoTransition OUT!!!!\n");
 	return (PASS);
 }
 
@@ -313,7 +313,7 @@ signed char fXRESInitializeTargetForISSP(void)
 	fIsError = fDetectHiLoTransition();
 	if (fIsError) {
 //        TX8SW_CPutString("\r\n fDetectHiLoTransition Error");
-		printk("\r\n fDetectHiLoTransition Error\n");
+		printk(KERN_DEBUG"touchkey:fDetectHiLoTransition Error\n");
 		return (INIT_ERROR);
 	}
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
@@ -355,7 +355,7 @@ signed char fPowerCycleInitializeTargetForISSP(void)
 	// Set SCLK to high Z so there is no clock and wait for a high to low
 	// transition on SDAT. SCLK is not needed this time.
 	SetSCLKHiZ();
-//    printk(KERN_DEBUG "fDetectHiLoTransition\n");
+//    printk(KERN_DEBUG "touchkey:fDetectHiLoTransition\n");
 	if ((fIsError = fDetectHiLoTransition())) {
 		return (INIT_ERROR);
 	}
@@ -372,14 +372,14 @@ signed char fPowerCycleInitializeTargetForISSP(void)
 	//  and cause the target device to exit ISSP Mode.
 
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);	//PTJ: rev308, added to match spec
-//    printk("SendVector(id_setup_1)\n",0,0,0);
+//    printk(KERN_DEBUG"touchkey:SendVTector(id_setup_1)\n",0,0,0);
 	SendVector(id_setup_1, num_bits_id_setup_1);
 	if ((fIsError = fDetectHiLoTransition())) {
 		return (INIT_ERROR);
 	}
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
 
-	// NOTE: DO NOT not wait for HiLo on SDATA after vector Init-3
+	// NOTE: DO NOT not wait for HiLo on SDAA after vector Init-3
 	//       it does not occur (per spec).
 	return (PASS);
 }
@@ -394,15 +394,15 @@ signed char fPowerCycleInitializeTargetForISSP(void)
 signed char fVerifySiliconID(void)
 {
 	SendVector(id_setup_2, num_bits_id_setup_2);
-	//printk("fVerifySiliconID: SendVector id_stup2 END\n");
+	//printk(KERN_DEBUG"touchkey:fVerifySiliconID: SendVector id_stup2 END\n");
 
 	if ((fIsError = fDetectHiLoTransition())) {
-		printk("fVerifySiliconID(): fDetectHiLoTransition Error\n");
+		printk(KERN_DEBUG"touchkey:fVerifySiliconID(): fDetectHiLoTransition Error\n");
 		return (SiID_ERROR);
 	}
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
 	SendVector(tsync_enable, num_bits_tsync_enable);
-	//printk("fVerifySiliconID: SendVector(wait_and_poll_end) (tsync_enable) END\n");
+	//printk(KERN_DEBUG"touchkey:fVerifySiliconID: SendVector(wait_and_poll_end) (tsync_enable) END\n");
 
 	//Send Read ID vector and get Target ID
 	SendVector(read_id_v, 11);	// Read-MSB Vector is the first 11-Bits
@@ -446,7 +446,7 @@ signed char fVerifySiliconID(void)
 	   TX8SW_PutChar(' ');
 	 */
 #if 0				// issp_test_20100709 block
-	printk("issp_routines.c: ID0:0x%X, ID1:0x%X, ID2: 0x%X, ID2: 0x%X\n",
+	printk(KERN_DEBUG"touchkey:issp_routines.c: ID0:0x%X, ID1:0x%X, ID2: 0x%X, ID2: 0x%X\n",
 	       bTargetID[0], bTargetID[1], bTargetID[2], bTargetID[3]);
 
 	if ((bTargetID[0] != target_id_v[0]) || (bTargetID[1] != target_id_v[1])
@@ -606,8 +606,8 @@ signed char fEraseTarget(void)
 {
 	SendVector(erase, num_bits_erase);
 	if ((fIsError = fDetectHiLoTransition())) {
-//        TX8SW_CPutString("\r\n fDetectHiLoTransition");
-		//printk("\r\n fDetectHiLoTransition\n"); // issp_test_2010 block
+//        TX8SW_CPutString("fDetectHiLoTransition");
+		//printk(KERN_DEBUG"touchkey:fDetectHiLoTransition\n"); // issp_test_2010 block
 		return (ERASE_ERROR);
 	}
 	SendVector(wait_and_poll_end, num_bits_wait_and_poll_end);
@@ -778,7 +778,7 @@ void ReStartTarget(void)
 	SetSDATAHiZ();
 	// Cycle power on the target to cause a reset
 	RemoveTargetVDD();
-	mdelay(300);
+	msleep(50);
 	ApplyTargetVDD();
 #endif
 }

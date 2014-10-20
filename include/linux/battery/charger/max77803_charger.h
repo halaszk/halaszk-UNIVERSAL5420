@@ -18,8 +18,13 @@
 #ifndef __MAX77803_CHARGER_H
 #define __MAX77803_CHARGER_H __FILE__
 #include <linux/mfd/core.h>
+
 #include <linux/mfd/max77803.h>
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77804k-private.h>
+#else
 #include <linux/mfd/max77803-private.h>
+#endif
 #include <linux/regulator/machine.h>
 
 #define ENABLE 1

@@ -28,11 +28,24 @@ int exynos_spi_cfg_cs(int gpio, int ch_num)
 
 	if (gpio_request(gpio, cs_name))
 		return -EIO;
-
+#if defined(CONFIG_VIDEO_M7MU_SPI)
+	if(ch_num == 1) {
+		gpio_direction_input(gpio);
+		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+		gpio_free(gpio);
+	}else {
+		gpio_direction_output(gpio, 1);
+		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(1));
+		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
+		gpio_free(gpio);
+	}
+#else
 	gpio_direction_output(gpio, 1);
 	s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(1));
 	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
 	gpio_free(gpio);
+#endif
+
 
 	return 0;
 
@@ -174,6 +187,27 @@ int s3c64xx_spi1_cfg_gpio(struct platform_device *dev)
 				gpio < EXYNOS5420_GPA2(8); gpio++)
 			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV3);
 	} else if (soc_is_exynos5260()) {
+#ifdef CONFIG_VIDEO_M7MU_SPI
+		if ( gpio_request(EXYNOS5260_GPA2(4), "SPI1_CLK") < 0)
+			pr_err("%s: failed gpio_request SPI1_CLK\n", __func__);
+		if ( gpio_request(EXYNOS5260_GPA2(6), "SPI1_MISO") < 0)
+			pr_err("%s: failed gpio_request SPI1_MISO\n", __func__);
+		if ( gpio_request(EXYNOS5260_GPA2(7), "SPI1 MOSI") < 0)
+			pr_err("%s: failed gpio_request SPI1_MOSI\n", __func__);
+
+		gpio_direction_input(EXYNOS5260_GPA2(4));
+		gpio_direction_input(EXYNOS5260_GPA2(6));
+		gpio_direction_input(EXYNOS5260_GPA2(7));
+
+		s3c_gpio_setpull(EXYNOS5260_GPA2(4), S3C_GPIO_PULL_NONE);
+		s3c_gpio_setpull(EXYNOS5260_GPA2(6), S3C_GPIO_PULL_NONE);
+		s3c_gpio_setpull(EXYNOS5260_GPA2(7), S3C_GPIO_PULL_NONE);
+
+		gpio_free(EXYNOS5260_GPA2(4));
+		//gpio_free(GPIO_ISP_SPI1_EN);
+		gpio_free(EXYNOS5260_GPA2(6));
+		gpio_free(EXYNOS5260_GPA2(7));
+#else
 		s3c_gpio_cfgpin(EXYNOS5260_GPA2(4), S3C_GPIO_SFN(2));
 		s3c_gpio_setpull(EXYNOS5260_GPA2(4), S3C_GPIO_PULL_UP);
 		s3c_gpio_cfgall_range(EXYNOS5260_GPA2(6), 2,
@@ -182,6 +216,7 @@ int s3c64xx_spi1_cfg_gpio(struct platform_device *dev)
 		for (gpio = EXYNOS5260_GPA2(4);
 				gpio < EXYNOS5260_GPA2(8); gpio++)
 			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV3);
+#endif
 	} else if (soc_is_exynos5250()) {
 		s3c_gpio_cfgpin(EXYNOS5_GPA2(4), S3C_GPIO_SFN(2));
 		s3c_gpio_setpull(EXYNOS5_GPA2(4), S3C_GPIO_PULL_UP);

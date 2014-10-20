@@ -42,6 +42,7 @@ MODULE_LICENSE("GPL");
 #if defined(CONFIG_TV_USE_BUS_DEVFREQ)
 static struct pm_qos_request exynos5_tv_mif_qos;
 static struct pm_qos_request exynos5_tv_int_qos;
+static struct pm_qos_request exynos5_tv_disp_qos;
 #endif
 
 /* --------- DRIVER PARAMETERS ---------- */
@@ -183,6 +184,8 @@ static int mxr_streamer_get(struct mxr_device *mdev, struct v4l2_subdev *sd)
 		if (is_ip_ver_5a)
 			pm_qos_add_request(&exynos5_tv_mif_qos, PM_QOS_BUS_THROUGHPUT, 800000);
 		pm_qos_add_request(&exynos5_tv_int_qos, PM_QOS_DEVICE_THROUGHPUT, 400000);
+		if (is_ip_ver_5r)
+			pm_qos_add_request(&exynos5_tv_disp_qos, PM_QOS_DISPLAY_THROUGHPUT, 533000);
 #endif
 
 		for (i = MXR_PAD_SOURCE_GSCALER; i < MXR_PADS_NUM; ++i) {
@@ -400,6 +403,8 @@ out:
 		if (is_ip_ver_5a)
 			pm_qos_remove_request(&exynos5_tv_mif_qos);
 		pm_qos_remove_request(&exynos5_tv_int_qos);
+		if (is_ip_ver_5r)
+			pm_qos_remove_request(&exynos5_tv_disp_qos);
 	}
 #endif
 	mutex_unlock(&mdev->s_mutex);

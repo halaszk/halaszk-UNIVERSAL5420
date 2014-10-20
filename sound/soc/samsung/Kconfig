@@ -97,9 +97,17 @@ config SND_SOC_ADONISUNIV_YMU831
 	select SND_SAMSUNG_I2S
 	select SND_SAMSUNG_LPASS
 	select SND_SOC_YAMAHA_YMU831
+	select SND_SOC_DUMMY_CODEC
 	help
-	   Say Y if you want to add support for SoC audio on Universal 5420 Board
+	   Say Y if you want to add support for SoC audio on Universal 5260 Board.
 	   with the YMU831
+
+config SND_SOC_ADONISUNIV_HDMI
+	tristate "SoC HDMI Audio support for Adonis Univ"
+	depends on SND_SOC_SAMSUNG && MACH_UNIVERSAL5260
+	select SND_SAMSUNG_AUX_HDMI
+	help
+		Say Y if you want to add support for HDMI audio on Universal 5260 Board.
 
 config SND_SAMSUNG_UHQA
 	bool "High Quality Audio Support"
@@ -120,6 +128,8 @@ config SND_SOC_SAMSUNG_XYREF4415_ES515
 	select SND_SOC_ES515_I2S
 	select SND_SOC_ES515_I2C
 	select SND_SOC_DUMMY_CODEC
+	select SND_SAMSUNG_AUX_HDMI
+	select SND_SAMSUNG_AUX_SPDIF
         help
                 Say Y if you want to add support for SoC audio on the SMDKs.
 
@@ -146,6 +156,8 @@ config SND_SOC_SAMSUNG_XYREF5260_ES515
 	select SND_SOC_ES515_I2S
 	select SND_SOC_ES515_I2C
 	select SND_SOC_DUMMY_CODEC
+	select SND_SAMSUNG_AUX_HDMI
+	select SND_SAMSUNG_AUX_SPDIF
         help
                 Say Y if you want to add support for SoC audio on the SMDKs.
 
@@ -214,15 +226,14 @@ config SND_SAMSUNG_I2S_MASTER
 
 config SND_SAMSUNG_AUX_HDMI
 	tristate "HDMI Audio support on XYREF"
-	depends on SND_SAMSUNG_XYREF
-	default y
+	default n
 	help
 	  Say Y if you want to add support for HDMI audio on the XYREF.
 
 config SND_SAMSUNG_AUX_SPDIF
 	tristate "S/PDIF Audio support on XYREF"
-	depends on SND_SAMSUNG_XYREF
 	select SND_SAMSUNG_SPDIF
+	default n
 	help
 	  Say Y if you want to add support for S/PDIF audio on the XYREF.
 

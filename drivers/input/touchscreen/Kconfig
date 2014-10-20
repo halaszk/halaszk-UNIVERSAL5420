@@ -916,4 +916,17 @@ config TOUCHSCREEN_MELFAS
 	  Say Y here if you have a MELFAS touchscreen.
 	  If unsure, say N.
 
+config TOUCHSCREEN_MELFAS_M2
+	tristate "MELFAS touchscreen driver"
+	depends on I2C
+	help
+	  Say Y here if you have a MELFAS touchscreen.
+	  If unsure, say N.
+
+config TOUCHSCREEN_ZINITIX
+	tristate "ZINITIX touchscreen driver"
+	depends on I2C
+	help
+	  Say Y here if you have a ZINITIX touchscreen.
+	  If unsure, say N.
 endif

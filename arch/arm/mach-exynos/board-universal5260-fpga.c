@@ -109,7 +109,7 @@ static int irled_on(int on)
 	return 0;
 }
 
-static struct ice4_irda_platform_data ice4_irda_platdata __initdata = {
+static struct ice4_irda_platform_data ice4_irda_platdata = {
 	.gpio_irda_irq		= GPIO_IRDA_IRQ,
 	.gpio_fpga_rst_n	= GPIO_FPGA_RST_N,
 	.gpio_creset		= GPIO_CRESET_B,
@@ -117,14 +117,14 @@ static struct ice4_irda_platform_data ice4_irda_platdata __initdata = {
 	.irled_on		= irled_on,
 };
 
-static struct i2c_board_info i2c_devs22_emul[] __initdata = {
+static struct i2c_board_info i2c_devs22_emul[] = {
 	{
 		I2C_BOARD_INFO("ice4_irda", 0xA0 >> 1),
 		.platform_data = &ice4_irda_platdata,
 	},
 };
 
-static struct platform_device *universal5260_fpga_devices[] __initdata = {
+static struct platform_device *universal5260_fpga_devices[] = {
 	&s3c_device_i2c22,
 };
 
@@ -250,9 +250,6 @@ static void deffered_configuration(struct work_struct *work)
 		return;
 	}
 
-	i2c_register_board_info(22, i2c_devs22_emul,
-			ARRAY_SIZE(i2c_devs22_emul));
-
 	platform_add_devices(universal5260_fpga_devices,
 			ARRAY_SIZE(universal5260_fpga_devices));
 }
@@ -263,6 +260,8 @@ void __init exynos5_universal5260_fpga_init(void)
 	pr_info("%s: initialization start!\n", __func__);
 #if defined(CONFIG_ICE4_FPGA)
 	if (fpga_init_gpio() == 0) {
+        i2c_register_board_info(22, i2c_devs22_emul,
+			ARRAY_SIZE(i2c_devs22_emul));
 		INIT_DELAYED_WORK_DEFERRABLE(&configuration_work,
 				deffered_configuration);
 		schedule_delayed_work(&configuration_work, HZ);

@@ -58,9 +58,8 @@
 #include "fimc-is-companion.h"
 #include "fimc-is-clk-gate.h"
 #include "fimc-is-dvfs.h"
-#include "fimc-is-sec-define.h"
 
-/*
+#ifdef CONFIG_CAMERA_EXTERNAL
 #define SDCARD_FW
 #define FIMC_IS_SETFILE_SDCARD_PATH		"/data/"
 #define FIMC_IS_FW				"fimc_is_fw2.bin"
@@ -70,15 +69,28 @@
 #define FIMC_IS_VERSION_SIZE			42
 #define FIMC_IS_SETFILE_VER_OFFSET		0x40
 #define FIMC_IS_SETFILE_VER_SIZE		52
-*/
-/*
+
 #define FIMC_IS_CAL_SDCARD			"/data/cal_data.bin"
-#define FIMC_IS_MAX_CAL_SIZE			(20 * 1024)
+/*#define FIMC_IS_MAX_CAL_SIZE			(20 * 1024)*/
 #define FIMC_IS_MAX_FW_SIZE			(2048 * 1024)
 #define FIMC_IS_CAL_START_ADDR			(0x013D0000)
 #define FIMC_IS_CAL_RETRY_CNT			(2)
 #define FIMC_IS_FW_RETRY_CNT			(2)
-*/
+#define HEADER_CRC32_LEN (128 / 2)
+#define OEM_CRC32_LEN (192 / 2)
+#define AWB_CRC32_LEN (32 / 2)
+#define SHADING_CRC32_LEN (2336 / 2)
+#else
+#include "fimc-is-sec-define.h"
+extern bool CRC32_FW_CHECK;
+extern bool CRC32_CHECK;
+extern bool CRC32_HEADER_CHECK;
+extern u32 FIMC_IS_MAX_CAL_SIZE;
+extern bool is_dumped_fw_loading_needed;
+
+#define IS_FIRMWARE		0
+#define IS_SETFILE		1
+#endif
 
 /* Default setting values */
 #define DEFAULT_PREVIEW_STILL_WIDTH		(1280) /* sensor margin : 16 */
@@ -91,16 +103,6 @@
 #define DEFAULT_CAPTURE_STILL_CROP_HEIGHT	(1440)
 #define DEFAULT_PREVIEW_VIDEO_WIDTH		(640)
 #define DEFAULT_PREVIEW_VIDEO_HEIGHT		(480)
-#if defined(CONFIG_SOC_EXYNOS5260)
-extern bool CRC32_FW_CHECK;
-extern bool CRC32_CHECK;
-extern bool CRC32_HEADER_CHECK;
-extern u32 FIMC_IS_MAX_CAL_SIZE;
-extern bool is_dumped_fw_loading_needed;
-#endif
-
-#define IS_FIRMWARE		0
-#define IS_SETFILE		1
 
 /* sysfs variable for debug */
 extern struct fimc_is_sysfs_debug sysfs_debug;
@@ -113,19 +115,16 @@ static struct dentry		*debugfs_file;
 
 #define SETFILE_SIZE	0x6000
 #define READ_SIZE		0x100
-/*
-#define HEADER_CRC32_LEN (128 / 2)
-#define OEM_CRC32_LEN (192 / 2)
-#define AWB_CRC32_LEN (32 / 2)
-#define SHADING_CRC32_LEN (2336 / 2)
-*/
 
 static char fw_name[100];
-static char setf_name[100];
-/*
+
+#ifdef CONFIG_CAMERA_EXTERNAL
 static int cam_id;
 bool is_dumped_fw_loading_needed = false;
-*/
+#else
+static char setf_name[100];
+#endif
+
 static int isfw_debug_open(struct inode *inode, struct file *file)
 {
 	if (inode->i_private)
@@ -760,7 +759,33 @@ void fimc_is_ischain_meta_invalid(struct fimc_is_frame *frame)
 		DMA_FROM_DEVICE);
 #endif
 }
+#ifdef CONFIG_CAMERA_EXTERNAL
+static void fimc_is_ischain_version(struct fimc_is_device_ischain *this, char *name, const char *load_bin, u32 size)
+{
+	struct fimc_is_from_info *pinfo = NULL;
+	char version_str[60];
 
+	if (!strcmp(fw_name, name)) {
+		memcpy(version_str, &load_bin[size - FIMC_IS_VERSION_SIZE],
+			FIMC_IS_VERSION_SIZE);
+		version_str[FIMC_IS_VERSION_SIZE] = '\0';
+
+		pinfo = &this->pinfo;
+		memcpy(pinfo->header_ver, &version_str[32], 11);
+		pinfo->header_ver[11] = '\0';
+	} else {
+		memcpy(version_str, &load_bin[size - FIMC_IS_SETFILE_VER_OFFSET],
+			FIMC_IS_SETFILE_VER_SIZE);
+		version_str[FIMC_IS_SETFILE_VER_SIZE] = '\0';
+
+		pinfo = &this->pinfo;
+		memcpy(pinfo->setfile_ver, &version_str[17], 4);
+		pinfo->setfile_ver[4] = '\0';
+	}
+
+	info("%s version : %s\n", name, version_str);
+}
+#else
 static void fimc_is_ischain_version(struct fimc_is_device_ischain *this, int file_check, const char *load_bin, u32 size)
 {
 	struct fimc_is_from_info *pinfo = NULL;
@@ -786,7 +811,7 @@ static void fimc_is_ischain_version(struct fimc_is_device_ischain *this, int fil
 		info("%s version : %s\n", setf_name, version_str);
 	}
 }
-
+#endif
 void fimc_is_ischain_savefirm(struct fimc_is_device_ischain *this)
 {
 #ifdef DEBUG_DUMP_FIRMWARE
@@ -809,15 +834,22 @@ static int fimc_is_ischain_loadfirm(struct fimc_is_device_ischain *device)
 	long fsize, nread;
 	int fw_requested = 1;
 	char fw_path[100];
+#ifndef CONFIG_CAMERA_EXTERNAL
 	int cam_id;
+#endif
 
 	mdbgd_ischain("%s\n", device, __func__);
+#ifndef CONFIG_CAMERA_EXTERNAL
 	cam_id = fimc_is_sec_get_camid();
+#endif
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	fp = filp_open(FIMC_IS_FW_SDCARD, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
+#ifdef CONFIG_CAMERA_EXTERNAL
+		goto request_fw;
+#else
 		if (is_dumped_fw_loading_needed &&
 				(cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_FRONT)) {
 			snprintf(fw_path, sizeof(fw_path), "%s%s",
@@ -839,10 +871,16 @@ static int fimc_is_ischain_loadfirm(struct fimc_is_device_ischain *device)
 		fsize = fp->f_path.dentry->d_inode->i_size;
 		info("start, file path %s, size %ld Bytes\n",
 			FIMC_IS_FW_SDCARD, fsize);
+#endif
 	}
 
 	location = 1;
 	fw_requested = 0;
+#ifdef CONFIG_CAMERA_EXTERNAL
+	fsize = fp->f_path.dentry->d_inode->i_size;
+	pr_info("start, file path %s, size %ld Bytes\n",
+		is_dumped_fw_loading_needed ? fw_path : FIMC_IS_FW_SDCARD, fsize);
+#endif
 	buf = vmalloc(fsize);
 	if (!buf) {
 		dev_err(&device->pdev->dev,
@@ -860,8 +898,12 @@ static int fimc_is_ischain_loadfirm(struct fimc_is_device_ischain *device)
 
 	memcpy((void *)device->imemory.kvaddr, (void *)buf, fsize);
 	fimc_is_ischain_cache_flush(device, 0, fsize + 1);
+#ifdef CONFIG_CAMERA_EXTERNAL
+	fimc_is_ischain_version(device, fw_name, buf, fsize);
+#else
 	if (cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_FRONT)
 		fimc_is_ischain_version(device, IS_FIRMWARE, buf, fsize);
+#endif
 
 request_fw:
 	if (fw_requested) {
@@ -889,9 +931,14 @@ request_fw:
 		memcpy((void *)device->imemory.kvaddr, fw_blob->data,
 			fw_blob->size);
 		fimc_is_ischain_cache_flush(device, 0, fw_blob->size + 1);
+#ifdef CONFIG_CAMERA_EXTERNAL
+		fimc_is_ischain_version(device, fw_name, fw_blob->data,
+			fw_blob->size);
+#else
 		if (cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_FRONT)
 			fimc_is_ischain_version(device, IS_FIRMWARE, fw_blob->data,
 				fw_blob->size);
+#endif
 
 		release_firmware(fw_blob);
 #ifdef SDCARD_FW
@@ -933,25 +980,36 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 	long fsize, nread;
 	int fw_requested = 1;
 	char setfile_path[256];
-	char *setfile_select;
 	u32 retry;
+
+#ifndef CONFIG_CAMERA_EXTERNAL
+	char *setfile_select;
 	int cam_id;
 
-	mdbgd_ischain("%s\n", device, __func__);
 	cam_id = fimc_is_sec_get_camid();
 
 	if (cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_REAR)
 		setfile_select = setf_name;
 	else
 		setfile_select = setfile_name;
+#endif
+
+	mdbgd_ischain("%s\n", device, __func__);
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	memset(setfile_path, 0x00, sizeof(setfile_path));
 	snprintf(setfile_path, sizeof(setfile_path), "%s%s",
-		FIMC_IS_SETFILE_SDCARD_PATH, setfile_select);
+#ifdef CONFIG_CAMERA_EXTERNAL
+	FIMC_IS_SETFILE_SDCARD_PATH, setfile_name);
+#else
+	FIMC_IS_SETFILE_SDCARD_PATH, setfile_select);
+#endif
 	fp = filp_open(setfile_path, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
+#ifdef CONFIG_CAMERA_EXTERNAL
+		goto request_fw;
+#else
 		if (is_dumped_fw_loading_needed &&
 			(cam_id == CAMERA_SINGLE_REAR || cam_id == CAMERA_DUAL_REAR)) {
 			memset(setfile_path, 0x00, sizeof(setfile_path));
@@ -966,6 +1024,7 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 			}
 		} else
 			goto request_fw;
+#endif
 	}
 
 	location = 1;
@@ -991,7 +1050,11 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 	address = (void *)(device->imemory.kvaddr + load_addr);
 	memcpy((void *)address, (void *)buf, fsize);
 	fimc_is_ischain_cache_flush(device, load_addr, fsize + 1);
+#ifdef CONFIG_CAMERA_EXTERNAL
+	fimc_is_ischain_version(device, setfile_name, buf, fsize);
+#else
 	fimc_is_ischain_version(device, IS_SETFILE, buf, fsize);
+#endif
 
 request_fw:
 	if (fw_requested) {
@@ -999,12 +1062,22 @@ request_fw:
 #endif
 
 		retry = 4;
+#ifdef CONFIG_CAMERA_EXTERNAL
+		ret = request_firmware((const struct firmware **)&fw_blob,
+			setfile_name, &device->pdev->dev);
+#else
 		ret = request_firmware((const struct firmware **)&fw_blob,
 			setfile_select, &device->pdev->dev);
+#endif
 		while (--retry && ret) {
 			mwarn("request_firmware is fail(%d)", device, ret);
+#ifdef CONFIG_CAMERA_EXTERNAL
+			ret = request_firmware((const struct firmware **)&fw_blob,
+				setfile_name, &device->pdev->dev);
+#else
 			ret = request_firmware((const struct firmware **)&fw_blob,
 				setfile_select, &device->pdev->dev);
+#endif
 		}
 
 		if (!retry) {
@@ -1028,8 +1101,13 @@ request_fw:
 		address = (void *)(device->imemory.kvaddr + load_addr);
 		memcpy(address, fw_blob->data, fw_blob->size);
 		fimc_is_ischain_cache_flush(device, load_addr, fw_blob->size + 1);
+#ifdef CONFIG_CAMERA_EXTERNAL
+		fimc_is_ischain_version(device, setfile_name, fw_blob->data,
+			(u32)fw_blob->size);
+#else
 		fimc_is_ischain_version(device, IS_SETFILE, fw_blob->data,
 			(u32)fw_blob->size);
+#endif
 
 		release_firmware(fw_blob);
 #ifdef SDCARD_FW
@@ -1372,16 +1450,18 @@ int fimc_is_ischain_power(struct fimc_is_device_ischain *device, int on)
 	int ret = 0;
 	u32 timeout;
 	u32 debug;
-	int cam_id;
 
 	struct device *dev = &device->pdev->dev;
 	struct fimc_is_core *core = (struct fimc_is_core *)platform_get_drvdata(device->pdev);
+#ifndef CONFIG_CAMERA_EXTERNAL
+	int cam_id;
 	struct fimc_is_from_info *finfo = NULL;
 	struct fimc_is_module_enum *module = NULL;
 	struct fimc_is_device_sensor *sensor;
 	int cam_sensor;
 
 	sensor = &core->sensor[0];
+#endif
 
 	if (on) {
 		/* 1. force poweroff setting */
@@ -1400,6 +1480,7 @@ int fimc_is_ischain_power(struct fimc_is_device_ischain *device, int on)
 		bts_initialize("pd-cam", true);
 #endif
 
+#ifndef CONFIG_CAMERA_EXTERNAL
 		cam_id = fimc_is_sec_get_camid();
 
 		ret = fimc_is_sec_fw_sel(dev, core->sensor->pdata, fw_name, setf_name, 0);
@@ -1447,6 +1528,7 @@ int fimc_is_ischain_power(struct fimc_is_device_ischain *device, int on)
 				module->ext.actuator_con.product_name = ACTUATOR_NAME_AK7343;
 			}
 		}
+#endif
 		snprintf(fw_name, sizeof(fw_name), "%s", FIMC_IS_FW);
 
 		/* 3. Load IS firmware */
@@ -1495,7 +1577,7 @@ int fimc_is_ischain_power(struct fimc_is_device_ischain *device, int on)
 		info("%s(%d) - A5 Power on\n", __func__, on);
 
 		/* 6. enable A5 */
-		writel(0x00018000, PMUREG_ISP_ARM_OPTION);
+		writel((1 << 15), PMUREG_ISP_ARM_OPTION);
 		timeout = 1000;
 
 		pr_debug("%s(%d) - A5 enable start...\n", __func__, on);
@@ -1516,12 +1598,6 @@ int fimc_is_ischain_power(struct fimc_is_device_ischain *device, int on)
 
 		pr_debug("%s(%d) - change A5 state\n", __func__, on);
 	} else {
-		/* 1. disable A5 */
-		if (test_bit(IS_IF_STATE_START, &device->interface->state))
-			writel(0x10000, PMUREG_ISP_ARM_OPTION);
-		else
-			writel(0x00000, PMUREG_ISP_ARM_OPTION);
-
 		/* Check FW state for WFI of A5 */
 		debug = readl(device->interface->regs + ISSR6);
 		printk(KERN_INFO "%s: A5 state(0x%x)\n", __func__, debug);
@@ -2612,7 +2688,8 @@ int fimc_is_ischain_probe(struct fimc_is_device_ischain *device,
 	u32 regs)
 {
 	int ret = 0;
-	struct fimc_is_subdev *scc, *dis, *scp;
+	struct fimc_is_subdev *dis;
+	//struct fimc_is_subdev *scc, *scp
 
 	BUG_ON(!interface);
 	BUG_ON(!mem);
@@ -2620,9 +2697,9 @@ int fimc_is_ischain_probe(struct fimc_is_device_ischain *device,
 	BUG_ON(!device);
 
 	/*device initialization should be just one time*/
-	scc = &device->scc;
+	//scc = &device->scc;
 	dis = &device->dis;
-	scp = &device->scp;
+	//scp = &device->scp;
 
 	device->interface	= interface;
 	device->mem		= mem;
@@ -2829,8 +2906,6 @@ int fimc_is_ischain_open(struct fimc_is_device_ischain *device,
 	imemory->kvaddr_shared	= imemory->kvaddr + imemory->offset_shared;
 	device->is_region = imemory->is_region;
 
-	/* fimc_is_sec_get_camid_from_hal(fw_name, setf_name); */
-
 	fimc_is_group_open(device->groupmgr, &device->group_isp, GROUP_ID_ISP,
 		device->instance, vctx, device, fimc_is_ischain_isp_callback);
 
@@ -2842,34 +2917,10 @@ int fimc_is_ischain_open(struct fimc_is_device_ischain *device,
 	fimc_is_subdev_open(&device->fd, NULL, NULL);
 
 	/* for mediaserver force close */
-	ret = fimc_is_resource_get(device->resourcemgr);
+	ret = fimc_is_resource_get(device->resourcemgr, RESOURCE_TYPE_ISCHAIN);
 	if (ret) {
 		merr("fimc_is_resource_get is fail", device);
-		fimc_is_resource_put(device->resourcemgr);
 		goto p_err;
-	}
-
-	if (device->instance == 0) {
-		/* 5. A5 power on */
-		ret = fimc_is_ischain_power(device, 1);
-		if (ret) {
-			err("failed to fimc_is_ischain_power (%d)\n", ret);
-			fimc_is_resource_put(device->resourcemgr);
-			ret = -EINVAL;
-			goto p_err;
-		}
-
-		/* W/A for a lower version MCUCTL */
-		fimc_is_interface_reset(device->interface);
-
-		mdbgd_ischain("power up and loaded firmware\n", device);
-#ifdef ENABLE_CLOCK_GATE
-		if (sysfs_debug.en_clk_gate &&
-				sysfs_debug.clk_gate_mode == CLOCK_GATE_MODE_HOST) {
-			core = (struct fimc_is_core *)device->interface->core;
-			fimc_is_clk_gate_init(core);
-		}
-#endif
 	}
 
 	set_bit(FIMC_IS_ISCHAIN_OPEN, &device->state);
@@ -2949,7 +3000,7 @@ int fimc_is_ischain_close(struct fimc_is_device_ischain *device,
 	}
 
 	/* for mediaserver force close */
-	ret = fimc_is_resource_put(device->resourcemgr);
+	ret = fimc_is_resource_put(device->resourcemgr, RESOURCE_TYPE_ISCHAIN);
 	if (ret) {
 		merr("fimc_is_resource_put is fail", device);
 		goto exit;

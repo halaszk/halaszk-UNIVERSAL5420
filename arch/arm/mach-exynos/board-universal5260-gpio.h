@@ -19,8 +19,12 @@
 extern void board_hllte_gpio_init(void);
 #elif defined(CONFIG_MACH_HL3G)
 extern void board_hl3g_gpio_init(void);
-#elif defined(CONFIG_MACH_M2LTE)
-extern void board_m2lte_gpio_init(void);
+#elif defined(CONFIG_MACH_M2ALTE)
+extern void board_m2alte_gpio_init(void);
+#elif defined(CONFIG_MACH_M2A3G)
+extern void board_m2a3g_gpio_init(void);
+#elif defined(CONFIG_MACH_MEGA2ELTE)
+extern void board_mega2elte_gpio_init(void);
 #endif
 
 void __init exynos5_universal5260_gpio_init(void)
@@ -29,8 +33,12 @@ void __init exynos5_universal5260_gpio_init(void)
 	board_hllte_gpio_init();
 #elif defined(CONFIG_MACH_HL3G)
 	board_hl3g_gpio_init();
-#elif defined(CONFIG_MACH_M2LTE)
-	board_m2lte_gpio_init();	
+#elif defined(CONFIG_MACH_M2ALTE)
+	board_m2alte_gpio_init();
+#elif defined(CONFIG_MACH_M2A3G)
+	board_m2a3g_gpio_init();
+#elif defined(CONFIG_MACH_MEGA2ELTE)
+	board_mega2elte_gpio_init();
 #endif
 }
 

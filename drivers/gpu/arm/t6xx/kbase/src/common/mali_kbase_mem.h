@@ -163,6 +163,8 @@ typedef struct kbase_va_region {
 #endif				/* defined(CONFIG_DMA_SHARED_BUFFER) */
 	} imported_metadata;
 
+	unsigned long magic;
+
 } kbase_va_region;
 
 /* Common functions */

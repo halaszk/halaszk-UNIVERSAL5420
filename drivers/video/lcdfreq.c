@@ -19,7 +19,10 @@
 
 #include <plat/clock.h>
 #include <plat/clock-clksrc.h>
-#include <plat/regs-fb-v4.h>
+#include <plat/regs-fb.h>
+#ifdef CONFIG_FB_S5P_MDNIE
+#include <plat/regs-ielcd.h>
+#endif
 
 #include <mach/map.h>
 
@@ -30,6 +33,19 @@
 #define FIMD_MAP_SIZE			SZ_256K
 #else
 #define FIMD_MAP_SIZE			SZ_32K
+#endif
+
+#define IELCD_REG_BASE		S3C_IELCD_PHY_BASE
+#define IELCD_MAP_SIZE		SZ_1K
+
+#ifdef CONFIG_FB_S5P_MDNIE
+#define REG_BASE			IELCD_REG_BASE
+#define MAP_SIZE			IELCD_MAP_SIZE
+#define REG_VIDCON1			IELCD_VIDCON1
+#else
+#define REG_BASE			FIMD_REG_BASE
+#define MAP_SIZE			FIMD_MAP_SIZE
+#define REG_VIDCON1			VIDCON1
 #endif
 
 #define VSTATUS_IS_ACTIVE(reg)	(reg == VIDCON1_VSTATUS_ACTIVE)
@@ -98,7 +114,7 @@ static unsigned int get_vstatus(struct device *dev)
 	struct lcdfreq_info *info = dev_get_drvdata(dev);
 	u32 reg;
 
-	reg = readl(info->reg + VIDCON1);
+	reg = readl(info->reg + REG_VIDCON1);
 
 	reg &= VIDCON1_VSTATUS_MASK;
 
@@ -455,9 +471,9 @@ static int lcdfreq_reboot_notify(struct notifier_block *this,
 		container_of(this, struct lcdfreq_info, reboot_noti);
 
 	mutex_lock(&info->lock);
-	info->level = NORMAL;
-	if (info->enable)
+	if ((info->enable) && (info->level))
 		reset_div(info->dev);
+	info->level = NORMAL;
 	info->enable = false;
 	atomic_set(&info->usage, 0);
 	mutex_unlock(&info->lock);
@@ -599,7 +615,7 @@ static int lcdfreq_probe(struct platform_device *pdev)
 
 	register_display_handler(lcdfreq_enable, SUSPEND_LEVEL_LCDFREQ, info);
 
-	info->reg = ioremap(FIMD_REG_BASE, FIMD_MAP_SIZE);
+	info->reg = ioremap(REG_BASE, MAP_SIZE);
 	info->enable = true;
 
 	ret = clk_init(&pdev->dev);

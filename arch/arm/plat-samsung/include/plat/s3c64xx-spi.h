@@ -14,6 +14,8 @@
 #define HYBRID_MODE     0x0
 #define PIO_MODE        0x1
 
+#define MANUAL_CS_MODE  0x0
+#define AUTO_CS_MODE    0x1
 struct platform_device;
 
 /**
@@ -29,6 +31,7 @@ struct platform_device;
  */
 struct s3c64xx_spi_csinfo {
 	u8 fb_delay;
+	u8 cs_mode;
 	unsigned line;
 	void (*set_level)(unsigned line_id, int lvl);
 };

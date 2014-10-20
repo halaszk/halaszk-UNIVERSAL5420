@@ -510,7 +510,6 @@ void __show_regs(struct pt_regs *regs)
 	}
 #endif
 
-	printk("CPUFREQ: %d KHz\n", cpufreq_get(raw_smp_processor_id()));
 #ifdef CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ
 	{
 		extern unsigned long curr_mif_freq;
@@ -614,7 +613,6 @@ void __show_regs_except_extra_data(struct pt_regs *regs)
 	}
 #endif
 
-	printk("CPUFREQ: %d KHz\n", cpufreq_get(raw_smp_processor_id()));
 #ifdef CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ
 	{
 		extern unsigned long curr_mif_freq;
@@ -773,6 +771,7 @@ EXPORT_SYMBOL(kernel_thread);
 unsigned long get_wchan(struct task_struct *p)
 {
 	struct stackframe frame;
+	unsigned long stack_page;
 	int count = 0;
 	if (!p || p == current || p->state == TASK_RUNNING)
 		return 0;
@@ -781,9 +780,11 @@ unsigned long get_wchan(struct task_struct *p)
 	frame.sp = thread_saved_sp(p);
 	frame.lr = 0;			/* recovered from the stack */
 	frame.pc = thread_saved_pc(p);
+	stack_page = (unsigned long)task_stack_page(p);
 	do {
-		int ret = unwind_frame(&frame);
-		if (ret < 0)
+		if (frame.sp < stack_page ||
+		    frame.sp >= stack_page + THREAD_SIZE ||
+		    unwind_frame(&frame) < 0)
 			return 0;
 		if (!in_sched_functions(frame.pc))
 			return frame.pc;

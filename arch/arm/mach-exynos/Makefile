@@ -73,6 +73,7 @@ obj-$(CONFIG_EXYNOS_BUSFREQ_OPP)     += ppmu.o busfreq_opp_exynos4.o busfreq_opp
 
 obj-$(CONFIG_EXYNOS5_CORESIGHT)		+= coresight-exynos5.o
 obj-$(CONFIG_EXYNOS_PERSISTENT_CLOCK)	+= persistent_clock.o
+obj-$(CONFIG_EXYNOS_CORESIGHT_DEBUG)	+= coresight-debug.o
 
 obj-$(CONFIG_EXYNOS54XX_DEBUG)		+= debug_exynos54XX.o
 
@@ -178,6 +179,7 @@ obj-$(CONFIG_MACH_UNIVERSAL5260)	+= board-universal5260-vibrator.o
 obj-$(CONFIG_BT_BCM4339)			+= board-bluetooth-bcm4339.o
 obj-$(CONFIG_MACH_UNIVERSAL5260)	+= board-universal5260-sensor.o
 obj-$(CONFIG_MACH_UNIVERSAL5260)	+= board-universal5260-nfc.o
+obj-$(CONFIG_VIDEO_MHL_SII8246)		+= board-universal5260-mhl.o
 
 ifeq ($(CONFIG_MACH_UNIVERSAL5260),y)
 obj-$(CONFIG_W1)	+= board-universal5260-cover_id.o
@@ -190,14 +192,20 @@ obj-$(CONFIG_SND_SOC_ADONISUNIV_YMU831)	+= board-universal5260-audio-y.o
 obj-$(CONFIG_SND_SOC_SAMSUNG)		+= mach-exynos5-audio.o
 obj-$(CONFIG_MACH_HLLTE)			+= board-hllte-gpio.o
 obj-$(CONFIG_MACH_HL3G)			+= board-hl3g-gpio.o
-obj-$(CONFIG_MACH_M2LTE)		+= board-m2lte-gpio.o
+obj-$(CONFIG_MACH_M2ALTE)		+= board-m2alte-gpio.o
+obj-$(CONFIG_MACH_M2A3G)		+= board-m2a3g-gpio.o
+obj-$(CONFIG_MACH_MEGA2ELTE)		+= board-mega2elte-gpio.o
 obj-$(CONFIG_SEC_GPIO_DVS)		+= board-universal5260-gpiodvs.o
 obj-$(CONFIG_MACH_HLLTE)			+= board-hl-thermistor.o
-obj-$(CONFIG_MACH_M2LTE)			+= board-hl-thermistor.o
 obj-$(CONFIG_MACH_HL3G)			+= board-hl-thermistor.o
+obj-$(CONFIG_MACH_M2ALTE)			+= board-m2lte-thermistor.o
+obj-$(CONFIG_MACH_M2A3G)			+= board-m2lte-thermistor.o
+obj-$(CONFIG_MACH_MEGA2ELTE)        += board-mega2elte-thermistor.o
 obj-$(CONFIG_MACH_HLLTE)			+= board-hl-pmic.o
-obj-$(CONFIG_MACH_M2LTE)			+= board-hl-pmic.o
 obj-$(CONFIG_MACH_HL3G)			+= board-hl-pmic.o
+obj-$(CONFIG_MACH_M2ALTE)			+= board-m2lte-pmic.o
+obj-$(CONFIG_MACH_M2A3G)			+= board-m2lte-pmic.o
+obj-$(CONFIG_MACH_MEGA2ELTE)        += board-mega2elte-pmic.o
 
 obj-$(CONFIG_MACH_UNIVERSAL5260)	+= board-universal5260-wlan.o
 
@@ -240,7 +248,6 @@ obj-$(CONFIG_EXYNOS4_SETUP_CSIS)	+= setup-csis.o
 obj-$(CONFIG_EXYNOS4_SETUP_FIMD0)	+= setup-fimd0.o
 obj-$(CONFIG_EXYNOS_SETUP_FIMD1)	+= setup-fimd1.o setup-disp-clock.o
 obj-$(CONFIG_EXYNOS_SETUP_DP)		+= setup-dp.o
-obj-$(CONFIG_FB_MIPI_DSIM)		+= setup-mipidsim.o
 obj-$(CONFIG_EXYNOS_CONTENT_PATH_PROTECTION) += secmem.o
 obj-$(CONFIG_EXYNOS4_SETUP_FIMC_IS)	+= setup-exynos-fimc-is.o
 obj-$(CONFIG_EXYNOS5_SETUP_FIMC_IS)	+= setup-exynos-fimc-is.o
@@ -276,7 +283,9 @@ obj-$(CONFIG_ARCH_EXYNOS5)		+= resetreason.o
 obj-$(CONFIG_EXYNOS_TMU)		+= tmu-exynos.o
 obj-$(CONFIG_EXYNOS_SETUP_MIPIPHY)	+= setup-exynos-mipiphy.o
 obj-$(CONFIG_BL_SWITCHER)		+= bL_control.o bL_setup.o
+obj-$(CONFIG_GPS_BCM4752)		+= sec_gps_bcm4752.o
 obj-$(CONFIG_GPS_BCM47521)		+= sec_gps_bcm47521.o
+obj-$(CONFIG_GPS_BCM47531)		+= sec_gps_bcm47531.o
 
 # Samsung sec sysfs Feature
 obj-$(CONFIG_SEC_SYSFS)			+= sec_sysfs.o
@@ -289,5 +298,13 @@ obj-$(CONFIG_SEC_DEBUG)			+= sec_debug.o sec_getlog.o sec_gaf.o
 obj-$(CONFIG_SEC_LOG)			+= sec_log.o
 obj-$(CONFIG_SEC_MODEM_XMM6360)	+= board-xmm6360-modems.o
 obj-$(CONFIG_SEC_MODEM_XMM6262)	+= board-xmm626x-modems.o
+obj-$(CONFIG_SEC_MODEM_SHANNON)	+= board-shannon300-modems.o
+obj-$(CONFIG_SEC_MODEM_ERICSSON) += board-ericsson-modems.o
 
 obj-$(CONFIG_SEC_THERMISTOR)		+= sec_thermistor.o
+obj-$(CONFIG_MACH_UNIVERSAL5260)	+= board-universal5260-memory.o
+
+ifdef CONFIG_MSM_SUBSYSTEM_RESTART
+	obj-y += subsystem_notif.o
+	obj-y += subsystem_restart.o
+endif

@@ -751,7 +751,7 @@ static int mmc_select_powerclass(struct mmc_card *card,
  * Selects the desired buswidth and switch to the HS200 mode
  * if bus width set without error
  */
-static int mmc_select_hs200(struct mmc_card *card)
+static int mmc_select_hs200(struct mmc_card *card, u8 driver_type)
 {
 	int idx, err = -EINVAL;
 	struct mmc_host *host;
@@ -821,7 +821,8 @@ static int mmc_select_hs200(struct mmc_card *card)
 	/* switch to HS200 mode if bus width set successfully */
 	if (!err)
 		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-				EXT_CSD_HS_TIMING, 2, 0);
+				EXT_CSD_HS_TIMING,
+				driver_type | MMC_HS_TIMING_HS200, 0);
 err:
 	return err;
 }
@@ -841,6 +842,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	unsigned int max_dtr;
 	u32 rocr;
 	u8 *ext_csd = NULL;
+	u8 driver_type = 0;
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -933,6 +935,12 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		if (err)
 			goto free_card;
 	}
+
+	/*
+	 * moviNAND : Device output driver strength
+	 */
+	if (card->cid.manfid == CID_MANFID_SAMSUNG)
+		driver_type = host->dev_drv_str << 4;
 
 	/*
 	 * Select card, as all following commands rely on that.
@@ -1041,7 +1049,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		if (card->ext_csd.hs_max_dtr > 52000000 &&
 			(host->caps2 & MMC_CAP2_HS200 ||
 			 host->caps2 & MMC_CAP2_HS200_DDR))
-			err = mmc_select_hs200(card);
+			err = mmc_select_hs200(card, driver_type);
 		else if	(host->caps & MMC_CAP_MMC_HIGHSPEED)
 			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 					 EXT_CSD_HS_TIMING, 1,
@@ -1158,7 +1166,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 
 		if (ddr) {
 			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_HS_TIMING, 1,
+					EXT_CSD_HS_TIMING,
+					driver_type | MMC_HS_TIMING_HS,
 					card->ext_csd.generic_cmd6_time);
 			if (err) {
 				pr_warning("%s: switch to high-speed "
@@ -1185,7 +1194,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			}
 
 			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_HS_TIMING, 3, 0);
+					EXT_CSD_HS_TIMING,
+					driver_type | MMC_HS_TIMING_DDR200, 0);
 			if (err) {
 				pr_warning("%s: switch to ddr200 failed, err:%d\n",
 						mmc_hostname(card->host), err);

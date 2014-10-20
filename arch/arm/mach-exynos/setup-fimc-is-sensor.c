@@ -27,10 +27,8 @@ static int exynos_fimc_is_sensor_pin_control(struct platform_device *pdev,
 	int pin, u32 value, char *name, u32 act, u32 channel)
 {
 	int ret = 0;
-	char ch_name[30];
 
-	snprintf(ch_name, sizeof(ch_name), "%s%d", name, channel);
-	pr_info("%s(pin(%d), act(%d), ch(%s))\n", __func__, pin, act, ch_name);
+	pr_info("[@] pin_ctrl(pin(%03d), act(%d), ch(%d), name(%s))\n", pin, act, channel, name);
 
 	switch (act) {
 	case PIN_PULL_NONE:
@@ -39,12 +37,30 @@ static int exynos_fimc_is_sensor_pin_control(struct platform_device *pdev,
 		if (gpio_is_valid(pin)) {
 			gpio_request_one(pin, GPIOF_OUT_INIT_HIGH, "CAM_GPIO_OUTPUT_HIGH");
 			gpio_free(pin);
+		} else {
+			pr_err("gpio(%s) is not valid\n", name);
+			ret = -EINVAL;
 		}
 		break;
 	case PIN_OUTPUT_LOW:
 		if (gpio_is_valid(pin)) {
 			gpio_request_one(pin, GPIOF_OUT_INIT_LOW, "CAM_GPIO_OUTPUT_LOW");
 			gpio_free(pin);
+		} else {
+			pr_err("gpio(%s) is not valid\n", name);
+			ret = -EINVAL;
+		}
+		break;
+	case PIN_OUTPUT:
+		if (gpio_is_valid(pin)) {
+			if (value)
+				gpio_request_one(pin, GPIOF_OUT_INIT_HIGH, "CAM_GPIO_OUTPUT_HIGH");
+			else
+				gpio_request_one(pin, GPIOF_OUT_INIT_LOW, "CAM_GPIO_OUTPUT_LOW");
+			gpio_free(pin);
+		} else {
+			pr_err("gpio(%s) is not valid\n", name);
+			ret = -EINVAL;
 		}
 		break;
 	case PIN_INPUT:
@@ -115,6 +131,44 @@ static int exynos_fimc_is_sensor_pin_control(struct platform_device *pdev,
 			regulator_put(regulator);
 		}
 		break;
+	case PIN_REGULATOR:
+		{
+			struct regulator *regulator;
+
+			regulator = regulator_get(&pdev->dev, name);
+			if (IS_ERR(regulator)) {
+				pr_err("%s : regulator_get(%s) fail\n", __func__, name);
+				return PTR_ERR(regulator);
+			}
+
+			if (value) {
+				ret = regulator_enable(regulator);
+				if (ret) {
+					pr_err("%s : regulator_enable(%s) fail\n", __func__, name);
+					regulator_put(regulator);
+					return ret;
+				}
+			} else {
+				if (!regulator_is_enabled(regulator)) {
+					pr_warning("%s regulator is already disabled\n", name);
+					regulator_put(regulator);
+					return 0;
+				}
+
+				ret = regulator_disable(regulator);
+				if (ret) {
+					pr_err("%s : regulator_disable(%s) fail\n", __func__, name);
+					regulator_put(regulator);
+					return ret;
+				}
+			}
+
+			regulator_put(regulator);
+		}
+		break;
+	case PIN_DELAY:
+		mdelay(value);
+		break;
 	default:
 		pr_err("unknown act for pin\n");
 		break;
@@ -122,8 +176,6 @@ static int exynos_fimc_is_sensor_pin_control(struct platform_device *pdev,
 
 	return ret;
 }
-
-extern unsigned int system_rev;
 
 int exynos_fimc_is_sensor_pins_cfg(struct platform_device *pdev,
 	u32 scenario,
@@ -143,10 +195,8 @@ int exynos_fimc_is_sensor_pins_cfg(struct platform_device *pdev,
 	pin_ctrls = pdata->pin_ctrls;
 
 	for (i = 0; i < GPIO_CTRL_MAX; ++i) {
-		if (pin_ctrls[scenario][enable][i].act == PIN_END) {
-			pr_info("gpio cfg is end(%d)\n", i);
+		if (pin_ctrls[scenario][enable][i].act == PIN_END)
 			break;
-		}
 
 		ret = exynos_fimc_is_sensor_pin_control(pdev,
 			pin_ctrls[scenario][enable][i].pin,
@@ -154,37 +204,38 @@ int exynos_fimc_is_sensor_pins_cfg(struct platform_device *pdev,
 			pin_ctrls[scenario][enable][i].name,
 			pin_ctrls[scenario][enable][i].act,
 			pdata->csi_ch);
+#ifndef CONFIG_CAMERA_EXTERNAL
 		pr_info("%s\n", pin_ctrls[scenario][enable][i].name);
 		/* makes delay */
 		if (scenario == SENSOR_SCENARIO_NORMAL &&
-			enable == GPIO_SCENARIO_ON && 
-			!strcmp(pin_ctrls[scenario][enable][i].name, "main_cam_af_2v8")) {
+				enable == GPIO_SCENARIO_ON && 
+				!strcmp(pin_ctrls[scenario][enable][i].name, "main_cam_af_2v8")) {
 			pr_info("2ms delay for af 2.8V rev 0.2, host 1.8v rev 0.3, imx175");
 			usleep_range(2000, 2000);
 		} else if (scenario == SENSOR_SCENARIO_NORMAL &&
-			enable == GPIO_SCENARIO_ON && 
-			!strcmp(pin_ctrls[scenario][enable][i].name, "GPE0.3 (MAIN_IO_EN)")) {
+				enable == GPIO_SCENARIO_ON && 
+				!strcmp(pin_ctrls[scenario][enable][i].name, "GPE0.3 (MAIN_IO_EN)")) {
 			pr_info("2ms delay for af 2.8V rev 0.3, host 1.8v rev 0.2, imx175");
 			usleep_range(2000, 2000);
 		} else if (scenario == SENSOR_SCENARIO_NORMAL &&
-			enable == GPIO_SCENARIO_ON && 
-			!strcmp(pin_ctrls[scenario][enable][i].name, "GPE1.2 (CAM_MCLK)")) {
+				enable == GPIO_SCENARIO_ON && 
+				!strcmp(pin_ctrls[scenario][enable][i].name, "GPE1.2 (CAM_MCLK)")) {
 			pr_info("2ms delay for mclk, imx175");
 			usleep_range(2000, 2000);
 		} else if (scenario == SENSOR_SCENARIO_VISION &&
-			enable == GPIO_SCENARIO_ON && 
-			!strcmp(pin_ctrls[scenario][enable][i].name, "vt_cam_core_1v8")) {
+				enable == GPIO_SCENARIO_ON && 
+				!strcmp(pin_ctrls[scenario][enable][i].name, "vt_cam_core_1v8")) {
 			pr_info("1ms delay for STBY, s5k6b2");
 			usleep_range(1000, 1000);
 		} else if (scenario == SENSOR_SCENARIO_NORMAL &&
-			enable == GPIO_SCENARIO_ON && 
-			!strcmp(pin_ctrls[scenario][enable][i].name, "vt_cam_core_1v8")) {
+				enable == GPIO_SCENARIO_ON && 
+				!strcmp(pin_ctrls[scenario][enable][i].name, "vt_cam_core_1v8")) {
 			pr_info("1ms delay for nRST, s5k6b2");
 			usleep_range(1000, 1000);
 		}
-		
+#endif
 		if (ret) {
-			pr_err("exynos5_fimc_is_sensor_gpio(%d, %d, %s, %d, %d) is fail(%d)",
+			pr_err("exynos5_fimc_is_sensor_gpio(%d, %d, %s, %d, %d) is fail(%d)\n",
 				pin_ctrls[scenario][enable][i].pin,
 				pin_ctrls[scenario][enable][i].value,
 				pin_ctrls[scenario][enable][i].name,
@@ -206,91 +257,130 @@ int exynos5260_fimc_is_sensor_iclk_cfg(struct platform_device *pdev,
 	u32 scenario,
 	u32 channel)
 {
-	struct clk *sclk_mediatop_pll = NULL;
 	struct clk *aclk_gscl_fimc = NULL;
 	struct clk *aclk_gscl_fimc_user = NULL;
 	struct clk *sclk_csis = NULL;
 
-	struct clk *cam_src = NULL;
-	struct clk *cam_clk = NULL;
+	struct clk *aclk_gscl_400 = NULL;
+	struct clk *aclk_m2m_400 = NULL;
+	struct clk *pclk_m2m_100 = NULL;
 
-	pr_info("%s\n", __func__);
+	struct clk *ext_xtal = NULL;
+	struct clk *dout_isp1_sensor0_a = NULL;
+	struct clk *dout_isp1_sensor1_a = NULL;
+	struct clk *dout_isp1_sensor2_a = NULL;
 
-	/* camif part */
-	sclk_mediatop_pll = clk_get(&pdev->dev, "sclk_mediatop_pll");
-	if (IS_ERR(sclk_mediatop_pll))
-		return PTR_ERR(sclk_mediatop_pll);
-
-	aclk_gscl_fimc = clk_get(&pdev->dev, "aclk_gscl_fimc");
-	if (IS_ERR(aclk_gscl_fimc)) {
-		clk_put(sclk_mediatop_pll);
-		return PTR_ERR(aclk_gscl_fimc);
-	}
+	pr_info("[@] %s\n", __func__);
 
 	aclk_gscl_fimc_user = clk_get(&pdev->dev, "aclk_gscl_fimc_user");
 	if (IS_ERR(aclk_gscl_fimc_user)) {
-		clk_put(sclk_mediatop_pll);
-		clk_put(aclk_gscl_fimc);
+		pr_err("[@] clk_get(aclk_gscl_fimc_user) is fail\n");
 		return PTR_ERR(aclk_gscl_fimc_user);
+	}
+
+	aclk_gscl_fimc = clk_get(&pdev->dev, "aclk_gscl_fimc");
+	if (IS_ERR(aclk_gscl_fimc)) {
+		clk_put(aclk_gscl_fimc_user);
+		pr_err("[@] clk_get(aclk_gscl_fimc) is fail\n");
+		return PTR_ERR(aclk_gscl_fimc);
 	}
 
 	sclk_csis = clk_get(&pdev->dev, "sclk_csis");
 	if (IS_ERR(sclk_csis)) {
-		clk_put(sclk_mediatop_pll);
-		clk_put(aclk_gscl_fimc);
 		clk_put(aclk_gscl_fimc_user);
+		clk_put(aclk_gscl_fimc);
+		pr_err("[@] clk_get(sclk_csis) is fail\n");
 		return PTR_ERR(sclk_csis);
 	}
 
-	clk_set_parent(aclk_gscl_fimc, sclk_mediatop_pll);
-	clk_set_rate(aclk_gscl_fimc, 334 * 1000000);
 	clk_set_parent(aclk_gscl_fimc_user, aclk_gscl_fimc);
 	clk_set_parent(sclk_csis, aclk_gscl_fimc_user);
 
-	clk_put(sclk_mediatop_pll);
+	pr_info("[@] aclk_gscl_fimc : %ld\n", clk_get_rate(aclk_gscl_fimc));
+	pr_info("[@] aclk_gscl_fimc_user : %ld\n", clk_get_rate(aclk_gscl_fimc_user));
+	pr_info("[@] sclk_csis : %ld\n", clk_get_rate(sclk_csis));
+
 	clk_put(aclk_gscl_fimc);
 	clk_put(aclk_gscl_fimc_user);
 	clk_put(sclk_csis);
 
-	/* sensor part */
-	cam_src = clk_get(&pdev->dev, "ext_xtal");
-	if (IS_ERR(cam_src))
-		return PTR_ERR(cam_src);
-
-	/** #0 */
-	cam_clk = clk_get(&pdev->dev, "dout_isp1_sensor0_a");
-	if (IS_ERR(cam_clk)) {
-		clk_put(cam_src);
-		return PTR_ERR(cam_clk);
+	aclk_gscl_400 = clk_get(&pdev->dev, "aclk_gscl_400");
+	if (IS_ERR(aclk_gscl_400)) {
+		pr_err("[@] clk_get(aclk_gscl_400) is fail\n");
+		return PTR_ERR(aclk_gscl_400);
 	}
 
-	clk_set_parent(cam_clk, cam_src);
-	clk_set_rate(cam_clk, 24 * 1000000);
-	clk_put(cam_clk);
-
-	/** #1 */
-	cam_clk = clk_get(&pdev->dev, "dout_isp1_sensor1_a");
-	if (IS_ERR(cam_clk)) {
-		clk_put(cam_src);
-		return PTR_ERR(cam_clk);
+	aclk_m2m_400 = clk_get(&pdev->dev, "aclk_m2m_400");
+	if (IS_ERR(aclk_m2m_400)) {
+		clk_put(aclk_gscl_400);
+		pr_err("[@] clk_get(aclk_m2m_400) is fail\n");
+		return PTR_ERR(aclk_m2m_400);
 	}
 
-	clk_set_parent(cam_clk, cam_src);
-	clk_set_rate(cam_clk, 24 * 1000000);
-	clk_put(cam_clk);
-
-	/** #2 */
-	cam_clk = clk_get(&pdev->dev, "dout_isp1_sensor2_a");
-	if (IS_ERR(cam_clk)) {
-		clk_put(cam_src);
-		return PTR_ERR(cam_clk);
+	pclk_m2m_100 = clk_get(&pdev->dev, "pclk_m2m_100");
+	if (IS_ERR(pclk_m2m_100)) {
+		clk_put(aclk_gscl_400);
+		clk_put(aclk_m2m_400);
+		pr_err("[@] clk_get(pclk_m2m_100) is fail\n");
+		return PTR_ERR(pclk_m2m_100);
 	}
 
-	clk_set_parent(cam_clk, cam_src);
-	clk_set_rate(cam_clk, 24 * 1000000);
-	clk_put(cam_clk);
+	clk_set_parent(aclk_m2m_400, aclk_gscl_400);
 
-	clk_put(cam_src);
+	pr_info("[@] aclk_gscl_400 : %ld\n", clk_get_rate(aclk_gscl_400));
+	pr_info("[@] aclk_m2m_400 : %ld\n", clk_get_rate(aclk_m2m_400));
+	pr_info("[@] pclk_m2m_100 : %ld\n", clk_get_rate(pclk_m2m_100));
+
+	clk_put(aclk_gscl_400);
+	clk_put(aclk_m2m_400);
+	clk_put(pclk_m2m_100);
+
+	ext_xtal = clk_get(&pdev->dev, "ext_xtal");
+	if (IS_ERR(ext_xtal)) {
+		pr_err("[@] clk_get(ext_xtal) is fail\n");
+		return PTR_ERR(ext_xtal);
+	}
+
+	dout_isp1_sensor0_a = clk_get(&pdev->dev, "dout_isp1_sensor0_a");
+	if (IS_ERR(dout_isp1_sensor0_a)) {
+		clk_put(ext_xtal);
+		pr_err("[@] clk_get(dout_isp1_sensor0_a) is fail\n");
+		return PTR_ERR(dout_isp1_sensor0_a);
+	}
+
+	dout_isp1_sensor1_a = clk_get(&pdev->dev, "dout_isp1_sensor1_a");
+	if (IS_ERR(dout_isp1_sensor1_a)) {
+		clk_put(ext_xtal);
+		clk_put(dout_isp1_sensor0_a);
+		pr_err("[@] clk_get(dout_isp1_sensor1_a) is fail\n");
+		return PTR_ERR(dout_isp1_sensor1_a);
+	}
+
+	dout_isp1_sensor2_a = clk_get(&pdev->dev, "dout_isp1_sensor2_a");
+	if (IS_ERR(dout_isp1_sensor2_a)) {
+		clk_put(ext_xtal);
+		clk_put(dout_isp1_sensor0_a);
+		clk_put(dout_isp1_sensor1_a);
+		pr_err("[@] clk_get(dout_isp1_sensor2_a) is fail\n");
+		return PTR_ERR(dout_isp1_sensor2_a);
+	}
+
+	clk_set_parent(dout_isp1_sensor0_a, ext_xtal);
+	clk_set_parent(dout_isp1_sensor1_a, ext_xtal);
+	clk_set_parent(dout_isp1_sensor2_a, ext_xtal);
+	clk_set_rate(dout_isp1_sensor0_a, 24 * 1000000);
+	clk_set_rate(dout_isp1_sensor1_a, 24 * 1000000);
+	clk_set_rate(dout_isp1_sensor2_a, 24 * 1000000);
+
+	pr_info("[@] ext_xtal : %ld\n", clk_get_rate(ext_xtal));
+	pr_info("[@] dout_isp1_sensor0_a : %ld\n", clk_get_rate(dout_isp1_sensor0_a));
+	pr_info("[@] dout_isp1_sensor1_a : %ld\n", clk_get_rate(dout_isp1_sensor1_a));
+	pr_info("[@] dout_isp1_sensor2_a : %ld\n", clk_get_rate(dout_isp1_sensor2_a));
+
+	clk_put(ext_xtal);
+	clk_put(dout_isp1_sensor0_a);
+	clk_put(dout_isp1_sensor1_a);
+	clk_put(dout_isp1_sensor2_a);
 
 	return 0;
 }
@@ -302,10 +392,11 @@ int exynos5260_fimc_is_sensor_iclk_on(struct platform_device *pdev,
 	int ch;
 	char mipi[20];
 	char flite[20];
-	struct clk *mipi_ctrl = NULL;
-	struct clk *flite_ctrl = NULL;
+	struct clk *mipi_ctrl;
+	struct clk *flite_ctrl;
 
-	pr_info("%s\n", __func__);
+	mipi_ctrl = NULL;
+	flite_ctrl = NULL;
 
 	for (ch = FLITE_ID_A; ch < 2; ch++) {
 		snprintf(mipi, sizeof(mipi), "gscl_wrap%d", ch);
@@ -630,6 +721,41 @@ int exynos3470_fimc_is_sensor_iclk_off(struct platform_device *pdev,
 
 	return 0;
 }
+#elif defined(CONFIG_ARCH_EXYNOS3)
+int exynos3_fimc_is_sensor_iclk_cfg(struct platform_device *pdev,
+	u32 scenario,
+	u32 channel)
+{
+	return 0;
+}
+
+int exynos3_fimc_is_sensor_mclk_on(struct platform_device *pdev,
+	u32 scenario,
+	u32 channel)
+{
+	return 0;
+}
+
+int exynos3_fimc_is_sensor_mclk_off(struct platform_device *pdev,
+	u32 scenario,
+	u32 channel)
+{
+	return 0;
+}
+
+int exynos3_fimc_is_sensor_iclk_on(struct platform_device *pdev,
+	u32 scenario,
+	u32 channel)
+{
+	return 0;
+}
+
+int exynos3_fimc_is_sensor_iclk_off(struct platform_device *pdev,
+	u32 scenario,
+	u32 channel)
+{
+	return 0;
+}
 #endif
 
 /* COMMON INTERFACE */
@@ -641,6 +767,8 @@ int exynos_fimc_is_sensor_iclk_cfg(struct platform_device *pdev,
 	return exynos5260_fimc_is_sensor_iclk_cfg(pdev, scenario, channel);
 #elif defined(CONFIG_SOC_EXYNOS3470)
 	return exynos3470_fimc_is_sensor_iclk_cfg(pdev, scenario, channel);
+#elif defined(CONFIG_ARCH_EXYNOS3)
+	return exynos3_fimc_is_sensor_iclk_cfg(pdev, scenario, channel);
 #else
 	pr_info("%s : can't find!! \n", __func__);
 	return 0;
@@ -655,6 +783,8 @@ int exynos_fimc_is_sensor_iclk_on(struct platform_device *pdev,
 	return exynos5260_fimc_is_sensor_iclk_on(pdev, scenario, channel);
 #elif defined(CONFIG_SOC_EXYNOS3470)
 	return exynos3470_fimc_is_sensor_iclk_on(pdev, scenario, channel);
+#elif defined(CONFIG_ARCH_EXYNOS3)
+	return exynos3_fimc_is_sensor_iclk_on(pdev, scenario, channel);
 #else
 	pr_info("%s : can't find!! \n", __func__);
 	return 0;
@@ -669,6 +799,8 @@ int exynos_fimc_is_sensor_iclk_off(struct platform_device *pdev,
 	return exynos5260_fimc_is_sensor_iclk_off(pdev, scenario, channel);
 #elif defined(CONFIG_SOC_EXYNOS3470)
 	return exynos3470_fimc_is_sensor_iclk_off(pdev, scenario, channel);
+#elif defined(CONFIG_ARCH_EXYNOS3)
+	return exynos3_fimc_is_sensor_iclk_off(pdev, scenario, channel);
 #else
 	pr_info("%s : can't find!! \n", __func__);
 	return 0;
@@ -683,6 +815,8 @@ int exynos_fimc_is_sensor_mclk_on(struct platform_device *pdev,
 	return exynos5260_fimc_is_sensor_mclk_on(pdev, scenario, channel);
 #elif defined(CONFIG_SOC_EXYNOS3470)
 	return exynos3470_fimc_is_sensor_mclk_on(pdev, scenario, channel);
+#elif defined(CONFIG_ARCH_EXYNOS3)
+	return exynos3_fimc_is_sensor_mclk_on(pdev, scenario, channel);
 #else
 	pr_info("%s : can't find!! \n", __func__);
 	return 0;
@@ -697,6 +831,8 @@ int exynos_fimc_is_sensor_mclk_off(struct platform_device *pdev,
 	return exynos5260_fimc_is_sensor_mclk_off(pdev, scenario, channel);
 #elif defined(CONFIG_SOC_EXYNOS3470)
 	return exynos3470_fimc_is_sensor_mclk_off(pdev, scenario, channel);
+#elif defined(CONFIG_ARCH_EXYNOS3)
+	return exynos3_fimc_is_sensor_mclk_off(pdev, scenario, channel);
 #else
 	pr_info("%s : can't find!! \n", __func__);
 	return 0;

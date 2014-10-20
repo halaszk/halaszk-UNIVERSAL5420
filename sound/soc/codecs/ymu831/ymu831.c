@@ -42,7 +42,12 @@
 #include <sound/jack.h>
 #include <mach/exynos5-audio.h>
 
+#ifdef CONFIG_MACH_M2ALTE_KOR_LGT
+#include "ymu831_cfg_mbs3_off.h"
+#else
 #include "ymu831_cfg.h"
+#endif
+
 #include "ymu831_path_cfg.h"
 #include "ymu831.h"
 #include "ymu831_priv.h"

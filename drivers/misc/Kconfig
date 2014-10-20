@@ -545,6 +545,14 @@ config MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION
       If you say yes here you will get support for the MHL cable
       detection.
 
+config MUIC_MAX77803_SUPPORT_PS_CABLE
+    bool "MUIC_MAX77803_SUPPORT_PS_CABLE"
+    depends on MFD_MAX77803
+    default n
+    help
+      If you say yes here you will get support for the Power sharing cable
+      detection.
+
 config WL127X_RFKILL
 	tristate "Bluetooth power control driver for TI wl127x"
 	depends on RFKILL
@@ -568,4 +576,6 @@ source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 source "drivers/misc/modem_v2/Kconfig"
+source "drivers/misc/thin_modem/Kconfig"
+source "drivers/misc/mdm_if/Kconfig"
 endmenu

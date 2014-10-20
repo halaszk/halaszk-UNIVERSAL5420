@@ -30,8 +30,13 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/module.h>
+
 #include <linux/mfd/max77803.h>
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77804k-private.h>
+#else
 #include <linux/mfd/max77803-private.h>
+#endif
 
 struct max77803_data {
 	struct device *dev;

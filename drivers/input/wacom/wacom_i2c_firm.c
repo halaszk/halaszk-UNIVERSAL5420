@@ -49,13 +49,13 @@ char fw_chksum[] = { 0x1F, 0xF0, 0x89, 0x4D, 0x4E, };
 const char B934_chksum[] = { 0x1F, 0x93, 0x7E, 0xDE, 0xAD, };
 
 #elif defined(CONFIG_MACH_HLLTE) || \
-	defined(CONFIG_MACH_HL3G)
+	defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_MEGA2ELTE)
 const unsigned int fw_size = 0xEFFF;
 const unsigned char mpu_type = 0x28;
-unsigned int fw_ver_file = 0x1447;
+unsigned int fw_ver_file = 0x144B;
 unsigned char *fw_name = "epen/W9001_HL_EUR.bin";
 
-char fw_chksum[] = { 0x1F, 0xC6, 0x29, 0xD5, 0xE0, };
+char fw_chksum[] = { 0x1F, 0x04, 0xF7, 0x9F, 0x69, };
 
 #endif
 

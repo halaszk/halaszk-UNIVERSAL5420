@@ -23,6 +23,10 @@
 #include <mach/cpufreq.h>
 #include <mach/asv-exynos.h>
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+#include <mach/sec_debug.h>
+#endif
+
 #define CPUFREQ_LEVEL_END_CA15	(L15 + 1)
 #define L2_LOCAL_PWR_EN		0x7
 
@@ -330,18 +334,18 @@ static int exynos5260_bus_table_CA15[CPUFREQ_LEVEL_END_CA15] = {
 	 667000,	/* 1.6 GHz */
 	 667000,	/* 1.5 GHz */
 	 667000,	/* 1.4 GHz */
-	 543000,	/* 1.3 GHz */
-	 543000,	/* 1.2 GHz */
-	 543000,	/* 1.1 GHz */
-	 413000,	/* 1.0 GHz */
-	 413000,	/* 900 MHz */
-	 413000,	/* 800 MHz */
-	 275000,	/* 700 MHz */
-	 206000,	/* 600 MHz */
-	 165000,	/* 500 MHz */
-	 138000,	/* 400 MHz */
-	 0,		/* 300 MHz */
-	 0,		/* 200 MHz */
+	 667000,	/* 1.3 GHz */
+	 667000,	/* 1.2 GHz */
+	 667000,	/* 1.1 GHz */
+	 543000,	/* 1.0 GHz */
+	 543000,	/* 900 MHz */
+	 543000,	/* 800 MHz */
+	 413000,	/* 700 MHz */
+	 413000,	/* 600 MHz */
+	 413000,	/* 500 MHz */
+	 413000,	/* 400 MHz */
+	 413000,	/* 300 MHz */
+	 413000,	/* 200 MHz */
 };
 
 static int exynos5260_ema_valid_check_CA15(int ema_con_val)
@@ -541,6 +545,11 @@ static void exynos5260_set_frequency_CA15(unsigned int old_index,
 {
 	unsigned int tmp;
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"old:%7d new:%7d (A15)",
+		exynos5260_freq_table_CA15[old_index].frequency, exynos5260_freq_table_CA15[new_index].frequency);
+#endif
 	if (old_index > new_index) {
 		if (!exynos5260_pms_change_CA15(old_index, new_index)) {
 			/* 1. Change the system clock divider values */
@@ -609,10 +618,7 @@ static void __init set_volt_table_CA15(void)
 				exynos5260_volt_table_CA15[i]);
 
 		asv_abb = get_match_abb(ID_ARM, exynos5260_freq_table_CA15[i].frequency);
-		if (!asv_abb)
-			exynos5260_abb_table_CA15[i] = ABB_BYPASS;
-		else
-			exynos5260_abb_table_CA15[i] = asv_abb;
+		exynos5260_abb_table_CA15[i] = asv_abb;
 
 		pr_info("CPUFREQ of CA15  L%d : ABB %d\n", i,
 				exynos5260_abb_table_CA15[i]);

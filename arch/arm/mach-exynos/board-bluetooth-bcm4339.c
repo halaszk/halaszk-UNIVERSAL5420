@@ -37,6 +37,7 @@
 #include <sound/exynos.h>
 
 #include <mach/gpio.h>
+#include <mach/gpio-exynos.h>
 #include <plat/gpio-cfg.h>
 
 #define BT_UART_CFG
@@ -64,12 +65,12 @@ EXPORT_SYMBOL(bt_is_running);
 extern int s3c_gpio_slp_cfgpin(unsigned int pin, unsigned int config);
 extern int s3c_gpio_slp_setpull_updown(unsigned int pin, unsigned int config);
 
-#if !defined(CONFIG_MACH_HL3G) && !defined(CONFIG_MACH_HLLTE) && !defined(CONFIG_MACH_M2LTE)
+#if !defined(CONFIG_MACH_UNIVERSAL5260)
 static unsigned int bt_uart_on_table[][4] = {
-	{EXYNOS5260_GPZ1(0), 2, 2, S3C_GPIO_PULL_NONE},
-	{EXYNOS5260_GPZ1(1), 2, 2, S3C_GPIO_PULL_NONE},
-	{EXYNOS5260_GPZ1(2), 2, 2, S3C_GPIO_PULL_NONE},
-	{EXYNOS5260_GPZ1(3), 2, 2, S3C_GPIO_PULL_NONE},
+	{GPIO_BT_UART_RXD, 2, 2, S3C_GPIO_PULL_NONE},
+	{GPIO_BT_UART_TXD, 2, 2, S3C_GPIO_PULL_NONE},
+	{GPIO_BT_UART_CTS, 2, 2, S3C_GPIO_PULL_NONE},
+	{GPIO_BT_UART_RTS, 2, 2, S3C_GPIO_PULL_NONE},
 };
 #endif
 
@@ -92,38 +93,38 @@ void bt_uart_rts_ctrl(int flag)
 		return;
 	if (flag) {
 		/* BT RTS Set to HIGH */
-		s3c_gpio_cfgpin(EXYNOS5260_GPZ1(3), S3C_GPIO_OUTPUT);
-		s3c_gpio_setpull(EXYNOS5260_GPZ1(3), S3C_GPIO_PULL_NONE);
-		gpio_set_value(EXYNOS5260_GPZ1(3), 1);
+		s3c_gpio_cfgpin(GPIO_BT_UART_RTS, S3C_GPIO_OUTPUT);
+		s3c_gpio_setpull(GPIO_BT_UART_RTS, S3C_GPIO_PULL_NONE);
+		gpio_set_value(GPIO_BT_UART_RTS, 1);
 	} else {
 		/* restore BT RTS state */
-		s3c_gpio_cfgpin(EXYNOS5260_GPZ1(3), S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(EXYNOS5260_GPZ1(3), S3C_GPIO_PULL_NONE);
+		s3c_gpio_cfgpin(GPIO_BT_UART_RTS, S3C_GPIO_SFN(2));
+		s3c_gpio_setpull(GPIO_BT_UART_RTS, S3C_GPIO_PULL_NONE);
 	}
 }
 
 EXPORT_SYMBOL(bt_uart_rts_ctrl);
 
-#if defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_M2LTE)
+#if defined(CONFIG_MACH_UNIVERSAL5260)
 static void bt_uart_gpio_pdn_ctrl(void)
 {
-	s3c_gpio_cfgpin(EXYNOS5260_GPZ1(0), S3C_GPIO_INPUT);
-	s3c_gpio_setpull(EXYNOS5260_GPZ1(0), S5P_GPIO_PD_UP_ENABLE);
-	s3c_gpio_cfgpin(EXYNOS5260_GPZ1(1), S5P_GPIO_PD_INPUT);
-	s3c_gpio_setpull(EXYNOS5260_GPZ1(1), S5P_GPIO_PD_UP_ENABLE);
-	s3c_gpio_cfgpin(EXYNOS5260_GPZ1(2), S3C_GPIO_INPUT);
-	s3c_gpio_setpull(EXYNOS5260_GPZ1(2), S5P_GPIO_PD_UPDOWN_DISABLE);
-	s3c_gpio_cfgpin(EXYNOS5260_GPZ1(3), S5P_GPIO_PD_INPUT);
-	s3c_gpio_setpull(EXYNOS5260_GPZ1(3), S5P_GPIO_PD_UP_ENABLE);
+	s3c_gpio_cfgpin(GPIO_BT_UART_RXD, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(GPIO_BT_UART_RXD, S5P_GPIO_PD_UP_ENABLE);
+	s3c_gpio_cfgpin(GPIO_BT_UART_TXD, S5P_GPIO_PD_INPUT);
+	s3c_gpio_setpull(GPIO_BT_UART_TXD, S5P_GPIO_PD_UP_ENABLE);
+	s3c_gpio_cfgpin(GPIO_BT_UART_CTS, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(GPIO_BT_UART_CTS, S5P_GPIO_PD_UPDOWN_DISABLE);
+	s3c_gpio_cfgpin(GPIO_BT_UART_RTS, S5P_GPIO_PD_INPUT);
+	s3c_gpio_setpull(GPIO_BT_UART_RTS, S5P_GPIO_PD_UP_ENABLE);
 
-	s5p_gpio_set_pd_pull(EXYNOS5260_GPZ1(0), S5P_GPIO_PD_UP_ENABLE);
-	s5p_gpio_set_pd_cfg(EXYNOS5260_GPZ1(0), S5P_GPIO_PD_INPUT);
-	s5p_gpio_set_pd_pull(EXYNOS5260_GPZ1(1), S5P_GPIO_PD_UP_ENABLE);
-	s5p_gpio_set_pd_cfg(EXYNOS5260_GPZ1(1), S5P_GPIO_PD_INPUT);
-	s5p_gpio_set_pd_pull(EXYNOS5260_GPZ1(2), S5P_GPIO_PD_UPDOWN_DISABLE);
-	s5p_gpio_set_pd_cfg(EXYNOS5260_GPZ1(2), S5P_GPIO_PD_INPUT);
-	s5p_gpio_set_pd_pull(EXYNOS5260_GPZ1(3), S5P_GPIO_PD_UP_ENABLE);
-	s5p_gpio_set_pd_cfg(EXYNOS5260_GPZ1(3), S5P_GPIO_PD_INPUT);
+	s5p_gpio_set_pd_pull(GPIO_BT_UART_RXD, S5P_GPIO_PD_UP_ENABLE);
+	s5p_gpio_set_pd_cfg(GPIO_BT_UART_RXD, S5P_GPIO_PD_INPUT);
+	s5p_gpio_set_pd_pull(GPIO_BT_UART_TXD, S5P_GPIO_PD_UP_ENABLE);
+	s5p_gpio_set_pd_cfg(GPIO_BT_UART_TXD, S5P_GPIO_PD_INPUT);
+	s5p_gpio_set_pd_pull(GPIO_BT_UART_CTS, S5P_GPIO_PD_UPDOWN_DISABLE);
+	s5p_gpio_set_pd_cfg(GPIO_BT_UART_CTS, S5P_GPIO_PD_INPUT);
+	s5p_gpio_set_pd_pull(GPIO_BT_UART_RTS, S5P_GPIO_PD_UP_ENABLE);
+	s5p_gpio_set_pd_cfg(GPIO_BT_UART_RTS, S5P_GPIO_PD_INPUT);
 }
 #endif
 #endif
@@ -134,7 +135,7 @@ static int bcm4339_bt_rfkill_set_power(void *data, bool blocked)
 	if (!blocked) {
 		pr_info("[BT] Bluetooth Power On.\n");
 #ifdef BT_UART_CFG
-#if !defined(CONFIG_MACH_HL3G) && !defined(CONFIG_MACH_HLLTE) && !defined(CONFIG_MACH_M2LTE)
+#if !defined(CONFIG_MACH_UNIVERSAL5260)
 		bt_config_gpio_table(ARRAY_SIZE(bt_uart_on_table),
 					bt_uart_on_table);
 #endif
@@ -289,7 +290,7 @@ static int bcm4339_bluetooth_probe(struct platform_device *pdev)
 		gpio_free(GPIO_BT_EN);
 		return rc;
 	}
-	s3c_gpio_setpull(EXYNOS5260_GPX2(1), S3C_GPIO_PULL_NONE);
+	s3c_gpio_setpull(GPIO_BT_HOST_WAKE, S3C_GPIO_PULL_NONE);
 	gpio_direction_input(GPIO_BT_HOST_WAKE);
 	gpio_direction_output(GPIO_BT_WAKE, 0);
 	gpio_direction_output(GPIO_BT_EN, 0);
@@ -333,7 +334,7 @@ static int bcm4339_bluetooth_probe(struct platform_device *pdev)
 	}
 #endif
 #ifdef BT_UART_CFG
-#if defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_M2LTE)
+#if defined(CONFIG_MACH_UNIVERSAL5260)
 	exynos_maudio_uart_cfg_gpio_pdn = &bt_uart_gpio_pdn_ctrl;
 #endif
 #endif

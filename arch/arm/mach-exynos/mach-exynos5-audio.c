@@ -22,6 +22,13 @@
 static struct clk *mclk_clkout;
 static unsigned int mclk_usecount;
 
+#ifdef CONFIG_SND_SOC_DUMMY_CODEC
+static struct platform_device exynos_dummy_codec = {
+	.name = "dummy-codec",
+	.id = -1,
+};
+#endif
+
 struct platform_device *exynos5_audio_devices[] __initdata = {
 	&exynos5_device_lpass,
 #ifdef CONFIG_SND_SAMSUNG_I2S
@@ -38,6 +45,9 @@ struct platform_device *exynos5_audio_devices[] __initdata = {
 #endif
 	&samsung_asoc_dma,
 	&samsung_asoc_idma,
+#ifdef CONFIG_SND_SOC_DUMMY_CODEC
+	&exynos_dummy_codec,
+#endif
 };
 
 static void exynos5_audio_setup_clocks(void)

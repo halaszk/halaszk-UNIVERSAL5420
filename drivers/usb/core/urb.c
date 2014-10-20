@@ -626,11 +626,11 @@ void usb_kill_urb(struct urb *urb)
 	atomic_inc(&urb->reject);
 
 	usb_hcd_unlink_urb(urb, -ENOENT);
-	if (atomic_read(&urb->use_count) < 0)
-		pr_err("%s: Error, use_count mismatch\n", __func__);
-	else
-		wait_event(usb_kill_urb_queue, atomic_read(&urb->use_count) == 0);
+	wait_event(usb_kill_urb_queue, atomic_read(&urb->use_count) <= 0);
 
+	if (atomic_read(&urb->use_count) < 0)
+		pr_err("%s: urb use_count mismatch, status=%d, cnt=%d\n",
+			__func__, urb->status, atomic_read(&urb->use_count));
 	atomic_dec(&urb->reject);
 }
 EXPORT_SYMBOL_GPL(usb_kill_urb);

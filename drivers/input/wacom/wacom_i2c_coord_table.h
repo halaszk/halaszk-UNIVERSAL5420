@@ -45,7 +45,7 @@ char *tuning_version_B713 = "0730";
 #elif defined(CONFIG_HA)
 short origin_offset[] = {752, 643};
 #elif defined(CONFIG_MACH_HLLTE) || \
-	defined(CONFIG_MACH_HL3G)
+	defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_MEGA2ELTE)
 short origin_offset[] = {740, 760};
 #endif
 #if 0

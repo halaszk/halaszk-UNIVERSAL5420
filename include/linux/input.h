@@ -480,6 +480,8 @@ struct input_keymap_entry {
 #define KEY_DUMMY_HOME		252
 #define KEY_DUMMY_BACK		253
 
+#define KEY_RECENT   254
+
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100

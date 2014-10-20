@@ -19,8 +19,13 @@
 #include <linux/clk.h>
 #include <linux/i2c.h>
 #include <linux/regulator/consumer.h>
+
 #include <linux/mfd/max77803.h>
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77804k-private.h>
+#else
 #include <linux/mfd/max77803-private.h>
+#endif
 
 #define TEST_MODE_TIME 10000
 

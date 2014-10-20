@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_wlfc.c 444438 2013-12-19 18:12:15Z $
+ * $Id: dhd_wlfc.c 455573 2014-02-14 17:49:31Z $
  *
  */
 
@@ -1117,6 +1117,10 @@ static int
 _dhd_wlfc_is_destination_open(athost_wl_status_info_t* ctx,
 	wlfc_mac_descriptor_t* entry, int prec)
 {
+	if (entry->interface_id >= WLFC_MAX_IFNUM) {
+		ASSERT(&ctx->destination_entries.other == entry);
+		return 1;
+	}
 	if (ctx->destination_entries.interfaces[entry->interface_id].iftype ==
 		WLC_E_IF_ROLE_P2P_GO) {
 		/* - destination interface is of type p2p GO.
@@ -1244,7 +1248,6 @@ _dhd_wlfc_enque_delayq(athost_wl_status_info_t* ctx, void* pktbuf, int prec)
 			FALSE, WLFC_SEQCOUNT(entry, prec))
 			== FALSE) {
 			WLFC_DBGMESG(("D"));
-			_dhd_wlfc_prec_drop(ctx->dhdp, (prec << 1), pktbuf, FALSE);
 			ctx->stats.delayq_full_error++;
 			return BCME_ERROR;
 		}
@@ -1618,7 +1621,7 @@ _dhd_wlfc_mac_entry_update(athost_wl_status_info_t* ctx, wlfc_mac_descriptor_t* 
 				ctx->active_entry_count++;
 			} else {
 				DHD_ERROR(("%s():%d, entry(%d)\n", __FUNCTION__, __LINE__,
-					entry - &ctx->destination_entries.nodes[0]));
+					(int)(entry - &ctx->destination_entries.nodes[0])));
 			}
 		}
 	} else if (action == eWLFC_MAC_ENTRY_ACTION_DEL) {
@@ -2506,7 +2509,7 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 	uint8* tmpbuf;
 	uint16 remainder = (uint16)tlv_hdr_len;
 	uint16 processed = 0;
-	athost_wl_status_info_t* wlfc;
+	athost_wl_status_info_t* wlfc = NULL;
 	void* entry;
 
 	if ((dhd == NULL) || (pktbuf == NULL)) {
@@ -2516,12 +2519,14 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 
 	dhd_os_wlfc_block(dhd);
 
-	if (!dhd->wlfc_state || (dhd->proptxstatus_mode == WLFC_FCMODE_NONE)) {
-		dhd_os_wlfc_unblock(dhd);
-		return WLFC_UNSUPPORTED;
+	if (dhd->proptxstatus_mode != WLFC_ONLY_AMPDU_HOSTREORDER) {
+		if (!dhd->wlfc_state || (dhd->proptxstatus_mode == WLFC_FCMODE_NONE)) {
+			dhd_os_wlfc_unblock(dhd);
+			return WLFC_UNSUPPORTED;
+		}
+		wlfc = (athost_wl_status_info_t*)dhd->wlfc_state;
 	}
 
-	wlfc = (athost_wl_status_info_t*)dhd->wlfc_state;
 	tmpbuf = (uint8*)PKTDATA(dhd->osh, pktbuf);
 
 	if (remainder) {
@@ -2542,6 +2547,25 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 			remainder -= 2 + len;
 			processed += 2 + len;
 			entry = NULL;
+
+			DHD_INFO(("%s():%d type %d remainder %d processed %d\n",
+				__FUNCTION__, __LINE__, type, remainder, processed));
+
+			if (type == WLFC_CTL_TYPE_HOST_REORDER_RXPKTS)
+				_dhd_wlfc_reorderinfo_indicate(value, len, reorder_info_buf,
+					reorder_info_len);
+
+			if (wlfc == NULL) {
+				ASSERT(dhd->proptxstatus_mode == WLFC_ONLY_AMPDU_HOSTREORDER);
+
+				if (type != WLFC_CTL_TYPE_HOST_REORDER_RXPKTS &&
+					type != WLFC_CTL_TYPE_TRANS_ID)
+					DHD_INFO(("%s():%d dhd->wlfc_state is NULL yet!"
+					" type %d remainder %d processed %d\n",
+					__FUNCTION__, __LINE__, type, remainder, processed));
+				continue;
+			}
+
 			if (type == WLFC_CTL_TYPE_TXSTATUS) {
 				_dhd_wlfc_compressed_txstatus_update(dhd, value, 1, &entry);
 			}
@@ -2554,9 +2578,6 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 				_dhd_wlfc_compressed_txstatus_update(dhd, value,
 					value[compcnt_offset], &entry);
 			}
-			else if (type == WLFC_CTL_TYPE_HOST_REORDER_RXPKTS)
-				_dhd_wlfc_reorderinfo_indicate(value, len, reorder_info_buf,
-					reorder_info_len);
 			else if (type == WLFC_CTL_TYPE_FIFO_CREDITBACK)
 				_dhd_wlfc_fifocreditback_indicate(dhd, value);
 
@@ -2590,13 +2611,14 @@ dhd_wlfc_parse_header_info(dhd_pub_t *dhd, void* pktbuf, int tlv_hdr_len, uchar 
 				_dhd_wlfc_suppress_txq(dhd, _dhd_wlfc_entrypkt_fn, entry);
 			}
 		}
-		if (remainder != 0) {
+		if (remainder != 0 && wlfc) {
 			/* trouble..., something is not right */
 			wlfc->stats.tlv_parse_failed++;
 		}
 	}
 
-	wlfc->stats.dhd_hdrpulls++;
+	if (wlfc)
+		wlfc->stats.dhd_hdrpulls++;
 
 	dhd_os_wlfc_unblock(dhd);
 	return BCME_OK;
@@ -2642,7 +2664,8 @@ dhd_wlfc_commit_packets(dhd_pub_t *dhdp, f_commitpkt_t fcommit, void* commit_ctx
 			uint32 htod = 0;
 			WL_TXSTATUS_SET_FLAGS(htod, WLFC_PKTFLAG_PKTFROMHOST);
 			_dhd_wlfc_pushheader(ctx, pktbuf, FALSE, 0, 0, htod, 0, FALSE);
-			fcommit(commit_ctx, pktbuf);
+			if (!fcommit(commit_ctx, pktbuf))
+				PKTFREE(ctx->osh, pktbuf, TRUE);
 			rc = BCME_OK;
 		}
 		goto exit;
@@ -2667,7 +2690,10 @@ dhd_wlfc_commit_packets(dhd_pub_t *dhdp, f_commitpkt_t fcommit, void* commit_ctx
 		ac = DHD_PKTTAG_FIFO(PKTTAG(pktbuf));
 		/* en-queue the packets to respective queue. */
 		rc = _dhd_wlfc_enque_delayq(ctx, pktbuf, ac);
-		ctx->stats.pktin++;
+		if (rc)
+			_dhd_wlfc_prec_drop(ctx->dhdp, (ac << 1), pktbuf, FALSE);
+		else
+			ctx->stats.pktin++;
 	}
 
 	for (ac = AC_COUNT; ac >= 0; ac--) {
@@ -2860,10 +2886,8 @@ dhd_wlfc_txcomplete(dhd_pub_t *dhd, void *txp, bool success)
 		wlfc->stats.signal_only_pkts_freed++;
 #endif
 		/* is this a signal-only packet? */
-		if (success) {
-			_dhd_wlfc_pullheader(wlfc, txp);
-			PKTFREE(wlfc->osh, txp, TRUE);
-		}
+		_dhd_wlfc_pullheader(wlfc, txp);
+		PKTFREE(wlfc->osh, txp, TRUE);
 		dhd_os_wlfc_unblock(dhd);
 		return BCME_OK;
 	}
@@ -2996,7 +3020,45 @@ dhd_wlfc_init(dhd_pub_t *dhd)
 	return BCME_OK;
 }
 
-	int
+int
+dhd_wlfc_hostreorder_init(dhd_pub_t *dhd)
+{
+	char iovbuf[14]; /* Room for "tlv" + '\0' + parameter */
+	/* enable only ampdu hostreorder here */
+	uint32 tlv;
+
+	if (dhd == NULL) {
+		DHD_ERROR(("Error: %s():%d\n", __FUNCTION__, __LINE__));
+		return BCME_BADARG;
+	}
+
+	DHD_TRACE(("%s():%d Enter\n", __FUNCTION__, __LINE__));
+
+	tlv = WLFC_FLAGS_HOST_RXRERODER_ACTIVE;
+
+	/* enable proptxtstatus signaling by default */
+	bcm_mkiovar("tlv", (char *)&tlv, 4, iovbuf, sizeof(iovbuf));
+	if (dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0) < 0) {
+		DHD_ERROR(("%s(): failed to enable/disable bdcv2 tlv signaling\n",
+			__FUNCTION__));
+	}
+	else {
+		/*
+		Leaving the message for now, it should be removed after a while; once
+		the tlv situation is stable.
+		*/
+		DHD_ERROR(("%s(): successful bdcv2 tlv signaling, %d\n",
+			__FUNCTION__, tlv));
+	}
+
+	dhd_os_wlfc_block(dhd);
+	dhd->proptxstatus_mode = WLFC_ONLY_AMPDU_HOSTREORDER;
+	dhd_os_wlfc_unblock(dhd);
+
+	return BCME_OK;
+}
+
+int
 dhd_wlfc_suspend(dhd_pub_t *dhd)
 {
 
@@ -3104,10 +3166,12 @@ dhd_wlfc_cleanup(dhd_pub_t *dhd, f_processpkt_t fn, void *arg)
 int
 dhd_wlfc_deinit(dhd_pub_t *dhd)
 {
-	char iovbuf[14]; /* Room for "tlv" + '\0' + parameter */
+	char iovbuf[32]; /* Room for "ampdu_hostreorder" or "tlv" + '\0' + parameter */
 	/* cleanup all psq related resources */
 	athost_wl_status_info_t* wlfc;
 	uint32 tlv = 0;
+	uint32 hostreorder = 0;
+	int ret = BCME_OK;
 
 	if (dhd == NULL) {
 		DHD_ERROR(("Error: %s():%d\n", __FUNCTION__, __LINE__));
@@ -3123,19 +3187,38 @@ dhd_wlfc_deinit(dhd_pub_t *dhd)
 	dhd->wlfc_enabled = FALSE;
 	dhd_os_wlfc_unblock(dhd);
 
+	/* query ampdu hostreorder */
+	bcm_mkiovar("ampdu_hostreorder", NULL, 0, iovbuf, sizeof(iovbuf));
+	ret = dhd_wl_ioctl_cmd(dhd, WLC_GET_VAR, iovbuf, sizeof(iovbuf), FALSE, 0);
+	if (ret == BCME_OK)
+		hostreorder = *((uint32 *)iovbuf);
+	else {
+		hostreorder = 0;
+		DHD_ERROR(("%s():%d, ampdu_hostreorder get failed Err = %d\n",
+			__FUNCTION__, __LINE__, ret));
+	}
+
+	if (hostreorder) {
+		tlv = WLFC_FLAGS_HOST_RXRERODER_ACTIVE;
+		DHD_ERROR(("%s():%d, maintain HOST RXRERODER flag in tvl\n",
+			__FUNCTION__, __LINE__));
+	}
+
 	/* Disable proptxtstatus signaling for deinit */
 	bcm_mkiovar("tlv", (char *)&tlv, 4, iovbuf, sizeof(iovbuf));
-	if (dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0) < 0) {
-		DHD_ERROR(("dhd_wlfc_init(): failed to enable/disable bdcv2 tlv signaling\n"));
-	}
-	else {
+	ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+
+	if (ret == BCME_OK) {
 		/*
 		Leaving the message for now, it should be removed after a while; once
 		the tlv situation is stable.
 		*/
-		DHD_ERROR(("dhd_wlfc_deinit(): successfully %s bdcv2 tlv signaling, %d\n",
+		DHD_ERROR(("%s():%d successfully %s bdcv2 tlv signaling, %d\n",
+			__FUNCTION__, __LINE__,
 			dhd->wlfc_enabled?"enabled":"disabled", tlv));
-	}
+	} else
+		DHD_ERROR(("%s():%d failed to enable/disable bdcv2 tlv signaling Err = %d\n",
+			__FUNCTION__, __LINE__, ret));
 
 	dhd_os_wlfc_block(dhd);
 
@@ -3172,6 +3255,8 @@ dhd_wlfc_deinit(dhd_pub_t *dhd)
 	/* free top structure */
 	MFREE(dhd->osh, dhd->wlfc_state, sizeof(athost_wl_status_info_t));
 	dhd->wlfc_state = NULL;
+	dhd->proptxstatus_mode = hostreorder ?
+		WLFC_ONLY_AMPDU_HOSTREORDER : WLFC_FCMODE_NONE;
 
 	dhd_os_wlfc_unblock(dhd);
 

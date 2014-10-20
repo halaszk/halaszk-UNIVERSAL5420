@@ -110,6 +110,7 @@ static void mxr_graph_format_set(struct mxr_layer *layer,
 static void mxr_graph_fix_geometry(struct mxr_layer *layer)
 {
 	struct mxr_geometry *geo = &layer->geo;
+	struct mxr_device *mdev = layer->mdev;
 
 	mxr_dbg(layer->mdev, "%s start\n", __func__);
 	/* limit to boundary size */
@@ -140,6 +141,18 @@ static void mxr_graph_fix_geometry(struct mxr_layer *layer)
 			geo->dst.full_width - geo->dst.x_offset);
 	geo->dst.height = clamp_val(geo->src.height, 1,
 			geo->dst.full_height - geo->dst.y_offset);
+
+	mxr_dbg(mdev, "========== GRP%d size information ==========\n", layer->idx);
+	mxr_dbg(mdev, "SRC: full width = %d, full height = %d\n",
+			geo->src.full_width, geo->src.full_height);
+	mxr_dbg(mdev, "SRC: width = %d, height = %d, x = %d, y = %d\n"
+			geo->src.width, geo->src.height,
+			geo->src.x_offset, geo->src.y_offset);
+	mxr_dbg(mdev, "DST: full width = %d, full height = %d\n",
+			geo->dst.full_width, geo->dst.full_height);
+	mxr_dbg(mdev, "DST: width = %d, height = %d, x = %d, y = %d\n",
+			geo->dst.width, geo->dst.height,
+			geo->dst.x_offset, geo->dst.y_offset);
 }
 
 /* PUBLIC API */

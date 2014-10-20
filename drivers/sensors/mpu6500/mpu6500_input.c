@@ -50,7 +50,10 @@
 #define MAX_GYRO	32767
 #define MIN_GYRO	-32768
 
-#define MPU6500_LOGTIME		10000
+#define MPU6500_DEFAULT_DELAY			200000000LL //(nSec)
+#define MPU6500_MAX_DELAY				255000000LL //(nSec)
+
+#define MPU6500_LOGTIME		10
 #define LOG_RESULT_LOCATION(x) {\
 	printk(KERN_ERR "%s:%s:%d result=%d\n",__FILE__,__func__,__LINE__, x);\
 }\
@@ -116,10 +119,10 @@ struct mpu6500_input_data {
 	struct mutex mutex;
 	struct wake_lock reactive_wake_lock;
 	atomic_t accel_enable;
-	atomic_t accel_delay;
+	ktime_t accel_delay;
 
 	atomic_t gyro_enable;
-	atomic_t gyro_delay;
+	ktime_t gyro_delay;
 	atomic_t reactive_state;
 	atomic_t reactive_enable;
 
@@ -132,9 +135,9 @@ struct mpu6500_input_data {
 	u16 enabled_sensors;
 	u16 sleep_sensors;
 	u32 chip_pos;
-	int current_delay;
+	int64_t current_delay;
 	int irq;
-	int count_logtime;
+	int count_logtime_acc;
 	int count_logtime_gyro;
 
 	int gyro_bias[3];
@@ -441,14 +444,15 @@ static void mpu6500_input_report_accel_xyz(struct mpu6500_input_data *data)
 	input_report_rel(data->accel_input, REL_X, acc.x - data->acc_cal[0]);
 	input_report_rel(data->accel_input, REL_Y, acc.y - data->acc_cal[1]);
 	input_report_rel(data->accel_input, REL_Z, acc.z - data->acc_cal[2]);
-
-	if (atomic_read(&data->accel_delay) * data->count_logtime > MPU6500_LOGTIME) {
-		pr_info("[SENSOR] %s, %d, %d, %d (Count = %d)\n",
-			__func__, acc.x, acc.y, acc.z, data->count_logtime);
-		data->count_logtime = 0;
-	} else
-		data->count_logtime++;
 	input_sync(data->accel_input);
+
+	if ((ktime_to_ns(data->accel_delay) * (int64_t)data->count_logtime_acc)
+		>= ((int64_t)MPU6500_LOGTIME * NSEC_PER_SEC)) {
+		pr_info("[SENSOR] %s, %d, %d, %d (Count = %d)\n",
+			__func__, acc.x, acc.y, acc.z, data->count_logtime_acc);
+		data->count_logtime_acc = 0;
+	} else
+		data->count_logtime_acc++;
 }
 
 static void mpu6500_input_report_gyro_xyz(struct mpu6500_input_data *data)
@@ -496,15 +500,15 @@ static void mpu6500_input_report_gyro_xyz(struct mpu6500_input_data *data)
 	input_report_rel(data->gyro_input, REL_RX, gyro.x);
 	input_report_rel(data->gyro_input, REL_RY, gyro.y);
 	input_report_rel(data->gyro_input, REL_RZ, gyro.z);
+	input_sync(data->gyro_input);
 
-	if (atomic_read(&data->gyro_delay) * data->count_logtime_gyro
-		> MPU6500_LOGTIME) {
+	if ((ktime_to_ns(data->gyro_delay) * (int64_t)data->count_logtime_gyro)
+		>= ((int64_t)MPU6500_LOGTIME * NSEC_PER_SEC)) {
 		pr_info("[SENSOR] %s, %d, %d, %d (Count = %d)\n",
 			__func__, gyro.x, gyro.y, gyro.z, data->count_logtime_gyro);
 		data->count_logtime_gyro = 0;
 	} else
 		data->count_logtime_gyro++;
-	input_sync(data->gyro_input);
 }
 
 static irqreturn_t mpu6500_input_irq_thread(int irq, void *dev)
@@ -710,7 +714,7 @@ static int mpu6500_input_set_motion_interrupt(struct mpu6500_input_data *data,
 		if (factory_test)
 			reg = 0x00;
 		else
-			reg = 0x0C; // 0x4B;
+			reg = 0x4B; /* Smart alert threshold */
 		mpu6500_i2c_write_single_reg(data->client, MPUREG_WOM_THR, reg);
 
 		if (!factory_test) {
@@ -917,22 +921,23 @@ static int mpu6500_input_activate_gyro(struct mpu6500_input_data *data,
 static int mpu6500_set_delay(struct mpu6500_input_data *data)
 {
 	int result = 0;
-	int delay = 200;
+	int64_t delay = MPU6500_DEFAULT_DELAY;
+	int delay_32 = 0;
 
 	if (data->enabled_sensors & MPU6500_SENSOR_ACCEL) {
-		delay = MIN(delay, atomic_read(&data->accel_delay));
+		delay = MIN(delay, ktime_to_ns(data->accel_delay));
 	}
 
 	if (data->enabled_sensors & MPU6500_SENSOR_GYRO) {
-		delay = MIN(delay, atomic_read(&data->gyro_delay));
+		delay = MIN(delay, ktime_to_ns(data->gyro_delay));
 	}
 
-	data->current_delay = delay;
+	data->current_delay = MIN(delay, MPU6500_MAX_DELAY);
+	delay_32 = ((int)data->current_delay / 1000000);
 
 	if (data->enabled_sensors & MPU6500_SENSOR_ACCEL ||
 		data->enabled_sensors & MPU6500_SENSOR_GYRO) {
-		CHECK_RESULT(mpu6500_input_set_odr(data,
-			data->current_delay));
+		CHECK_RESULT(mpu6500_input_set_odr(data, delay_32));
 #ifndef CONFIG_INPUT_MPU6500_POLLING
 		if (!atomic_read(&data->reactive_enable))
 			CHECK_RESULT(mpu6500_input_set_irq(data,
@@ -1128,7 +1133,7 @@ static ssize_t mpu6500_input_accel_delay_show(struct device *dev,
 	struct input_dev *input_data = to_input_dev(dev);
 	struct mpu6500_input_data *data = input_get_drvdata(input_data);
 
-	return sprintf(buf, "%d\n", atomic_read(&data->accel_delay));
+	return sprintf(buf, "%lld\n", ktime_to_ns(data->accel_delay));
 
 }
 
@@ -1138,20 +1143,20 @@ static ssize_t mpu6500_input_accel_delay_store(struct device *dev,
 {
 	struct input_dev *input_data = to_input_dev(dev);
 	struct mpu6500_input_data *data = input_get_drvdata(input_data);
-	int value = 0;
+	int64_t delay;
 	int ret = 0;
 
-	ret = kstrtoint(buf, 10, &value);
+	ret = kstrtoll(buf, 10, &delay);
 	if (ret) {
 		pr_err("[SENSOR]: %s - Invalid Argument\n", __func__);
 		return ret;
 	}
 
-	pr_info("[SENSOR] %s : delay = %d\n", __func__, value);
+	pr_info("[SENSOR] %s : delay = %lld\n", __func__, delay);
 
 	mutex_lock(&data->mutex);
 
-	atomic_set(&data->accel_delay, value);
+    data->accel_delay = ns_to_ktime(delay);
 
 	mpu6500_set_delay(data);
 
@@ -1298,8 +1303,7 @@ static ssize_t mpu6500_input_gyro_delay_show(struct device *dev,
 	struct input_dev *input_data = to_input_dev(dev);
 	struct mpu6500_input_data *data = input_get_drvdata(input_data);
 
-	return sprintf(buf, "%d\n", atomic_read(&data->gyro_delay));
-
+	return sprintf(buf, "%lld\n", ktime_to_ns(data->gyro_delay));
 }
 
 static ssize_t mpu6500_input_gyro_delay_store(struct device *dev,
@@ -1308,20 +1312,20 @@ static ssize_t mpu6500_input_gyro_delay_store(struct device *dev,
 {
 	struct input_dev *input_data = to_input_dev(dev);
 	struct mpu6500_input_data *data = input_get_drvdata(input_data);
-	int value = 0;
+	int64_t delay;
 	int ret = 0;
 
-	ret = kstrtoint(buf, 10, &value);
+	ret = kstrtoll(buf, 10, &delay);
 	if (ret) {
 		pr_err("[SENSOR]: %s - Invalid Argument\n", __func__);
 		return ret;
 	}
 
-	pr_info("[SENSOR] %s : delay = %d\n", __func__, value);
+	pr_info("[SENSOR] %s : delay = %lld\n", __func__, delay);
 
 	mutex_lock(&data->mutex);
 
-	atomic_set(&data->gyro_delay, value);
+	data->gyro_delay = ns_to_ktime(delay);
 
 	mpu6500_set_delay(data);
 
@@ -1712,9 +1716,9 @@ static ssize_t mpu6500_input_gyro_selftest_show(struct device *dev,
 	/* absolute gyro rms scaled by 1000 times. (gyro_bias x 1000) */
 	int scaled_gyro_rms[3] = {0};
 	int packet_count[3] = {0};
-	int ratio[3] = {0};
 	int hw_result;
 	int result;
+	int gyro_ratio[3], accel_ratio[3];
 
 	mutex_lock(&data->mutex);
 
@@ -1723,7 +1727,10 @@ static ssize_t mpu6500_input_gyro_selftest_show(struct device *dev,
 				      scaled_gyro_bias,
 				      scaled_gyro_rms, data->gyro_bias);
 
-	hw_result = mpu6500_gyro_hw_self_check(data->client, ratio);
+	//MPU6500_HWST_ALL : gyro & accel ,
+	//MPU6500_HWST_ACCEL : only accel,
+	//MPU6500_HWST_GYRO : only gyro,
+	hw_result = mpu6500_hw_self_check(data->client, gyro_ratio, accel_ratio, MPU6500_HWST_GYRO);
 
 	pr_info("%s, result = %d, hw_result = %d\n", __func__,
 			result, hw_result);
@@ -1738,6 +1745,40 @@ static ssize_t mpu6500_input_gyro_selftest_show(struct device *dev,
 	}
 
 	mutex_unlock(&data->mutex);
+
+	if((result | hw_result) == 0)
+		pr_info("%s : selftest success. ret:%d\n", __func__, result | hw_result);
+	else
+		pr_info("%s : selftest failed. ret:%d\n", __func__, result | hw_result);
+
+	pr_info("%s : %d.%03d,%d.%03d,%d.%03d,\n", __func__,
+		(int)abs(scaled_gyro_bias[0] / 1000),
+		(int)abs(scaled_gyro_bias[0]) % 1000,
+		(int)abs(scaled_gyro_bias[1] / 1000),
+		(int)abs(scaled_gyro_bias[1]) % 1000,
+		(int)abs(scaled_gyro_bias[2] / 1000),
+		(int)abs(scaled_gyro_bias[2]) % 1000);
+	pr_info("%s : %d.%03d,%d.%03d,%d.%03d\n", __func__,
+		scaled_gyro_rms[0] / 1000,
+		(int)abs(scaled_gyro_rms[0]) % 1000,
+		scaled_gyro_rms[1] / 1000,
+		(int)abs(scaled_gyro_rms[1]) % 1000,
+		scaled_gyro_rms[2] / 1000,
+		(int)abs(scaled_gyro_rms[2]) % 1000);
+	pr_info("%s : %d.%01d,%d.%01d,%d.%01d\n", __func__,
+		(int)abs(gyro_ratio[0]/10),
+		(int)abs(gyro_ratio[0])%10,
+		(int)abs(gyro_ratio[1]/10),
+		(int)abs(gyro_ratio[1])%10,
+		(int)abs(gyro_ratio[2]/10),
+		(int)abs(gyro_ratio[2])%10);
+	pr_info("%s : %d.%03d,%d.%03d,%d.%03d\n", __func__,
+		(int)abs(packet_count[0] / 100),
+		(int)abs(packet_count[0]) % 100,
+		(int)abs(packet_count[1] / 100),
+		(int)abs(packet_count[1]) % 100,
+		(int)abs(packet_count[2] / 100),
+		(int)abs(packet_count[2]) % 100);
 
 	return sprintf(buf, "%d,"
 			"%d.%03d,%d.%03d,%d.%03d,"
@@ -1757,12 +1798,12 @@ static ssize_t mpu6500_input_gyro_selftest_show(struct device *dev,
 			(int)abs(scaled_gyro_rms[1]) % 1000,
 			scaled_gyro_rms[2] / 1000,
 			(int)abs(scaled_gyro_rms[2]) % 1000,
-			(int)abs(ratio[0]/10),
-			(int)abs(ratio[0])%10,
-			(int)abs(ratio[1]/10),
-			(int)abs(ratio[1])%10,
-			(int)abs(ratio[2]/10),
-			(int)abs(ratio[2])%10,
+			(int)abs(gyro_ratio[0]/10),
+			(int)abs(gyro_ratio[0])%10,
+			(int)abs(gyro_ratio[1]/10),
+			(int)abs(gyro_ratio[1])%10,
+			(int)abs(gyro_ratio[2]/10),
+			(int)abs(gyro_ratio[2])%10,
 			(int)abs(packet_count[0] / 100),
 			(int)abs(packet_count[0]) % 100,
 			(int)abs(packet_count[1] / 100),
@@ -1771,10 +1812,87 @@ static ssize_t mpu6500_input_gyro_selftest_show(struct device *dev,
 			(int)abs(packet_count[2]) % 100);
 }
 
+#if DEBUG
+static ssize_t mpu6500_reg_dump_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int ii;
+	char data;
+	ssize_t bytes_printed = 0;
+	struct mpu6500_input_data *input_data = dev_get_drvdata(dev);
+
+	mutex_lock(&input_data->mutex);
+	for (ii = 0; ii < NUM_OF_MPU_REGISTERS; ii++) {
+		/* don't read fifo r/w register */
+		if (ii == MPUREG_FIFO_R_W)
+			data = 0;
+		else
+			mpu6500_i2c_read_reg(input_data->client, ii, 1, &data);
+		bytes_printed += sprintf(buf + bytes_printed, "%#2x: %#2x\n",
+					 ii, data);
+	}
+	mutex_unlock(&input_data->mutex);
+
+	return bytes_printed;
+}
+#endif
+
+static ssize_t mpu6500_input_accel_selftest_show(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	struct mpu6500_input_data *data = dev_get_drvdata(dev);
+	int gyro_ratio[3], accel_ratio[3];
+	int result = 0;
+
+	mutex_lock(&data->mutex);
+
+	result = mpu6500_hw_self_check(data->client, gyro_ratio, accel_ratio, MPU6500_HWST_ACCEL) + 1;
+
+	mutex_unlock(&data->mutex);
+
+	if(result == 1)
+		pr_info("%s : selftest success. ret:%d\n", __func__, result);
+	else if(result == 2)
+		pr_info("%s : selftest(accel) failed. ret:%d\n", __func__, result);
+	else if(result == 3)
+		pr_info("%s : selftest(gyro) failed. ret:%d\n", __func__, result);
+
+	pr_info("%s : %d.%01d,%d.%01d,%d.%01d\n", __func__,
+		(int)abs(accel_ratio[0]/10),
+		(int)abs(accel_ratio[0])%10,
+		(int)abs(accel_ratio[1]/10),
+		(int)abs(accel_ratio[1])%10,
+		(int)abs(accel_ratio[2]/10),
+		(int)abs(accel_ratio[2])%10);
+
+	return sprintf(buf, "%d,"
+		"%d.%01d,%d.%01d,%d.%01d\n",
+		result,
+		(int)abs(accel_ratio[0]/10),
+		(int)abs(accel_ratio[0])%10,
+		(int)abs(accel_ratio[1]/10),
+		(int)abs(accel_ratio[1])%10,
+		(int)abs(accel_ratio[2]/10),
+		(int)abs(accel_ratio[2])%10);
+}
+
 static struct device_attribute dev_attr_selftest =
 	__ATTR(selftest, S_IRUSR | S_IRGRP,
 		mpu6500_input_gyro_selftest_show,
 		NULL);
+
+static struct device_attribute dev_attr_accel_selftest =
+	__ATTR(selftest, S_IRUSR | S_IRGRP,
+		mpu6500_input_accel_selftest_show,
+		NULL);
+
+#if DEBUG
+static struct device_attribute dev_attr_reg_dump =
+	__ATTR(reg_dump, S_IRUSR | S_IRGRP,
+		mpu6500_reg_dump_show,
+		NULL);
+#endif
 
 static ssize_t acc_data_read(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1886,6 +2004,10 @@ static struct device_attribute *accel_sensor_attrs[] = {
 	&dev_attr_reactive_alert,
 	&dev_attr_accel_sensor_vendor,
 	&dev_attr_accel_sensor_name,
+	&dev_attr_accel_selftest,
+#if DEBUG
+	&dev_attr_reg_dump,
+#endif
 	NULL,
 };
 
@@ -1929,15 +2051,9 @@ static void mpu6500_work_func_acc(struct work_struct *work)
 			struct mpu6500_input_data, accel_work);
 	mpu6500_input_report_accel_xyz(data);
 
-	if (atomic_read(&data->accel_delay) < 60) {
-		usleep_range(atomic_read(&data->accel_delay) * 1000,
-			atomic_read(&data->accel_delay) * 1100);
-		schedule_delayed_work(&data->accel_work, 0);
-	} else {
-		schedule_delayed_work(&data->accel_work,
-			msecs_to_jiffies(
-			atomic_read(&data->accel_delay)));
-	}
+	schedule_delayed_work(&data->accel_work,
+		nsecs_to_jiffies(
+		ktime_to_ns(data->accel_delay)));
 }
 
 static void mpu6500_work_func_gyro(struct work_struct *work)
@@ -1948,15 +2064,9 @@ static void mpu6500_work_func_gyro(struct work_struct *work)
 
 	mpu6500_input_report_gyro_xyz(data);
 
-	if (atomic_read(&data->gyro_delay) < 60) {
-		usleep_range(atomic_read(&data->gyro_delay) * 1000,
-			atomic_read(&data->gyro_delay) * 1100);
-		schedule_delayed_work(&data->gyro_work, 0);
-	} else {
-		schedule_delayed_work(&data->gyro_work,
-			msecs_to_jiffies(
-			atomic_read(&data->gyro_delay)));
-	}
+	schedule_delayed_work(&data->gyro_work,
+		nsecs_to_jiffies(
+		ktime_to_ns(data->gyro_delay)));
 }
 #endif
 
@@ -2001,7 +2111,7 @@ static int mpu6500_accel_input_init(struct mpu6500_input_data *data)
 	}
 
 	atomic_set(&data->accel_enable, 0);
-	atomic_set(&data->accel_delay, 10);
+	data->accel_delay = ns_to_ktime(MPU6500_DEFAULT_DELAY);
 	atomic_set(&data->motion_recg_enable, 0);
 	atomic_set(&data->reactive_state, 0);
 	return 0;
@@ -2092,8 +2202,8 @@ static int __devinit mpu6500_input_probe(struct i2c_client *client,
 			__func__);
 		goto err_checking_device;
 	}
-	if (whoami != MPU6515_ID) {
-		pr_err("[SENSOR] %s: mpu6500 probe failed\n", __func__);
+	if (whoami != MPU6500_ID) {
+		pr_err("[SENSOR] %s: mpu6500 chip ID failed\n", __func__);
 		error = -EIO;
 		goto err_checking_device;
 	}
@@ -2244,9 +2354,11 @@ static int mpu6500_input_resume(struct device *dev)
 	}
 #ifdef CONFIG_INPUT_MPU6500_POLLING
 		if (atomic_read(&data->accel_enable))
-			schedule_delayed_work(&data->accel_work, 0);
+			schedule_delayed_work(&data->accel_work,
+				nsecs_to_jiffies(ktime_to_ns(data->accel_delay)));
 		if (atomic_read(&data->gyro_enable))
-			schedule_delayed_work(&data->gyro_work, 0);
+			schedule_delayed_work(&data->gyro_work,
+				nsecs_to_jiffies(ktime_to_ns(data->gyro_delay)));
 #endif
 	return 0;
 }

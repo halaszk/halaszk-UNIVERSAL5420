@@ -541,6 +541,9 @@ static void ipi_cpu_stop(unsigned int cpu)
 		raw_spin_lock(&stop_lock);
 		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
 		dump_stack();
+#ifdef CONFIG_SEC_DEBUG
+		sec_debug_save_context();
+#endif
 		raw_spin_unlock(&stop_lock);
 	}
 
@@ -548,6 +551,9 @@ static void ipi_cpu_stop(unsigned int cpu)
 
 	local_fiq_disable();
 	local_irq_disable();
+
+	flush_cache_all();
+	local_flush_tlb_all();
 
 	while (1)
 		cpu_relax();

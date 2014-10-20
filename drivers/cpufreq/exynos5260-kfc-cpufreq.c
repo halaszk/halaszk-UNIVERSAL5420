@@ -23,6 +23,10 @@
 #include <mach/cpufreq.h>
 #include <mach/asv-exynos.h>
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+#include <mach/sec_debug.h>
+#endif
+
 #define CPUFREQ_LEVEL_END_CA7	(L13 + 1)
 #define L2_LOCAL_PWR_EN		0x7
 
@@ -295,15 +299,15 @@ static const unsigned int asv_voltage_5260_CA7[CPUFREQ_LEVEL_END_CA7] = {
 
 /* Minimum memory throughput in megabytes per second */
 static int exynos5260_bus_table_CA7[CPUFREQ_LEVEL_END_CA7] = {
-	275000,	/* 1.5 GHz */
-	275000,	/* 1.4 GHz */
-	275000,	/* 1.3 GHz */
-	206000,	/* 1.2 GHz */
-	206000,	/* 1.1 GHz */
-	165000,	/* 1.0 GHz */
-	165000,	/* 900 MHz */
-	138000,	/* 800 MHz */
-	138000,	/* 700 MHz */
+	543000,	/* 1.5 GHz */
+	543000,	/* 1.4 GHz */
+	543000,	/* 1.3 GHz */
+	543000,	/* 1.2 GHz */
+	413000,	/* 1.1 GHz */
+	413000,	/* 1.0 GHz */
+	413000,	/* 900 MHz */
+	275000,	/* 800 MHz */
+	275000,	/* 700 MHz */
 	0,	/* 600 MHz */
 	0,	/* 500 MHz */
 	0,	/* 400 MHz */
@@ -462,6 +466,11 @@ static void exynos5260_set_frequency_CA7(unsigned int old_index,
 {
 	unsigned int tmp;
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"old:%7d new:%7d (A7)",
+		exynos5260_freq_table_CA7[old_index].frequency, exynos5260_freq_table_CA7[new_index].frequency);
+#endif
 	if (old_index > new_index) {
 		if (!exynos5260_pms_change_CA7(old_index, new_index)) {
 			/* 1. Change the system clock divider values */
@@ -644,8 +653,13 @@ int __init exynos5_cpufreq_CA7_init(struct exynos_dvfs_info *info)
 		info->boot_cpu_min_qos = exynos5260_freq_table_CA7[L4].frequency;
 		info->boot_cpu_max_qos = exynos5260_freq_table_CA7[L4].frequency;
 	} else {
+		#if defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G)//Don't add other models Feature
+		info->boot_cpu_min_qos = exynos5260_freq_table_CA7[L5].frequency;
+		info->boot_cpu_max_qos = exynos5260_freq_table_CA7[L5].frequency;
+		#else
 		info->boot_cpu_min_qos = exynos5260_freq_table_CA7[L2].frequency;
 		info->boot_cpu_max_qos = exynos5260_freq_table_CA7[L2].frequency;
+		#endif
 	}
 	info->bus_table = exynos5260_bus_table_CA7;
 	info->cpu_clk = fout_kfc_pll;

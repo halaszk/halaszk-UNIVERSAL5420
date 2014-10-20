@@ -111,6 +111,10 @@ EXPORT_SYMBOL(exynos_csis_phy_enable);
 
 int exynos_dsim_phy_enable(int id, bool on)
 {
+#if defined(CONFIG_SOC_EXYNOS5260)
+	return __exynos_mipi_phy_control(0, on, S5P_MIPI_DPHY_MRESETN);
+#else
 	return __exynos_mipi_phy_control(id, on, S5P_MIPI_DPHY_MRESETN);
+#endif
 }
 EXPORT_SYMBOL(exynos_dsim_phy_enable);

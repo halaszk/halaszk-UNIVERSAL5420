@@ -209,8 +209,6 @@ int s5p_mfc_load_firmware(struct s5p_mfc_dev *dev)
 					     FIRMWARE_CODE_SIZE,
 					     DMA_TO_DEVICE);
 	*/
-	s5p_mfc_mem_clean_priv(s5p_mfc_bitproc_buf, s5p_mfc_bitproc_virt, 0,
-			fw_blob->size);
 	release_firmware(fw_blob);
 	mfc_debug_leave();
 	return 0;
@@ -405,6 +403,7 @@ int s5p_mfc_init_hw(struct s5p_mfc_dev *dev)
 		mfc_err("Failed to load firmware.\n");
 		s5p_mfc_clean_dev_int_flags(dev);
 		ret = -EIO;
+		dev->skip_bus_waiting = 1;
 		goto err_init_hw;
 	}
 
@@ -459,6 +458,9 @@ int s5p_mfc_init_hw(struct s5p_mfc_dev *dev)
 err_init_hw:
 	s5p_mfc_clock_off();
 	mfc_debug_leave();
+
+	if (dev->skip_bus_waiting)
+		dev->skip_bus_waiting = 0;
 
 	return ret;
 }

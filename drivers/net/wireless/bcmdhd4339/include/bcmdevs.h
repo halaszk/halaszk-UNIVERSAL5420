@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmdevs.h 433333 2013-10-31 10:34:27Z $
+ * $Id: bcmdevs.h 456607 2014-02-19 09:26:42Z $
  */
 
 #ifndef	_BCMDEVS_H
@@ -224,6 +224,10 @@
 #define BCM4354_D11AC5G_ID	0x43e1		/* 4354 802.11ac 5G device */
 
 
+#define BCM43349_D11N_ID	0x43e6		/* 43349 802.11n dualband id */
+#define BCM43349_D11N2G_ID	0x43e7		/* 43349 802.11n 2.4Ghz band id */
+#define BCM43349_D11N5G_ID	0x43e8		/* 43349 802.11n 5Ghz band id */
+
 #define	BCMGPRS_UART_ID		0x4333		/* Uart id used by 4306/gprs card */
 #define	BCMGPRS2_UART_ID	0x4344		/* Uart id used by 4306/gprs card */
 #define FPGA_JTAGM_ID		0x43f0		/* FPGA jtagm device id */
@@ -324,6 +328,7 @@
 #define BCM4334_CHIP_ID		0x4334		/* 4334 chipcommon chipid */
 #define BCM4335_CHIP_ID		0x4335		/* 4335 chipcommon chipid */
 #define BCM4339_CHIP_ID		0x4339		/* 4339 chipcommon chipid */
+#define BCM43349_CHIP_ID	43349			/* 43349(0xA955) chipcommon chipid */
 #define BCM4360_CHIP_ID		0x4360          /* 4360 chipcommon chipid */
 #define BCM4352_CHIP_ID		0x4352          /* 4352 chipcommon chipid */
 #define BCM43526_CHIP_ID	0xAA06

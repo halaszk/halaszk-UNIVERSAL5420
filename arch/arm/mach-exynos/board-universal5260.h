@@ -49,4 +49,6 @@ extern unsigned int lpcharge;
 void exynos5_universal5260_cover_id_init(void);
 #endif
 
+void exynos5_universal5260_mhl_init(void);
+
 #endif

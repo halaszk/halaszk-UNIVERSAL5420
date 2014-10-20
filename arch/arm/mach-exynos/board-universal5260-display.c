@@ -28,6 +28,7 @@
 #include <plat/dsim.h>
 #include <plat/mipi_dsi.h>
 #include <mach/regs-pmu.h>
+#include <plat/regs-mipidsim.h>
 #endif
 #include "board-universal5260.h"
 #include "display-exynos5260.h"
@@ -41,17 +42,18 @@ static int __init lcdtype_setup(char *str)
 }
 __setup("lcdtype=", lcdtype_setup);
 
-phys_addr_t bootloaderfb_start = 0;
-phys_addr_t bootloaderfb_size = 0;
+phys_addr_t bootloaderfb_start;
 EXPORT_SYMBOL(bootloaderfb_start);
+phys_addr_t bootloaderfb_size;
 EXPORT_SYMBOL(bootloaderfb_size);
+
 static int __init bootloaderfb_start_setup(char *str)
 {
 	get_option(&str, &bootloaderfb_start);
-#if defined(CONFIG_LCD_MIPI_D6EA8061)
+#if defined(CONFIG_LCD_MIPI_D6EA8061) || defined(CONFIG_LCD_MIPI_S6E8AA0A02) || defined(CONFIG_LCD_MIPI_HX8394)
 	bootloaderfb_size = 720 * 1280 * 4;
 #else
-	bootloaderfb_start = 0; // disable for copying bootloaderfb
+	bootloaderfb_start = 0;	/* disable for copying bootloaderfb */
 	bootloaderfb_size = 0;
 #endif
 	return 1;
@@ -63,6 +65,16 @@ __setup("s3cfb.bootloaderfb=", bootloaderfb_start_setup);
 #define DPHY_PLL_P		3	/* 488Mbps */
 #define DPHY_PLL_M		61
 #define DPHY_PLL_S		1
+#elif defined(CONFIG_LCD_MIPI_S6E8AA0A02)
+#define DSIM_NO_DATA_LANE	DSIM_DATA_LANE_4
+#define DPHY_PLL_P		3	/* 500Mbps */
+#define DPHY_PLL_M		125
+#define DPHY_PLL_S		2
+#elif defined(CONFIG_LCD_MIPI_HX8394)
+#define DSIM_NO_DATA_LANE	DSIM_DATA_LANE_4
+#define DPHY_PLL_P		3	/* 500Mbps */
+#define DPHY_PLL_M		125
+#define DPHY_PLL_S		2
 #endif
 
 #if defined(CONFIG_LCD_MIPI_D6EA8061)
@@ -102,7 +114,7 @@ static int lcd_power_on(struct lcd_device *ld, int enable)
 #if defined(GPIO_MLCD_RST)
 		gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_LOW, "GPD1");
 		gpio_free(GPIO_MLCD_RST);
-		msleep(10);
+		usleep_range(10000, 11000);
 #endif
 		regulator_bulk_disable(ARRAY_SIZE(panel_supplies), panel_supplies);
 	}
@@ -131,9 +143,190 @@ static int reset_lcd(struct lcd_device *ld)
 static struct lcd_platform_data panel_pdata = {
 	.reset = reset_lcd,
 	.power_on = lcd_power_on,
+	.reset_delay = 25000,
+	.power_on_delay = 10000,
+};
+#elif defined(CONFIG_LCD_MIPI_S6E8AA0A02)
+static struct panel_info  display_info = {
+	.name = "s6e8aa0a02",
+	.refresh = 60,
+	.limit = 44,
+	.xres = 720,
+	.yres = 1280,
+	.hbp = 14,
+	.hfp = 116,
+	.hsw = 5,
+	.vbp = 1,
+	.vfp = 13,
+	.vsw = 2,
+	.width_mm = 60,		/* 59.76 */
+	.height_mm = 106,	/* 106.24 */
+};
+
+static struct regulator_bulk_data panel_supplies_evt0[] = {
+	{ .supply = "vcc_lcd_3.3v" },
+	{ .supply = "led_vdd_3.3v" }
+};
+static struct regulator_bulk_data panel_supplies[] = {
+	{ .supply = "vcc_lcd_3.3v" },
+};
+
+extern unsigned int system_rev;
+
+static int lcd_power_on(struct lcd_device *ld, int enable)
+{
+	int ret;
+
+	if (system_rev < 0x02) {
+		ret = regulator_bulk_get(NULL, ARRAY_SIZE(panel_supplies_evt0), panel_supplies_evt0);
+		if (ret) {
+			pr_err("%s: failed to get regulators: %d\n", __func__, ret);
+			return ret;
+		}
+
+		if (enable) {
+			gpio_request_one(GPIO_LCD_22V_EN, GPIOF_OUT_INIT_HIGH, "GPC4");
+			gpio_set_value(GPIO_LCD_22V_EN, 1);
+			gpio_free(GPIO_LCD_22V_EN);
+			regulator_bulk_enable(ARRAY_SIZE(panel_supplies_evt0), panel_supplies_evt0);
+		} else {
+#if defined(GPIO_MLCD_RST)
+			gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_LOW, "GPD1");
+			gpio_free(GPIO_MLCD_RST);
+			usleep_range(10000, 11000);
+#endif
+			gpio_request_one(GPIO_LCD_22V_EN, GPIOF_OUT_INIT_LOW, "GPC4");
+			gpio_set_value(GPIO_LCD_22V_EN, 0);
+			gpio_free(GPIO_LCD_22V_EN);
+
+			regulator_bulk_disable(ARRAY_SIZE(panel_supplies_evt0), panel_supplies_evt0);
+		}
+
+		regulator_bulk_free(ARRAY_SIZE(panel_supplies_evt0), panel_supplies_evt0);
+
+		return 0;
+	} else {
+		ret = regulator_bulk_get(NULL, ARRAY_SIZE(panel_supplies), panel_supplies);
+		if (ret) {
+			pr_err("%s: failed to get regulators: %d\n", __func__, ret);
+			return ret;
+		}
+
+		if (enable) {
+			gpio_request_one(GPIO_LCD_22V_EN, GPIOF_OUT_INIT_HIGH, "GPC4");
+			gpio_set_value(GPIO_LCD_22V_EN, 1);
+			gpio_free(GPIO_LCD_22V_EN);
+			regulator_bulk_enable(ARRAY_SIZE(panel_supplies), panel_supplies);
+		} else {
+#if defined(GPIO_MLCD_RST)
+			gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_LOW, "GPD1");
+			gpio_free(GPIO_MLCD_RST);
+			usleep_range(10000, 11000);
+#endif
+			gpio_request_one(GPIO_LCD_22V_EN, GPIOF_OUT_INIT_LOW, "GPC4");
+			gpio_set_value(GPIO_LCD_22V_EN, 0);
+			gpio_free(GPIO_LCD_22V_EN);
+
+			regulator_bulk_disable(ARRAY_SIZE(panel_supplies), panel_supplies);
+		}
+		regulator_bulk_free(ARRAY_SIZE(panel_supplies), panel_supplies);
+
+		return 0;
+	}
+}
+
+static int reset_lcd(struct lcd_device *ld)
+{
+#if defined(GPIO_MLCD_RST)
+	gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_HIGH, "GPD1");
+
+	gpio_set_value(GPIO_MLCD_RST, 0);
+	usleep_range(1000, 2000);
+	gpio_set_value(GPIO_MLCD_RST, 1);
+	usleep_range(1000, 2000);
+
+	gpio_free(GPIO_MLCD_RST);
+#endif
+
+	return 0;
+}
+
+static struct lcd_platform_data panel_pdata = {
+	.reset = reset_lcd,
+	.power_on = lcd_power_on,
 	.reset_delay = 10000,
 	.power_on_delay = 25000,
 };
+#elif defined(CONFIG_LCD_MIPI_HX8394)
+static struct panel_info  display_info = {
+	.name = "hx8394",
+	.refresh = 60,
+	.xres = 720,
+	.yres = 1280,
+	.hbp = 62,
+	.hfp = 28,
+	.hsw = 36,
+	.vbp = 20,
+	.vfp = 9,
+	.vsw = 2,
+	.width_mm = 60,		/* 59.76 */
+	.height_mm = 106,	/* 106.24 */
+};
+
+static struct regulator_bulk_data panel_supplies[] = {
+	{ .supply = "vcc_lcd_1.8v" },
+	{ .supply = "vcc_lcd_3.0v" }
+};
+
+static int lcd_power_on(struct lcd_device *ld, int enable)
+{
+	int ret;
+
+	ret = regulator_bulk_get(NULL, ARRAY_SIZE(panel_supplies), panel_supplies);
+	if (ret) {
+		pr_err("%s: failed to get regulators: %d\n", __func__, ret);
+		return ret;
+	}
+
+	if (enable)
+		regulator_bulk_enable(ARRAY_SIZE(panel_supplies), panel_supplies);
+	else {
+#if defined(GPIO_MLCD_RST)
+		gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_LOW, "GPD1");
+		gpio_free(GPIO_MLCD_RST);
+		usleep_range(10000, 11000);
+#endif
+		regulator_bulk_disable(ARRAY_SIZE(panel_supplies), panel_supplies);
+	}
+
+	regulator_bulk_free(ARRAY_SIZE(panel_supplies), panel_supplies);
+
+	return 0;
+}
+
+static int reset_lcd(struct lcd_device *ld)
+{
+#if defined(GPIO_MLCD_RST)
+	gpio_request_one(GPIO_MLCD_RST, GPIOF_OUT_INIT_HIGH, "GPD1");
+
+	gpio_set_value(GPIO_MLCD_RST, 0);
+	usleep_range(1000, 2000);
+	gpio_set_value(GPIO_MLCD_RST, 1);
+	usleep_range(1000, 2000);
+
+	gpio_free(GPIO_MLCD_RST);
+#endif
+
+	return 0;
+}
+
+static struct lcd_platform_data panel_pdata = {
+	.reset = reset_lcd,
+	.power_on = lcd_power_on,
+	.reset_delay = 25000,
+	.power_on_delay = 10000,
+};
+
 #endif
 
 #ifdef CONFIG_FB_MIPI_DSIM
@@ -159,7 +352,7 @@ static struct mipi_dsim_config dsim_info = {
 	.m = DPHY_PLL_M,
 	.s = DPHY_PLL_S,
 
-	.pll_stable_time = 22200,
+	.pll_stable_time = DPHY_PLL_STABLE_TIME,
 
 	.esc_clk = 16 * MHZ,
 
@@ -214,7 +407,6 @@ static struct s5p_platform_mipi_dsim dsim_platform_data = {
 	.dsim_lcd_config	= &dsim_lcd_info,
 
 	.mipi_power		= mipi_power_control,
-	.part_reset		= NULL,
 	.init_d_phy		= exynos_dsim_phy_enable,
 	.get_fb_frame_done	= NULL,
 	.trigger		= NULL,
@@ -261,6 +453,10 @@ static void __init exynos5_setup_dsi_panel_info(void)
 {
 #if defined(CONFIG_LCD_MIPI_D6EA8061)
 	dsim_info.dsim_ddi_pd = &d6ea8061_mipi_lcd_driver;
+#elif defined(CONFIG_LCD_MIPI_S6E8AA0A02)
+	dsim_info.dsim_ddi_pd = &s6e8aa0a02_mipi_lcd_driver;
+#elif defined(CONFIG_LCD_MIPI_HX8394)
+	dsim_info.dsim_ddi_pd = &hx8394_mipi_lcd_driver;
 #endif
 }
 
@@ -301,14 +497,14 @@ struct platform_device lcdfreq_device = {
 		.id		= -1,
 		.dev		= {
 			.parent	= &s5p_device_fimd1.dev,
-			.platform_data = (void *)40,
-	},
+		},
 };
 
 static void __init lcdfreq_device_register(void)
 {
 	int ret;
 
+	lcdfreq_device.dev.platform_data = (void *)display_info.limit;
 	ret = platform_device_register(&lcdfreq_device);
 	if (ret)
 		pr_err("failed to register %s: %d\n", __func__, ret);
@@ -334,9 +530,7 @@ void __init exynos5_universal5260_display_init(void)
 	s5p_fimd1_set_platdata(&universal5260_lcd1_pdata);
 	platform_add_devices(universal5260_display_devices, ARRAY_SIZE(universal5260_display_devices));
 
-#if defined(CONFIG_LCD_MIPI_D6EA8061)
 	exynos_fimd_set_rate(&s5p_device_fimd1.dev, "sclk_fimd", "sclk_disp_pixel", &display_info);
-#endif
 #if !defined(CONFIG_S5P_LCD_INIT)
 	exynos5_keep_disp_clock(&s5p_device_fimd1.dev);
 #endif

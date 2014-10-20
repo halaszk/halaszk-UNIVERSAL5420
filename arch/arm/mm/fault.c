@@ -132,10 +132,6 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 /*
  * Oops.  The kernel tried to access some page that wasn't present.
  */
-static int thumb_count[8];
-static int thumb_pc[8];
-extern void dump_instr(const char *lvl, struct pt_regs *regs);
-
 static void
 __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		  struct pt_regs *regs)
@@ -146,23 +142,6 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	if (fixup_exception(regs))
 		return;
 
-	if (thumb_mode(regs)) {
-		if (instruction_pointer(regs) == thumb_pc[smp_processor_id()]) {
-			thumb_count[smp_processor_id()]++;
-		} else {
-			thumb_pc[smp_processor_id()] = instruction_pointer(regs);
-			thumb_count[smp_processor_id()] = 0;
-		}
-
-		if (thumb_count[smp_processor_id()] < 4) {
-			printk(KERN_ALERT "Thumb mode in kernel fault: %d\n", smp_processor_id());
-			printk(KERN_ALERT "PC %#lx, CPSR %#lx\n",
-					instruction_pointer(regs), regs->ARM_cpsr);
-			dump_instr(KERN_ALERT, regs);
-			regs->ARM_cpsr &= ~PSR_T_BIT;
-			return;
-		}
-	}
 	/*
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */

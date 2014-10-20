@@ -46,6 +46,7 @@
 #include <mach/cpufreq.h>
 #include <mach/regs-pmu.h>
 #include <mach/irqs.h>
+#include <mach/sec_debug.h>
 
 /*****************************************************************************/
 /*			  	   Variables	      	     		     */
@@ -1096,6 +1097,7 @@ out:
 	th_zone->therm_dev->last_temperature = max * MCELSIUS;
 	DTM_DBG("[TMU] TMU0 = %d, TMU1 = %d, TMU2 = %d, TMU3 = %d, TMU4 = %d  -------  CPU : %d  ,  GPU : %d\n",
 			alltemp[0], alltemp[1], alltemp[2], alltemp[3], alltemp[4], max, gpu_temp);
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_THERMAL_CHANGE, "[TMU] %d, %d, %d, %d, %d", alltemp[0], alltemp[1], alltemp[2], alltemp[3], alltemp[4]);
 
 	return max;
 }
@@ -1194,6 +1196,9 @@ static irqreturn_t exynos_tmu_irq(int irq, void *id)
 {
 	struct exynos_tmu_data *data = id;
 	int i;
+
+	pr_debug("[TMUIRQ] irq = %d\n", irq);
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_THERMAL_CHANGE, "[IRQ] %d", irq);
 
 	for (i = 0; i < EXYNOS_TMU_COUNT; i++)
 		disable_irq_nosync(data->irq[i]);

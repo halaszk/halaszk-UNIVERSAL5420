@@ -164,6 +164,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	int ret = 0;
 	int operation_mode;
 	struct exynos5_platform_i2c *pdata;
+	struct i2c_adapter *adap = &i2c->adap;
 
 	pdata = i2c->dev->platform_data;
 	operation_mode = pdata->operation_mode;
@@ -230,7 +231,8 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	ret = -EAGAIN;
 	if (msgs->flags & I2C_M_RD) {
 		if (operation_mode == HSI2C_POLLING) {
-			timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
+			timeout = jiffies + adap->timeout;
+
 			while (time_before(jiffies, timeout)){
 				if ((readl(i2c->regs + HSI2C_FIFO_STATUS) &
 					0x1000000) == 0) {
@@ -254,7 +256,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 			}
 		} else {
 			timeout = wait_for_completion_timeout
-				(&i2c->msg_complete, EXYNOS5_I2C_TIMEOUT);
+				(&i2c->msg_complete, adap->timeout);
 
 			if (timeout == 0) {
 				dump_i2c_register(i2c);
@@ -267,7 +269,8 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 		}
 	} else {
 		if (operation_mode == HSI2C_POLLING) {
-			timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
+			timeout = jiffies + adap->timeout;
+
 			while (time_before(jiffies, timeout) &&
 				(i2c->msg_byte_ptr < i2c->msg->len)) {
 				if ((readl(i2c->regs + HSI2C_FIFO_STATUS)
@@ -280,7 +283,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 			}
 		} else {
 			timeout = wait_for_completion_timeout
-				(&i2c->msg_complete, EXYNOS5_I2C_TIMEOUT);
+				(&i2c->msg_complete, adap->timeout);
 
 			if (timeout == 0) {
 				dump_i2c_register(i2c);
@@ -488,6 +491,7 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	struct exynos5_platform_i2c *pdata;
 	struct resource *res;
 	int ret;
+	int operation_mode;
 
 	pdata = pdev->dev.platform_data;
 	if (!pdata) {
@@ -553,18 +557,21 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	if (ret != 0)
 		goto err_iomap;
 
-	i2c->irq = ret = platform_get_irq(pdev, 0);
-	if (ret <= 0) {
-		dev_err(&pdev->dev, "cannot find HS-I2C IRQ\n");
-		goto err_iomap;
-	}
+	operation_mode = pdata->operation_mode;
+	if (operation_mode != HSI2C_POLLING) {
+		i2c->irq = ret = platform_get_irq(pdev, 0);
+		if (ret <= 0) {
+			dev_err(&pdev->dev, "cannot find HS-I2C IRQ\n");
+			goto err_iomap;
+		}
 
-	ret = request_irq(i2c->irq, exynos5_i2c_irq, IRQF_DISABLED,
-			  dev_name(&pdev->dev), i2c);
+		ret = request_irq(i2c->irq, exynos5_i2c_irq, IRQF_DISABLED,
+				  dev_name(&pdev->dev), i2c);
 
-	if (ret != 0) {
-		dev_err(&pdev->dev, "cannot request HS-I2C IRQ %d\n", i2c->irq);
-		goto err_iomap;
+		if (ret != 0) {
+			dev_err(&pdev->dev, "cannot request HS-I2C IRQ %d\n", i2c->irq);
+			goto err_iomap;
+		}
 	}
 
 	i2c->adap.nr = pdata->bus_number;
@@ -583,7 +590,8 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	return 0;
 
  err_irq:
-	free_irq(i2c->irq, i2c);
+	if (operation_mode != HSI2C_POLLING)
+		free_irq(i2c->irq, i2c);
 
  err_iomap:
 	iounmap(i2c->regs);
@@ -604,9 +612,15 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 static int exynos5_i2c_remove(struct platform_device *pdev)
 {
 	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
+	struct exynos5_platform_i2c *pdata;
+	int operation_mode;
+
+	pdata = pdev->dev.platform_data;
+	operation_mode = pdata->operation_mode;
 
 	i2c_del_adapter(&i2c->adap);
-	free_irq(i2c->irq, i2c);
+	if (operation_mode != HSI2C_POLLING)
+		free_irq(i2c->irq, i2c);
 
 	clk_disable(i2c->clk);
 	clk_put(i2c->clk);

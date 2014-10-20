@@ -1182,8 +1182,13 @@ static int usb_suspend_both(struct usb_device *udev, pm_message_t msg)
 			/* Ignore errors during system sleep transitions */
 			if (!PMSG_IS_AUTO(msg))
 				status = 0;
-			if (status != 0)
+			if (status != 0) {
+#if defined(CONFIG_MDM_HSIC_PM)
+				dev_err(&udev->dev, "%s: i: %d, status: %d\n", 
+						__func__, i, status);
+#endif
 				break;
+			}
 		}
 	}
 	if (status == 0) {

@@ -101,10 +101,10 @@ static bool cluster_off_flag = false;
 #endif
 
 #ifdef CONFIG_SEC_PM
-#if defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_M2LTE)
+#if defined(CONFIG_MACH_UNIVERSAL5260)
 #define CPUIDLE_ENABLE_MASK (ENABLE_C2 | ENABLE_C3_AFTR | ENABLE_C3_LPA)
 #else
-#define CPUIDLE_ENABLE_MASK (ENABLE_C2 | ENABLE_C3_AFTR | ENABLE_C3_LPA)
+#define CPUIDLE_ENABLE_MASK (ENABLE_C2 | ENABLE_C3_AFTR)
 #endif
 
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA_DRAM
@@ -320,6 +320,12 @@ static int check_bt_op(void)
 	return 0;
 #endif
 }
+
+#if defined(CONFIG_ARM_EXYNOS5260_BUS_DEVFREQ)
+extern int exynos_mif_cur_level;
+#define BANNED_MIF_MAX_LEVEL 0
+#endif
+
 static int __maybe_unused exynos_check_enter_mode(void)
 {
 #ifdef CONFIG_SEC_PM
@@ -366,6 +372,11 @@ static int __maybe_unused exynos_check_enter_mode(void)
 #endif
 	if (exynos_check_usb_op())
 		return EXYNOS_CHECK_DIDLE;
+
+#if defined(CONFIG_ARM_EXYNOS5260_BUS_DEVFREQ)
+	if (exynos_mif_cur_level <= BANNED_MIF_MAX_LEVEL)
+		return EXYNOS_CHECK_DIDLE;
+#endif
 
 	return EXYNOS_CHECK_LPA;
 }
@@ -657,7 +668,7 @@ static int exynos_enter_core0_lpa(struct cpuidle_device *dev,
 #endif
 
 #if defined(CONFIG_BT_BCM4339)
-#if !defined(CONFIG_MACH_HL3G) && !defined(CONFIG_MACH_HLLTE) && !defined(CONFIG_MACH_M2LTE)
+#if !defined(CONFIG_MACH_UNIVERSAL5260)
 	bt_uart_rts_ctrl(1);
 #endif
 #endif
@@ -791,7 +802,7 @@ early_wakeup:
 #endif
 
 #if defined(CONFIG_BT_BCM4339)
-#if !defined(CONFIG_MACH_HL3G) && !defined(CONFIG_MACH_HLLTE) && !defined(CONFIG_MACH_M2LTE)
+#if !defined(CONFIG_MACH_UNIVERSAL5260)
 	bt_uart_rts_ctrl(0);
 #endif
 #endif
@@ -893,7 +904,7 @@ static int exynos_enter_lowpower(struct cpuidle_device *dev,
 
 #ifdef CONFIG_SEC_PM
 	if (exynos_check_enter_mode() == EXYNOS_CHECK_DIDLE) {
-		if (enable_mask & ENABLE_C3_AFTR)
+		if ((enable_mask & ENABLE_C3_AFTR) && !(__raw_readl(EXYNOS5260_ISP_STATUS) & 0x7))
 			return exynos_enter_core0_aftr(dev, drv, new_index);
 		else
 			return exynos_enter_idle(dev, drv, (new_index - 2));

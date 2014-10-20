@@ -2724,6 +2724,8 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 
 		INIT_LIST_HEAD(&dec->dpb_queue);
 		dec->dpb_queue_cnt = 0;
+		dec->consumed = 0;
+		dec->remained_size = 0;
 
 		while (index < MFC_MAX_BUFFERS) {
 			index = find_next_bit(&ctx->dst_ctrls_avail,
@@ -2772,6 +2774,24 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 	return 0;
 }
 
+#define mfc_need_to_fill_dpb(ctx, dec, index)						\
+				((dec->is_dynamic_dpb) && (!dec->dynamic_ref_filled)	\
+				 && (!ctx->is_drm) && (index == 0))
+int mfc_fill_dynamic_dpb(struct s5p_mfc_raw_info *raw, struct vb2_buffer *vb)
+{
+	int i;
+	int color[3] = { 0x0, 0x80, 0x80 };
+	unsigned char *dpb_vir;
+
+	for (i = 0; i < raw->num_planes; i++) {
+		dpb_vir = vb2_plane_vaddr(vb, i);
+		if (dpb_vir)
+			memset(dpb_vir, color[i], raw->plane_size[i]);
+	}
+	s5p_mfc_mem_clean_vb(vb, raw->num_planes);
+
+	return 0;
+}
 
 static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 {
@@ -2809,12 +2829,15 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 		mfc_debug(2, "Adding to src: %p (0x%08lx, 0x%08lx)\n", vb,
 			(unsigned long)s5p_mfc_mem_plane_addr(ctx, vb, 0),
 			(unsigned long)buf->planes.stream);
+		if (is_mpeg4(ctx))
+			buf->kaddr = (dma_addr_t)vb2_plane_vaddr(&buf->vb, 0);
 		spin_lock_irqsave(&dev->irqlock, flags);
 		list_add_tail(&buf->list, &ctx->src_queue);
 		ctx->src_queue_cnt++;
 		spin_unlock_irqrestore(&dev->irqlock, flags);
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		buf->used = 0;
+		buf->already = 0;
 		index = vb->v4l2_buf.index;
 		mfc_debug(2, "Dst queue: %p\n", &ctx->dst_queue);
 		mfc_debug(2, "Adding to dst: %p (0x%08lx)\n", vb,
@@ -2847,9 +2870,14 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 				/* This buffer is already referenced */
 				mfc_debug(2, "Already ref[%d], fd = %d\n",
 						index, dec->assigned_fd[index]);
-				list_add_tail(&buf->list, &dec->ref_queue);
-				dec->ref_queue_cnt++;
-				skip_add = 1;
+				if (is_h264(ctx)) {
+					mfc_debug(2, "Add to DPB list\n");
+					buf->already = 1;
+				} else {
+					list_add_tail(&buf->list, &dec->ref_queue);
+					dec->ref_queue_cnt++;
+					skip_add = 1;
+				}
 			}
 		} else {
 			set_bit(index, &dec->dpb_status);
@@ -2861,6 +2889,10 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 			ctx->dst_queue_cnt++;
 		}
 		spin_unlock_irqrestore(&dev->irqlock, flags);
+		if (mfc_need_to_fill_dpb(ctx, dec, index)) {
+			mfc_fill_dynamic_dpb(&ctx->raw_buf, vb);
+			dec->dynamic_ref_filled = 1;
+		}
 		if ((dec->dst_memtype == V4L2_MEMORY_USERPTR || dec->dst_memtype == V4L2_MEMORY_DMABUF) &&
 				ctx->dst_queue_cnt == dec->total_dpb_count)
 			ctx->capture_state = QUEUE_BUFS_MMAPED;

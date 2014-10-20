@@ -47,6 +47,8 @@
 #include <linux/battery/sec_charger.h>
 #include <linux/battery/charger/max77803_charger.h>
 
+#include <linux/regulator/consumer.h>
+
 #define SEC_BATTERY_PMIC_NAME ""
 
 static struct s3c_adc_client *adc_client;
@@ -64,7 +66,27 @@ bool is_ovlo_state;
 
 unsigned int lpcharge;
 EXPORT_SYMBOL(lpcharge);
-
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+static sec_charging_current_t charging_current_table[] = {
+	{1500,	1640,	200,	40 * 60},
+	{0, 0,	0,	0},
+	{0, 0,	0,	0},
+	{1500,	1640,	200,	40*60},
+	{460,	460,	200,	40*60},
+	{900,	1200,	200,	40*60},
+	{1000,	1000,	200,	40*60},
+	{460,	460,	200,	40*60},
+	{1000,	1200,	200,	40*60},
+	{0, 0,	0,	0},
+	{650,	750,	200,	40*60},
+	{1500,	1640,	200,	40*60},
+	{0, 0,	0,	0},
+	{0, 0,	0,	0},
+	{0, 0,	0,	0},/*lan hub*/
+	{460,	460,	200,	40*60},/*mhl usb*/
+	{0,	0,	0,	0},/*power sharing*/
+};
+#else
 static sec_charging_current_t charging_current_table[] = {
 	{1800,	2100,	200,	40 * 60},
 	{0,	0,	0,	0},
@@ -80,8 +102,11 @@ static sec_charging_current_t charging_current_table[] = {
 	{1900,	1600,	200,	40*60},
 	{0,	0,	0,	0},
 	{0,	0,	0,	0},
+	{0, 0,	0,	0},/*lan hub*/
+	{460,	460,	200,	40*60},/*mhl_usb*/
+	{0,	0,	0,	0},/*power sharing*/
 };
-
+#endif
 static bool sec_bat_adc_none_init(
 		struct platform_device *pdev) {return true; }
 static bool sec_bat_adc_none_exit(void) {return true; }
@@ -103,11 +128,14 @@ static int sec_bat_adc_ap_read(unsigned int channel)
 	int data = -1;
 
 	switch (channel) {
+	case SEC_BAT_ADC_CHANNEL_BAT_CHECK:
+		data = s3c_adc_read(adc_client, 1);
+		break;
 	case SEC_BAT_ADC_CHANNEL_TEMP:
 		data = s3c_adc_read(adc_client, 4);
 		break;
 	case SEC_BAT_ADC_CHANNEL_TEMP_AMBIENT:
-		data = 1080;
+		data = 1300;
 		break;
 	}
 
@@ -161,21 +189,26 @@ int extended_cable_type;
 static void sec_bat_initial_check(void)
 {
 	union power_supply_propval value;
-
 	if (POWER_SUPPLY_TYPE_BATTERY < current_cable_type) {
-		value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
-		psy_do_property("battery", set,
-			POWER_SUPPLY_PROP_ONLINE, value);
+		if (current_cable_type == POWER_SUPPLY_TYPE_POWER_SHARING) {
+			value.intval = current_cable_type;
+			psy_do_property("ps", set,
+				POWER_SUPPLY_PROP_ONLINE, value);
+		} else {
+			value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
+			psy_do_property("battery", set,
+				POWER_SUPPLY_PROP_ONLINE, value);
+		}
 	} else {
 		psy_do_property("sec-charger", get,
 				POWER_SUPPLY_PROP_ONLINE, value);
 		if (value.intval == POWER_SUPPLY_TYPE_WPC) {
 			value.intval =
 				POWER_SUPPLY_TYPE_WPC<<ONLINE_TYPE_MAIN_SHIFT;
-		psy_do_property("battery", set,
+			psy_do_property("battery", set,
 				POWER_SUPPLY_PROP_ONLINE, value);
+		}
 	}
-}
 }
 
 
@@ -274,7 +307,7 @@ static int sec_bat_get_cable_from_extended_cable_type(
 				charge_current = 1300;
 				break;
 			case ONLINE_POWER_TYPE_USB:
-				cable_type = POWER_SUPPLY_TYPE_USB;
+				cable_type = POWER_SUPPLY_TYPE_MHL_USB;
 				charge_current_max = 300;
 				charge_current = 300;
 				break;
@@ -321,7 +354,32 @@ static int sec_bat_get_cable_from_extended_cable_type(
 	value.intval = charge_current;
 	psy_do_property(sec_battery_pdata.charger_name, set,
 			POWER_SUPPLY_PROP_CURRENT_AVG, value);
+
 	return cable_type;
+}
+
+#define ADC_REG_NAME	"VCC_1.8V_VF"
+static int sec_bat_set_adc_power(bool en)
+{
+	struct regulator *regulator;
+	int ret = 0;
+	pr_info("%s(%d)\n", __func__, en);
+
+	regulator = regulator_get(NULL, ADC_REG_NAME);
+	if (IS_ERR(regulator))
+		return -ENODEV;
+
+	if (en) {
+		ret = regulator_enable(regulator);
+		udelay(100);
+	} else {
+		ret = regulator_disable(regulator);
+	}
+	pr_info("%s: %s: en(%d) ret(%d)\n", __func__, ADC_REG_NAME, en, ret);
+
+	regulator_put(regulator);
+
+	return ret;
 }
 
 static bool sec_bat_check_cable_result_callback(
@@ -329,12 +387,18 @@ static bool sec_bat_check_cable_result_callback(
 {
 	current_cable_type = cable_type;
 
+	if (sec_battery_pdata.battery_check_type == SEC_BATTERY_CHECK_ADC) {
+		if (cable_type == POWER_SUPPLY_TYPE_BATTERY)
+			sec_bat_set_adc_power(0);
+		else
+			sec_bat_set_adc_power(1);
+	}
+
 	switch (cable_type) {
 	case POWER_SUPPLY_TYPE_USB:
 		pr_info("%s set vbus applied\n",
 			__func__);
 		break;
-
 	case POWER_SUPPLY_TYPE_BATTERY:
 		pr_info("%s set vbus cut\n",
 			__func__);
@@ -412,6 +476,33 @@ static bool sec_bat_get_temperature_callback(
 		union power_supply_propval *val) {return true; }
 static bool sec_fg_fuelalert_process(bool is_fuel_alerted) {return true; }
 
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+static const sec_bat_adc_table_data_t temp_table[] = {
+	{	303,	900 },
+	{	350,	850 },
+	{	423,	800 },
+	{	490,	750 },
+	{	567,	700 },
+	{	661,	650 },
+	{	764,	600 },
+	{	885,	550 },
+	{	1032,	500 },
+	{	1186,	450 },
+	{	1367,	400 },
+	{	1578,	350 },
+	{	1784,	300 },
+	{	2007,	250 },
+	{	2238,	200 },
+	{	2475,	150 },
+	{	2693,	100 },
+	{	2907,	50	},
+	{	3104,	0	},
+	{	3283,	-50 },
+	{	3427,	-100	},
+	{	3553,	-150	},
+	{	3653,	-200	},
+};
+#else/*h-lite*/
 static const sec_bat_adc_table_data_t temp_table[] = {
 	{  497,	 700 },
 	{  578,	 650 },
@@ -564,6 +655,7 @@ static const sec_bat_adc_table_data_t temp_table2[] = {
 	{ 3662, -190 },
 	{ 3682, -200 },
 };
+#endif
 
 /* ADC region should be exclusive */
 static sec_bat_adc_region_t cable_adc_value_table[] = {
@@ -594,10 +686,34 @@ static int polling_time_table[] = {
 static struct battery_data_t adonis_battery_data[] = {
 /* SDI battery data (High voltage 4.35V) */
 	{
-		.RCOMP0 = 0x73,
-		.RCOMP_charging = 0x73,
+		.RCOMP0 = 0x83,
+		.RCOMP_charging = 0x83,
 		.temp_cohot = -1275,
 		.temp_cocold = -6400,
+		.is_using_model_data = true,
+		.type_str = "SDI",
+	}
+};
+#elif defined(CONFIG_MACH_M2ALTE)
+static struct battery_data_t adonis_battery_data[] = {
+/* SDI battery data (High voltage 4.35V) */
+        {
+                .RCOMP0 = 0x80,
+                .RCOMP_charging = 0x80,
+                .temp_cohot = -1150,
+                .temp_cocold = -5950,
+                .is_using_model_data = true,
+                .type_str = "SDI",
+        }
+};
+#elif defined(CONFIG_MACH_M2A3G)
+static struct battery_data_t adonis_battery_data[] = {
+/* SDI battery data (High voltage 4.35V) */
+	{
+		.RCOMP0 = 0x7D,
+		.RCOMP_charging = 0x80,
+		.temp_cohot = -1150,
+		.temp_cocold = -5950,
 		.is_using_model_data = true,
 		.type_str = "SDI",
 	}
@@ -700,8 +816,8 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.battery_check_type = SEC_BATTERY_CHECK_INT,
 	.check_count = 0,
 	/* Battery check by ADC */
-	.check_adc_max = 1440,
-	.check_adc_min = 0,
+	.check_adc_max = 2000,//temporal range 
+	.check_adc_min = 100,
 
 	/* OVP/UVLO check */
 	.ovp_uvlo_check_type = SEC_BATTERY_OVP_UVLO_CHGPOLLING,
@@ -718,6 +834,20 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.temp_check_type = SEC_BATTERY_TEMP_CHECK_TEMP,
 	.temp_check_count = 1,
 
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+	.temp_high_threshold_event = 700,
+	.temp_high_recovery_event = 490,
+	.temp_low_threshold_event = -30,
+	.temp_low_recovery_event = 15,
+	.temp_high_threshold_normal = 600,
+	.temp_high_recovery_normal = 490,
+	.temp_low_threshold_normal = -50,
+	.temp_low_recovery_normal = 15,
+	.temp_high_threshold_lpm = 600,
+	.temp_high_recovery_lpm = 490,
+	.temp_low_threshold_lpm = -50,
+	.temp_low_recovery_lpm = 15,
+#else
 	.temp_high_threshold_event = 700,
 	.temp_high_recovery_event = 460,
 	.temp_low_threshold_event = -30,
@@ -730,6 +860,7 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.temp_high_recovery_lpm = 460,
 	.temp_low_threshold_lpm = -50,
 	.temp_low_recovery_lpm = 0,
+#endif
 
 	.full_check_type = SEC_BATTERY_FULLCHARGED_CHGPSY,
 	.full_check_type_2nd = SEC_BATTERY_FULLCHARGED_TIME,
@@ -764,9 +895,15 @@ sec_battery_platform_data_t sec_battery_pdata = {
 		SEC_FUELGAUGE_CAPACITY_TYPE_DYNAMIC_SCALE |
 		SEC_FUELGAUGE_CAPACITY_TYPE_SKIP_ABNORMAL,
 		/* SEC_FUELGAUGE_CAPACITY_TYPE_ATOMIC, */
+#if defined(CONFIG_MACH_M2ALTE_KOR_SKT) || defined(CONFIG_MACH_M2ALTE_KOR_KTT) || defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+	.capacity_max = 1000,
+	.capacity_max_margin = 30,
+	.capacity_min = 5,
+#else
 	.capacity_max = 1000,
 	.capacity_max_margin = 30,
 	.capacity_min = -7,
+#endif
 	/* .get_fg_current = false, */
 
 	/* Charger */
@@ -843,7 +980,7 @@ __setup("androidboot.batt_check_recovery=", sec_bat_current_boot_mode);
 void __init exynos5_universal5260_battery_init(void)
 {
 	/* board dependent changes in booting */
-
+#if !defined(CONFIG_MACH_M2ALTE) && !defined(CONFIG_MACH_M2A3G)
 	if (system_rev > 6) {
 		sec_battery_pdata.temp_adc_table = temp_table2;
 		sec_battery_pdata.temp_adc_table_size =
@@ -852,6 +989,11 @@ void __init exynos5_universal5260_battery_init(void)
 		sec_battery_pdata.temp_amb_adc_table_size =
 			sizeof(temp_table2)/sizeof(sec_bat_adc_table_data_t);
 	}
+#endif
+
+#if defined(CONFIG_TARGET_LOCALE_USA) && defined(CONFIG_MACH_M2ALTE)
+	sec_battery_pdata.battery_check_type = SEC_BATTERY_CHECK_ADC;
+#endif
 
 	s3c_i2c5_set_platdata(NULL);
 	platform_add_devices(

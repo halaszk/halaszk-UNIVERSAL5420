@@ -208,6 +208,11 @@ config EXYNOS4_DEV_FIMC_LITE
 	help
 	  Compile in platform device definitions for FIMC_LITE
 
+config CAMERA_EXTERNAL
+	bool "EXTERNAL ISP support"
+	help
+	  Support CAMERA EXTERNAL
+
 config EXYNOS4_DEV_FIMC_IS
 	bool
 	help
@@ -416,7 +421,7 @@ config EXYNOS5_CORESIGHT
 	  Enable embedded trace support
 
 config EXYNOS_PERSISTENT_CLOCK
-	bool
+	bool "Samsung Exynos Persistent-clock-only driver"
 	depends on !RTC_DRV_S3C
 	default n
 	help
@@ -509,9 +514,15 @@ config ASV_MARGIN_TEST
 	bool "Enable margin test"
 	default n
 
+config EXYNOS_CORESIGHT_DEBUG
+	bool "Exynos Coresight Debug(Show pc value)"
+	default n
+	help
+	  Enable Coresight debug.
+
 config EXYNOS_SETUP_MIPIPHY
 	bool
-	depends on (VIDEO_EXYNOS_FIMC_IS)
+	depends on (VIDEO_EXYNOS_FIMC_IS || FB_MIPI_DSIM)
 	default y
 	help
 	  Compile in common setup code for MIPI-CSIS devices
@@ -935,6 +946,7 @@ config MACH_UNIVERSAL5260
 	select EXYNOS_SETUP_FIMD1
 	select S3C_DEV_WDT
 	select S3C_DEV_RTC
+	select S5P_DEV_TV
 	select S5P_DEV_MFC
 	select EXYNOS_DEV_SYSMMU
 	select EXYNOS_DEV_DWMCI
@@ -945,6 +957,7 @@ config MACH_UNIVERSAL5260
 	select S3C_DEV_I2C4
 	select S3C_DEV_I2C5
 	select S3C_DEV_I2C6
+	select S3C_DEV_I2C7
 	select SAMSUNG_DEV_ADC
 	select EXYNOS_DEV_USB_SWITCH
 	select S5P_DEV_USB_EHCI
@@ -955,6 +968,7 @@ config MACH_UNIVERSAL5260
 	select EXYNOS4_SETUP_I2C4
 	select EXYNOS4_SETUP_I2C5
 	select EXYNOS4_SETUP_I2C6
+	select EXYNOS4_SETUP_I2C7
 	select EXYNOS4_SETUP_USB_PHY
 	select EXYNOS4_SETUP_MFC
 	select EXYNOS5_DEV_HSI2C0
@@ -1111,8 +1125,16 @@ config GPS_BCMxxxxx
 	bool "BROADCOM_GPS_CHIPSET_COMMON"
 	default n
 
+config GPS_BCM4752
+	bool "BROADCOM_GPS_CHIPSET_4752"
+	default n
+
 config GPS_BCM47521
 	bool "BROADCOM_GPS_CHIPSET_47521"
+	default n
+
+config GPS_BCM47531
+	bool "BROADCOM_GPS_CHIPSET_47531"
 	default n
 
 config BT_BCM4339
@@ -1258,11 +1280,25 @@ config MACH_HLLTE
 	help
 	  Support H Lite LTE Board
 
-config MACH_M2LTE
-	bool "M2 LTE Board"
+config MACH_M2ALTE
+	bool "M2A LTE Board"
 	select EXYNOS_PERSISTENT_CLOCK
 	help
-	  Support M2 LTE Board
+	  Support M2A LTE Board
+
+config MACH_M2A3G
+	bool "M2A 3G Board"
+	select EXYNOS_PERSISTENT_CLOCK
+	help
+	  Support M2A 3G Board
+
+config MACH_MEGA2ELTE
+	bool "MEGA2E LTE Board"
+	select EXYNOS_PERSISTENT_CLOCK
+	help
+	  Support MEGA2E LTE Board
+	  
+source "arch/arm/mach-exynos/Kconfig.local"
 
 endif
 

@@ -23,6 +23,7 @@
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <plat/devs.h>
+#include <plat/gpio-cfg.h>
 #include <linux/platform_data/modem_v2.h>
 #include "modem_prj.h"
 #include <linux/if_arp.h>
@@ -58,6 +59,7 @@ static int xmm6262_on(struct modem_ctl *mc)
 	if (mc->gpio_revers_bias_restore)
 		mc->gpio_revers_bias_restore();
 	gpio_set_value(mc->gpio_pda_active, 1);
+	s3c_gpio_setpull(mc->gpio_phone_active, S3C_GPIO_PULL_UP);
 
 	mc->phone_state = STATE_BOOTING;
 

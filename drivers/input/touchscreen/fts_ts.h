@@ -52,29 +52,6 @@
 
 #define USE_OPEN_CLOSE
 
-#if !defined(CONFIG_INPUT_BOOSTER)
-//#define TSP_BOOSTER
-#endif
-
-#ifdef TSP_BOOSTER
-#include <linux/pm_qos.h>
-#define TOUCH_BOOSTER_OFF_TIME	500
-#define TOUCH_BOOSTER_CHG_TIME	130
-
-#define TOUCH_BOOSTER_CPU_FRQ_1		1300000	/* CPU KFC 1.3GHz */
-#define TOUCH_BOOSTER_MIF_FRQ_1		543000	/* MIF 543MHz */
-#define TOUCH_BOOSTER_INT_FRQ_1			266000	/* INT 266MHz */
-#define TOUCH_BOOSTER_CPU_FRQ_2		1300000	/* CPU KFC 1.3GHz */
-#define TOUCH_BOOSTER_MIF_FRQ_2		543000	/* MIF 543MHz */
-#define TOUCH_BOOSTER_INT_FRQ_2			160000	/* INT 160MHz */
-#define TOUCH_BOOSTER_CPU_FRQ_3		1300000	/* CPU KFC 1.3GHz */
-#define TOUCH_BOOSTER_MIF_FRQ_3		206000	/* MIF 206MHz */
-#define TOUCH_BOOSTER_INT_FRQ_3			160000	/* INT 160MHz */
-#define TOUCH_BOOSTER_CPU_FRQ_4		1300000	/* CPU KFC 1.3GHz */
-#define TOUCH_BOOSTER_MIF_FRQ_4		413000	/* MIF 413MHz */
-#define TOUCH_BOOSTER_INT_FRQ_4			160000	/* INT 160MHz */
-#endif
-
 #ifdef USE_OPEN_DWORK
 #define TOUCH_OPEN_DWORK_TIME 10
 #endif
@@ -217,17 +194,6 @@ struct fts_ts_info {
 	short *pFrame;
 #endif
 
-#ifdef TSP_BOOSTER
-	bool dvfs_lock_status;
-	struct delayed_work work_dvfs_off;
-	struct delayed_work work_dvfs_chg;
-	struct mutex dvfs_lock;
-	struct pm_qos_request tsp_cpu_qos;
-	struct pm_qos_request tsp_mif_qos;
-	struct pm_qos_request tsp_int_qos;
-	unsigned char boost_level;
-#endif
-
 	struct completion init_done;
 
 	bool slow_report_rate;
@@ -282,23 +248,6 @@ struct fts_ts_info {
 	void (*fts_command)(struct fts_ts_info *info, unsigned char cmd);
 	int (*fts_get_version_info)(struct fts_ts_info *info);
 };
-
-#ifdef TSP_BOOSTER
-enum BOOST_LEVEL {
-	TSP_BOOSTER_DISABLE = 0,
-	TSP_BOOSTER_LEVEL1,
-	TSP_BOOSTER_LEVEL2,
-	TSP_BOOSTER_LEVEL3,
-	TSP_BOOSTER_LEVEL4,
-	TSP_BOOSTER_LEVEL_MAX,
-};
-
-enum BOOST_MODE {
-	TSP_BOOSTER_OFF = 0,
-	TSP_BOOSTER_ON,
-	TSP_BOOSTER_FORCE_OFF,
-};
-#endif
 
 int fts_fw_update_on_probe(struct fts_ts_info *info);
 int fts_fw_update_on_hidden_menu(struct fts_ts_info *info, int update_type);

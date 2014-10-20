@@ -268,6 +268,8 @@ struct dw_mci_dma_ops {
 #define DW_MMC_QUIRK_USE_FINE_TUNING		BIT(11)
 /* Retry CRC error */
 #define DW_MMC_QUIRK_RETRY_CRC_ERROR		BIT(12)
+/* For DMA Recovery */
+#define DW_MMC_QUIRK_DMA_RECOVERY		BIT(13)
 
 enum dw_mci_cd_types {
 	DW_MCI_CD_INTERNAL,	/* use mmc internal CD line */
@@ -353,6 +355,9 @@ struct dw_mci_board {
 	/* Change Pin control */
 	void (*change_cfg_gpio)(u16 pin_map, s5p_gpio_drvstr_t drvstr);
 
+	/* Present IO mode */
+	unsigned int io_mode;
+
 	/* Phase Shift Value */
 	unsigned int sdr_timing;
 	unsigned int ddr_timing;
@@ -364,6 +369,9 @@ struct dw_mci_board {
 	bool tuned;
 	bool only_once_tune;
 	unsigned int ignore_phase;
+#define DW_MMC_DMA_ERROR 		BIT(0)
+#define DW_MMC_DMA_RESET 		BIT(1)
+	unsigned int dma_recovery;
 	u32 error_retry_cnt;
 	struct drv_strength {
 		unsigned int pin;
@@ -372,6 +380,7 @@ struct dw_mci_board {
 
 	/* INT QOS khz */
 	unsigned int qos_int_level;
+	unsigned int int_camera;
 
 	/* external card detection gpio */
 	int ext_cd_gpio;
@@ -417,6 +426,7 @@ struct dw_mci_board {
 	unsigned int sw_timeout;
 	u16 tuning_map[MAX_TUNING_RETRIES];
 	u16 tuning_map_mask;
+	unsigned int dev_drv_str;
 };
 
 void dw_mci_ciu_clk_en(struct dw_mci *host);

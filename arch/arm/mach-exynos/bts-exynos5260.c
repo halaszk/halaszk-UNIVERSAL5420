@@ -460,6 +460,7 @@ struct bts_scenario {
 
 static DEFINE_SPINLOCK(bts_lock);
 static LIST_HEAD(bts_list);
+static void bts_drex_init(void);
 
 static int exynos_bts_notifier_event(struct notifier_block *this,
 					  unsigned long event,
@@ -467,6 +468,7 @@ static int exynos_bts_notifier_event(struct notifier_block *this,
 {
 	switch (event) {
 	case PM_POST_SUSPEND:
+		bts_drex_init();
 		bts_initialize("pd-kfc", true);
 		bts_initialize("pd-eagle", true);
 		return NOTIFY_OK;

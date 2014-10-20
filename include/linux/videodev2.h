@@ -2378,6 +2378,7 @@ struct v4l2_create_buffers {
 #define VIDIOC_S_CTRL		_IOWR('V', 28, struct v4l2_control)
 #define VIDIOC_G_TUNER		_IOWR('V', 29, struct v4l2_tuner)
 #define VIDIOC_S_TUNER		 _IOW('V', 30, struct v4l2_tuner)
+#define VIDIOC_NOTI_CTRL	_IOWR('V', 31, struct v4l2_control)
 #define VIDIOC_G_AUDIO		 _IOR('V', 33, struct v4l2_audio)
 #define VIDIOC_S_AUDIO		 _IOW('V', 34, struct v4l2_audio)
 #define VIDIOC_QUERYCTRL	_IOWR('V', 36, struct v4l2_queryctrl)

@@ -35,12 +35,18 @@
 #include "../fimc-is-core.h"
 #include "../fimc-is-device-sensor.h"
 #include "../fimc-is-resourcemgr.h"
+#include "../fimc-is-hw.h"
 #include "fimc-is-device-6b2.h"
 
 #define SENSOR_NAME "S5K6B2"
 #define DEFAULT_SENSOR_WIDTH	184
 #define DEFAULT_SENSOR_HEIGHT	104
 #define SENSOR_MEMSIZE DEFAULT_SENSOR_WIDTH * DEFAULT_SENSOR_HEIGHT
+
+#define FLITE_REG_CISTATUS_IRQ_SRC_OVERFLOW		(1 << 7)
+#define FLITE_REG_CISTATUS_IRQ_SRC_LASTCAPEND		(1 << 6)
+#define FLITE_REG_CISTATUS_IRQ_SRC_FRMSTART		(1 << 5)
+#define FLITE_REG_CISTATUS_IRQ_SRC_FRMEND		(1 << 4)
 
 #define SENSOR_REG_VIS_DURATION_MSB			(0x6026)
 #define SENSOR_REG_VIS_DURATION_LSB			(0x6027)
@@ -77,32 +83,41 @@ static struct fimc_is_sensor_cfg config_6b2[] = {
 	FIMC_IS_SENSOR_CFG(1936, 1090, 24, 13, 1),
 };
 
+extern unsigned int system_rev;
+
+#if 0
 static int sensor_6b2_open(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
+	pr_info("%s\n", __func__);
 	return 0;
 }
 static int sensor_6b2_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
+	pr_info("%s\n", __func__);
 	return 0;
 }
 static int sensor_6b2_registered(struct v4l2_subdev *sd)
 {
+	/* TODO : If need */
+	pr_info("%s\n", __func__);
 	return 0;
 }
 
 static void sensor_6b2_unregistered(struct v4l2_subdev *sd)
 {
-
+	/* TODO : If need */
+	pr_info("%s\n", __func__);
 }
 
-static const struct v4l2_subdev_internal_ops internal_ops = {
+static const struct v4l2_subdev_internal_ops sensor_6b2_iops = {
 	.open = sensor_6b2_open,
 	.close = sensor_6b2_close,
 	.registered = sensor_6b2_registered,
 	.unregistered = sensor_6b2_unregistered,
 };
+#endif
 
 static int sensor_6b2_init(struct v4l2_subdev *subdev, u32 val)
 {
@@ -114,90 +129,109 @@ static int sensor_6b2_init(struct v4l2_subdev *subdev, u32 val)
 	BUG_ON(!subdev);
 
 	module = (struct fimc_is_module_enum *)v4l2_get_subdevdata(subdev);
+	if (unlikely(!module)) {
+		err("module is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
 	module_6b2 = module->private_data;
+	if (unlikely(!module_6b2)) {
+		err("module_6b2 is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
 	client = module->client;
+	if (unlikely(!client)) {
+		err("client is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
 
 	module_6b2->system_clock = 146 * 1000 * 1000;
 	module_6b2->line_length_pck = 146 * 1000 * 1000;
 
+	pr_info("%s\n", __func__);
 	/* sensor init */
 	/* 8 bit mode */
-	fimc_is_sensor_write(client, 0x7030, 0x0E);
-	fimc_is_sensor_write(client, 0x7031, 0x2F);
+	fimc_is_sensor_write8(client, 0x7030, 0x0E);
+	fimc_is_sensor_write8(client, 0x7031, 0x2F);
 
 	/* Analog Tuning */
-	fimc_is_sensor_write(client, 0x7067, 0x00);
-	fimc_is_sensor_write(client, 0x7074, 0x22);
+	fimc_is_sensor_write8(client, 0x7067, 0x00);
+	fimc_is_sensor_write8(client, 0x7074, 0x22);
 
 	/* Dark Tuning */
-	fimc_is_sensor_write(client, 0x7402, 0x1F);
-	fimc_is_sensor_write(client, 0x7403, 0xC0);
-	fimc_is_sensor_write(client, 0x7247, 0x01);
+	fimc_is_sensor_write8(client, 0x7402, 0x1F);
+	fimc_is_sensor_write8(client, 0x7403, 0xC0);
+	fimc_is_sensor_write8(client, 0x7247, 0x01);
 
-	fimc_is_sensor_write(client, 0x7412, 0x09);
-	fimc_is_sensor_write(client, 0x7413, 0xB9);
-	fimc_is_sensor_write(client, 0x7430, 0x05);
-	fimc_is_sensor_write(client, 0x7432, 0x02);
-	fimc_is_sensor_write(client, 0x7433, 0x32);
-	fimc_is_sensor_write(client, 0x7075, 0x3D);
-	fimc_is_sensor_write(client, 0x7066, 0x09);
+	fimc_is_sensor_write8(client, 0x7412, 0x09);
+	fimc_is_sensor_write8(client, 0x7413, 0xB9);
+	fimc_is_sensor_write8(client, 0x7430, 0x05);
+	fimc_is_sensor_write8(client, 0x7432, 0x02);
+	fimc_is_sensor_write8(client, 0x7433, 0x32);
+	fimc_is_sensor_write8(client, 0x7075, 0x3D);
+	fimc_is_sensor_write8(client, 0x7066, 0x09);
 
 	/* AE setting */
-	fimc_is_sensor_write(client, 0x6000, 0x11);
-	fimc_is_sensor_write(client, 0x6001, 0x11);
-	fimc_is_sensor_write(client, 0x6002, 0x14);
-	fimc_is_sensor_write(client, 0x6003, 0x41);
-	fimc_is_sensor_write(client, 0x6004, 0x14);
-	fimc_is_sensor_write(client, 0x6005, 0x41);
-	fimc_is_sensor_write(client, 0x6006, 0x11);
-	fimc_is_sensor_write(client, 0x6007, 0x11);
+	fimc_is_sensor_write8(client, 0x6000, 0x11);
+	fimc_is_sensor_write8(client, 0x6001, 0x11);
+	fimc_is_sensor_write8(client, 0x6002, 0x14);
+	fimc_is_sensor_write8(client, 0x6003, 0x41);
+	fimc_is_sensor_write8(client, 0x6004, 0x14);
+	fimc_is_sensor_write8(client, 0x6005, 0x41);
+	fimc_is_sensor_write8(client, 0x6006, 0x11);
+	fimc_is_sensor_write8(client, 0x6007, 0x11);
 
 	/* Number of pixel */
-	fimc_is_sensor_write(client, 0x5030, 0x20);
-	fimc_is_sensor_write(client, 0x5031, 0xB4);
+	fimc_is_sensor_write8(client, 0x5030, 0x20);
+	fimc_is_sensor_write8(client, 0x5031, 0xB4);
 
 	/* AE target */
-	fimc_is_sensor_write(client, 0x600A, 0x2A);
+	fimc_is_sensor_write8(client, 0x600A, 0x2A);
 
 	/* AE speed */
-	fimc_is_sensor_write(client, 0x5034, 0x00);
+	fimc_is_sensor_write8(client, 0x5034, 0x00);
 
 	/* Inner Target Tolerance */
-	fimc_is_sensor_write(client, 0x503F, 0x03);
+	fimc_is_sensor_write8(client, 0x503F, 0x03);
 
 	/* patch height */
-	fimc_is_sensor_write(client, 0x6015, 0x19);
+	fimc_is_sensor_write8(client, 0x6015, 0x19);
 
 	/* G + R Setting */
 	/* Vision Senser Data = 0.5*Gr + 0.5*R */
-	fimc_is_sensor_write(client, 0x6029, 0x02);
-	fimc_is_sensor_write(client, 0x602A, 0x02);
+	fimc_is_sensor_write8(client, 0x6029, 0x02);
+	fimc_is_sensor_write8(client, 0x602A, 0x02);
 
 	/* For Analog Gain 16x */
-	fimc_is_sensor_write(client, 0x7018, 0xCF);
-	fimc_is_sensor_write(client, 0x7019, 0xDB);
-	fimc_is_sensor_write(client, 0x702A, 0x8D);
-	fimc_is_sensor_write(client, 0x702B, 0x60);
-	fimc_is_sensor_write(client, 0x5035, 0x02);
+	fimc_is_sensor_write8(client, 0x7018, 0xCF);
+	fimc_is_sensor_write8(client, 0x7019, 0xDB);
+	fimc_is_sensor_write8(client, 0x702A, 0x8D);
+	fimc_is_sensor_write8(client, 0x702B, 0x60);
+	fimc_is_sensor_write8(client, 0x5035, 0x02);
 
 	/* frame rate - default 10fps*/
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_MSB, 0x00);
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_LSB, 0x6A);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_MSB, 0x00);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_LSB, 0x6A);
 
 	/* BIT_RATE_MBPS_alv */
-	fimc_is_sensor_write(client, 0x7351, 0x02);
-	fimc_is_sensor_write(client, 0x7352, 0x48);
-	fimc_is_sensor_write(client, 0x7353, 0x00);
-	fimc_is_sensor_write(client, 0x7354, 0x00);
+	fimc_is_sensor_write8(client, 0x7351, 0x02);
+	fimc_is_sensor_write8(client, 0x7352, 0x48);
+	fimc_is_sensor_write8(client, 0x7353, 0x00);
+	fimc_is_sensor_write8(client, 0x7354, 0x00);
 
-	fimc_is_sensor_write(client, 0x7339, 0x03);
+	fimc_is_sensor_write8(client, 0x7339, 0x03);
 
 	/* AE max shutter speed (15fps) */
-	fimc_is_sensor_write(client, 0x5014, 0x11);
-	fimc_is_sensor_write(client, 0x5015, 0x00);
+	fimc_is_sensor_write8(client, 0x5014, 0x11);
+	fimc_is_sensor_write8(client, 0x5015, 0x00);
 
-	info("[MOD:D:%d] %s(%d)\n", module->id, __func__, val);
+	pr_info("[MOD:D:%d] %s(%d)\n", module->id, __func__, val);
 
+p_err:
 	return ret;
 }
 
@@ -205,10 +239,45 @@ static const struct v4l2_subdev_core_ops core_ops = {
 	.init = sensor_6b2_init
 };
 
+static int sensor_6b2_s_format(struct v4l2_subdev *subdev, struct v4l2_mbus_framefmt *fmt) {	
+	int ret = 0;
+	struct fimc_is_module_enum *module;
+	struct fimc_is_module_6b2 *module_6b2;
+	struct i2c_client *client;
+	BUG_ON(!subdev);
+	BUG_ON(!fmt);
+
+	module = (struct fimc_is_module_enum *)v4l2_get_subdevdata(subdev);
+	if (unlikely(!module)) {
+		err("module is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	module_6b2 = module->private_data;
+	if (unlikely(!module_6b2)) {
+		err("module_6b2 is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+	client = module->client;
+	if (unlikely(!client)) {
+		err("client is NULL");
+		ret = -EINVAL;
+		goto p_err;
+	}
+
+p_err:
+	return ret;
+}
+
 static int sensor_6b2_s_stream(struct v4l2_subdev *subdev, int enable)
 {
 	int ret = 0;
 	struct fimc_is_module_enum *sensor;
+
+	pr_info("%s\n", __func__);
 
 	sensor = (struct fimc_is_module_enum *)v4l2_get_subdevdata(subdev);
 	if (!sensor) {
@@ -219,13 +288,13 @@ static int sensor_6b2_s_stream(struct v4l2_subdev *subdev, int enable)
 
 	if (enable) {
 		ret = CALL_MOPS(sensor, stream_on, subdev);
-		if (ret) {
+		if (ret < 0) {
 			err("s_duration is fail(%d)", ret);
 			goto p_err;
 		}
 	} else {
 		ret = CALL_MOPS(sensor, stream_off, subdev);
-		if (ret) {
+		if (ret < 0) {
 			err("s_duration is fail(%d)", ret);
 			goto p_err;
 		}
@@ -245,6 +314,8 @@ static int sensor_6b2_s_param(struct v4l2_subdev *subdev, struct v4l2_streamparm
 
 	BUG_ON(!subdev);
 	BUG_ON(!param);
+
+	pr_info("%s\n", __func__);
 
 	cp = &param->parm.capture;
 	tpf = &cp->timeperframe;
@@ -283,7 +354,8 @@ p_err:
 
 static const struct v4l2_subdev_video_ops video_ops = {
 	.s_stream = sensor_6b2_s_stream,
-	.s_parm = sensor_6b2_s_param
+	.s_parm = sensor_6b2_s_param,
+	.s_mbus_fmt = sensor_6b2_s_format
 };
 
 static const struct v4l2_subdev_ops subdev_ops = {
@@ -313,9 +385,9 @@ int sensor_6b2_stream_on(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	ret = fimc_is_sensor_write(client, 0x4100, 1);
-	if (ret) {
-		err("fimc_is_sensor_write is fail(%d)", ret);
+	ret = fimc_is_sensor_write8(client, 0x4100, 1);
+	if (ret < 0) {
+		err("fimc_is_sensor_write8 is fail(%d)", ret);
 		goto p_err;
 	}
 
@@ -345,9 +417,9 @@ int sensor_6b2_stream_off(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	ret = fimc_is_sensor_write(client, 0x4100, 0);
-	if (ret) {
-		err("fimc_is_sensor_write is fail(%d)", ret);
+	ret = fimc_is_sensor_write8(client, 0x4100, 0);
+	if (ret < 0) {
+		err("fimc_is_sensor_write8 is fail(%d)", ret);
 		goto p_err;
 	}
 
@@ -372,6 +444,8 @@ int sensor_6b2_s_duration(struct v4l2_subdev *subdev, u64 duration)
 
 	BUG_ON(!subdev);
 
+	pr_info("%s(%d)\n", __func__, (u32)duration);
+
 	sensor = (struct fimc_is_module_enum *)v4l2_get_subdevdata(subdev);
 	if (unlikely(!sensor)) {
 		err("sensor is NULL");
@@ -391,8 +465,8 @@ int sensor_6b2_s_duration(struct v4l2_subdev *subdev, u64 duration)
 	value[0] = result & 0xFF;
 	value[1] = (result >> 8) & 0xFF;
 
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_MSB, value[1]);
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_LSB, value[0]);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_MSB, value[1]);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_LSB, value[0]);
 
 p_err:
 	return ret;
@@ -419,6 +493,8 @@ int sensor_6b2_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
 
 	BUG_ON(!subdev);
 
+	pr_info("%s(%d)\n", __func__, (u32)exposure);
+
 	sensor = (struct fimc_is_module_enum *)v4l2_get_subdevdata(subdev);
 	if (unlikely(!sensor)) {
 		err("sensor is NULL");
@@ -435,7 +511,7 @@ int sensor_6b2_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
 
 	value = exposure & 0xFF;
 
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_AE_TARGET, value);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_AE_TARGET, value);
 
 p_err:
 	return ret;
@@ -456,6 +532,9 @@ int sensor_6b2_g_max_exposure(struct v4l2_subdev *subdev)
 int sensor_6b2_s_again(struct v4l2_subdev *subdev, u64 sensitivity)
 {
 	int ret = 0;
+
+	pr_info("%s\n", __func__);
+
 	return ret;
 }
 
@@ -547,6 +626,8 @@ int sensor_6b2_probe(struct i2c_client *client,
 	module->pixel_height = module->active_height + 10;
 	module->max_framerate = 30;
 	module->position = SENSOR_POSITION_FRONT;
+	module->mode = CSI_MODE_CH0_ONLY;
+	module->lanes = CSI_DATA_LANES_1;
 	module->setfile_name = "setfile_6b2.bin";
 	module->cfgs = ARRAY_SIZE(config_6b2);
 	module->cfg = config_6b2;
@@ -554,11 +635,12 @@ int sensor_6b2_probe(struct i2c_client *client,
 	if (!module->private_data) {
 		err("private_data is NULL");
 		ret = -ENOMEM;
+		kfree(subdev_module);
 		goto p_err;
 	}
 
 	ext = &module->ext;
-	ext->mipi_lane_num = 1;
+	ext->mipi_lane_num = module->lanes;
 	ext->I2CSclk = I2C_L0;
 	ext->sensor_con.product_name = SENSOR_NAME_S5K6B2;
 	ext->sensor_con.peri_type = SE_I2C;
@@ -570,15 +652,19 @@ int sensor_6b2_probe(struct i2c_client *client,
 
 	ext->companion_con.product_name = COMPANION_NAME_NOTHING;
 
-#ifdef SENSOR_S5K6B2_DRIVING
+#ifdef DEFAULT_S5K6B2_DRIVING
 	v4l2_i2c_subdev_init(subdev_module, client, &subdev_ops);
-	subdev_module->internal_ops = &internal_ops;
 #else
 	v4l2_subdev_init(subdev_module, &subdev_ops);
 #endif
 	v4l2_set_subdevdata(subdev_module, module);
 	v4l2_set_subdev_hostdata(subdev_module, device);
 	snprintf(subdev_module->name, V4L2_SUBDEV_NAME_SIZE, "sensor-subdev.%d", module->id);
+
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+	if(system_rev >= 6)
+		s5p_gpio_set_drvstr(GPIO_VT_CAM_MCLK, S5P_GPIO_DRVSTR_LV2);
+#endif
 
 p_err:
 	info("%s(%d)\n", __func__, ret);

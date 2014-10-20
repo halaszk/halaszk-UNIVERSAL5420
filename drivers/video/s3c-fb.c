@@ -885,7 +885,7 @@ static void s3c_fb_configure_lcd(struct s3c_fb *sfb,
 	if (sfb->variant.is_2443)
 		data |= (1 << 5);
 
-	data |= VIDCON0_ENVID | VIDCON0_ENVID_F;
+	data |= VIDCON0_VLCKFREE | VIDCON0_ENVID | VIDCON0_ENVID_F;
 	writel(data, sfb->regs + VIDCON0);
 }
 
@@ -1306,6 +1306,9 @@ static int s3c_fb_pan_display(struct fb_var_screeninfo *var,
 	void __iomem *buf	= sfb->regs + win->index * 8;
 	unsigned int start_boff, end_boff;
 
+	/* support LPM (off charging mode) display based on FBIOPAN_DISPLAY */
+	s3c_fb_set_par(info);
+
 	pm_runtime_get_sync(sfb->dev);
 
 	/* Offset in bytes to the start of the displayed area */
@@ -1454,6 +1457,7 @@ void s3c_fb_log_fifo_underflow_locked(struct s3c_fb *sfb, ktime_t timestamp)
 	memcpy(sfb->debug_data.regs_at_underflow, sfb->regs,
 			sizeof(sfb->debug_data.regs_at_underflow));
 #endif
+	dev_err(sfb->dev, "%s\n", __func__);
 }
 
 static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
@@ -1692,6 +1696,9 @@ static unsigned int s3c_fb_map_ion_handle(struct s3c_fb *sfb,
 		goto err_buf_map_attachment;
 	}
 #endif
+	exynos_ion_sync_dmabuf_for_device(sfb->dev, dma->dma_buf,
+						dma->dma_buf->size,
+						DMA_TO_DEVICE);
 	dma->ion_handle = ion_handle;
 	return dma->dma_buf->size;
 
@@ -1720,6 +1727,9 @@ static void s3c_fb_free_dma_buf(struct s3c_fb *sfb,
 
 	dma_buf_unmap_attachment(dma->attachment, dma->sg_table,
 			DMA_TO_DEVICE);
+
+	exynos_ion_sync_dmabuf_for_cpu(sfb->dev, dma->dma_buf,
+					dma->dma_buf->size, DMA_FROM_DEVICE);
 #endif
 	dma_buf_detach(dma->dma_buf, dma->attachment);
 	dma_buf_put(dma->dma_buf);
@@ -3750,11 +3760,6 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	platid = platform_get_device_id(pdev);
 	fbdrv = (struct s3c_fb_driverdata *)platid->driver_data;
 
-	if (ion_register_special_device(ion_exynos, dev)) {
-		dev_err(dev, "ION special device is already registered\n");
-		return -EBUSY;
-	}
-
 	if (fbdrv->variant.nr_windows > S3C_FB_MAX_WIN) {
 		dev_err(dev, "too many windows, cannot attach\n");
 		return -EINVAL;
@@ -3884,7 +3889,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	if (sfb->variant.has_fixvclk) {
 		reg = readl(sfb->regs + VIDCON1);
 		reg &= ~VIDCON1_VCLK_MASK;
-		reg |= VIDCON1_VCLK_HOLD;
+		reg |= VIDCON1_VCLK_RUN;
 		writel(reg, sfb->regs + VIDCON1);
 	}
 
@@ -4384,7 +4389,7 @@ static int s3c_fb_enable(struct s3c_fb *sfb)
 	if (sfb->variant.has_fixvclk) {
 		reg = readl(sfb->regs + VIDCON1);
 		reg &= ~VIDCON1_VCLK_MASK;
-		reg |= VIDCON1_VCLK_HOLD;
+		reg |= VIDCON1_VCLK_RUN;
 		writel(reg, sfb->regs + VIDCON1);
 	}
 

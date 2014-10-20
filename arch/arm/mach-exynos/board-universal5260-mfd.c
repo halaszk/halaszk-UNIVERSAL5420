@@ -18,13 +18,18 @@
 #include <mach/irqs.h>
 #include <mach/hs-iic.h>
 
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77803.h>
+#include <linux/mfd/max77804k-private.h>
+#else
 #ifdef CONFIG_MFD_MAX77803
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
+#endif
+#endif
 #include <linux/regulator/machine.h>
 #ifdef CONFIG_LEDS_MAX77803
 #include <linux/leds-max77803.h>
-#endif
 #endif
 
 #include "board-universal5260.h"
@@ -124,8 +129,13 @@ static struct max77803_led_platform_data max77803_led_pdata = {
 #ifdef CONFIG_VIBETONZ
 static struct max77803_haptic_platform_data max77803_haptic_pdata = {
 	.max_timeout = 10000,
+#ifdef CONFIG_MFD_MAX77804K
+	.duty = 37920,
+	.period = 38485,	// M2A
+#else
 	.duty = 31317,
-	.period = 33674,
+	.period = 33674,	// Fresco
+#endif
 	.reg2 = MOTOR_LRA | EXT_PWM | DIVIDER_128,
 	.init_hw = NULL,
 	.motor_en = NULL,

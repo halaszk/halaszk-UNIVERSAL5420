@@ -121,6 +121,7 @@ int s5p_mipi_dsi_wr_data(struct mipi_dsim_device *dsim,
 	unsigned char tempbuf[2] = {0, };
 	int remind, temp;
 	unsigned int payload;
+	int ret = len;
 
 	if (dsim->enabled == false) {
 		dev_dbg(dsim->dev, "MIPI DSIM is disabled.\n");
@@ -165,8 +166,8 @@ int s5p_mipi_dsi_wr_data(struct mipi_dsim_device *dsim,
 		if (!wait_for_completion_interruptible_timeout(&dsim_ph_wr_comp,
 			MIPI_WR_TIMEOUT)) {
 				dev_err(dsim->dev, "MIPI DSIM short packet write Timeout!\n");
-				mutex_unlock(&dsim_rd_wr_mutex);
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+				goto exit;
 		}
 		break;
 
@@ -199,8 +200,8 @@ int s5p_mipi_dsi_wr_data(struct mipi_dsim_device *dsim,
 		if (!wait_for_completion_interruptible_timeout(&dsim_ph_wr_comp,
 			MIPI_WR_TIMEOUT)) {
 				dev_err(dsim->dev, "MIPI DSIM response packet write Timeout!\n");
-				mutex_unlock(&dsim_rd_wr_mutex);
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+				goto exit;
 		}
 		break;
 
@@ -239,8 +240,8 @@ int s5p_mipi_dsi_wr_data(struct mipi_dsim_device *dsim,
 		if (!wait_for_completion_interruptible_timeout(&dsim_wr_comp,
 			MIPI_WR_TIMEOUT)) {
 				dev_err(dsim->dev, "MIPI DSIM write Timeout!\n");
-				mutex_unlock(&dsim_rd_wr_mutex);
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+				goto exit;
 		}
 		break;
 	}
@@ -255,12 +256,19 @@ int s5p_mipi_dsi_wr_data(struct mipi_dsim_device *dsim,
 		dev_warn(dsim->dev,
 			"data id %x is not supported current DSI spec.\n", cmd);
 
-		mutex_unlock(&dsim_rd_wr_mutex);
-		return -EINVAL;
+		ret = -EINVAL;
 	}
 
+exit:
+	if(dsim->enabled && ret == -ETIMEDOUT) {
+		dev_info(dsim->dev, "MIPI Timeout 0x%08X, 0x%08X, 0x%08X\n",
+				readl(dsim->reg_base + S5P_DSIM_STATUS),
+				readl(dsim->reg_base + S5P_DSIM_INTSRC),
+				readl(dsim->reg_base + S5P_DSIM_FIFOCTRL));
+		s5p_mipi_dsi_init_fifo_pointer(dsim, DSIM_INIT_SFR);
+	}
 	mutex_unlock(&dsim_rd_wr_mutex);
-	return len;
+	return ret;
 }
 
 static void s5p_mipi_dsi_rx_err_handler(struct mipi_dsim_device *dsim,
@@ -355,7 +363,7 @@ check_rx_header:
 	case MIPI_DSI_RX_DCS_LONG_READ_RESPONSE:
 	case MIPI_DSI_RX_GENERIC_LONG_READ_RESPONSE:
 		rx_size = (temp >> 8) & 0x0000ffff;
-		dev_info(dsim->dev, "rx fifo : %8x, response : %x, rx_size : %d\n",
+		dev_dbg(dsim->dev, "rx fifo : %8x, response : %x, rx_size : %d\n",
 				temp, res, rx_size);
 		if (count != rx_size) {
 			dev_err(dsim->dev, "wrong rx size ..\n");
@@ -444,7 +452,8 @@ static unsigned long s5p_mipi_dsi_change_pll(struct mipi_dsim_device *dsim,
 
 	dfin_pll = (FIN_HZ / pre_divider);
 
-	if (soc_is_exynos5250()) {
+	if (soc_is_exynos5250() || soc_is_exynos3250()|| soc_is_exynos3470()
+		|| soc_is_exynos3472()) {
 		if (dfin_pll < DFIN_PLL_MIN_HZ || dfin_pll > DFIN_PLL_MAX_HZ) {
 			dev_warn(dsim->dev, "fin_pll range should be 6MHz ~ 12MHz\n");
 			s5p_mipi_dsi_enable_afc(dsim, 0, 0);
@@ -464,9 +473,11 @@ static unsigned long s5p_mipi_dsi_change_pll(struct mipi_dsim_device *dsim,
 		}
 	}
 	dfvco = dfin_pll * main_divider;
-	dev_dbg(dsim->dev, "dfvco: %lu, dfin_pll: %lu, main_divider: %d\n", dfvco, dfin_pll, main_divider);
+	dev_dbg(dsim->dev, "dfvco: %lu, dfin_pll: %lu, main_divider: %d\n",
+				dfvco, dfin_pll, main_divider);
 
-	if (soc_is_exynos5250()) {
+	if (soc_is_exynos5250() || soc_is_exynos3250() || soc_is_exynos3470()
+		|| soc_is_exynos3472()) {
 		if (dfvco < DFVCO_MIN_HZ || dfvco > DFVCO_MAX_HZ)
 			dev_warn(dsim->dev, "fvco range should be 500MHz ~ 1000MHz\n");
 	}
@@ -474,12 +485,14 @@ static unsigned long s5p_mipi_dsi_change_pll(struct mipi_dsim_device *dsim,
 	dpll_out = dfvco / (1 << scaler);
 
 	/* condition with DPHY support upto 1G */
-	if (!soc_is_exynos4210() && !soc_is_exynos4212() && !soc_is_exynos4212())
+	if (!dphy_support_upto_1GHz())
 		dpll_out *= 2;
 
-	dev_dbg(dsim->dev, "dpll_out: %lu, dfvco: %lu, scaler: %d\n", dpll_out, dfvco, scaler);
+	dev_dbg(dsim->dev, "dpll_out: %lu, dfvco: %lu, scaler: %d\n",
+		dpll_out, dfvco, scaler);
 
-	if (soc_is_exynos5250()) {
+	if (soc_is_exynos5250() || soc_is_exynos3250() || soc_is_exynos3470()
+		 || soc_is_exynos3472()) {
 		for (i = 0; i < ARRAY_SIZE(dpll_table); i++) {
 			if (dpll_out < dpll_table[i] * MHZ) {
 				freq_band = i;
@@ -494,7 +507,8 @@ static unsigned long s5p_mipi_dsi_change_pll(struct mipi_dsim_device *dsim,
 	s5p_mipi_dsi_hs_zero_ctrl(dsim, 0);
 	s5p_mipi_dsi_prep_ctrl(dsim, 0);
 
-	if (soc_is_exynos5250()) {
+	if (soc_is_exynos5250() || soc_is_exynos3250() || soc_is_exynos3470()
+		|| soc_is_exynos3472()) {
 		/* Freq Band */
 		s5p_mipi_dsi_pll_freq_band(dsim, freq_band);
 	}
@@ -502,7 +516,8 @@ static unsigned long s5p_mipi_dsi_change_pll(struct mipi_dsim_device *dsim,
 	s5p_mipi_dsi_pll_stable_time(dsim, dsim->dsim_config->pll_stable_time);
 
 	/* Enable PLL */
-	dev_dbg(dsim->dev, "FOUT of mipi dphy pll is %luMHz\n", (dpll_out / MHZ));
+	dev_dbg(dsim->dev, "FOUT of mipi dphy pll is %luMHz\n",
+		(dpll_out / MHZ));
 
 	return dpll_out;
 }
@@ -532,7 +547,7 @@ static int s5p_mipi_dsi_set_clock(struct mipi_dsim_device *dsim,
 					"failed to get hs clock.\n");
 				return -EINVAL;
 			}
-			if (!soc_is_exynos5250()) {
+			if (!soc_is_exynos5250() && !soc_is_exynos3250() && !soc_is_exynos3470() && !soc_is_exynos3472()) {
 #if defined(CONFIG_LCD_MIPI_S6E3FA0)
 				s5p_mipi_dsi_set_b_dphyctrl(dsim, 0x0AF);
 				s5p_mipi_dsi_set_timing_register0(dsim, 0x08, 0x0d);
@@ -541,7 +556,7 @@ static int s5p_mipi_dsi_set_clock(struct mipi_dsim_device *dsim,
 #else
 				s5p_mipi_dsi_set_b_dphyctrl(dsim, 0x190);
 				s5p_mipi_dsi_set_timing_register0(dsim, 0x03, 0x06);
-#ifdef CONFIG_LCD_MIPI_D6EA8061
+#if defined(CONFIG_LCD_MIPI_D6EA8061) || defined(CONFIG_LCD_MIPI_S6E8AA0A02) || defined(CONFIG_LCD_MIPI_HX8394)
 				s5p_mipi_dsi_set_timing_register1(dsim, 0x04, 0x15, 0x0A, 0x05);
 #else
 				s5p_mipi_dsi_set_timing_register1(dsim, 0x04, 0x15, 0x09, 0x04);
@@ -695,11 +710,12 @@ static int s5p_mipi_dsi_init_link(struct mipi_dsim_device *dsim)
 
 		/* dsi configuration */
 		s5p_mipi_dsi_init_config(dsim);
-		s5p_mipi_dsi_enable_lane(dsim, DSIM_LANE_CLOCK, 1);
-		s5p_mipi_dsi_enable_lane(dsim, dsim->data_lane, 1);
 
 		/* set clock configuration */
 		s5p_mipi_dsi_set_clock(dsim, dsim->dsim_config->e_byte_clk, 1);
+
+		s5p_mipi_dsi_enable_lane(dsim, DSIM_LANE_CLOCK, 1);
+		s5p_mipi_dsi_enable_lane(dsim, dsim->data_lane, 1);
 
 		/* check clock and data lane state are stop state */
 		while (!(s5p_mipi_dsi_is_lane_state(dsim))) {
@@ -709,15 +725,14 @@ static int s5p_mipi_dsi_init_link(struct mipi_dsim_device *dsim)
 					"DSI Master is not stop state.\n");
 				dev_err(dsim->dev,
 					"Check initialization process\n");
-
 				return -EINVAL;
 			}
 		}
 
 		if (time_out != 0) {
-			dev_info(dsim->dev,
+			dev_dbg(dsim->dev,
 				"DSI Master driver has been completed.\n");
-			dev_info(dsim->dev, "DSI Master state is stop state\n");
+			dev_dbg(dsim->dev, "DSI Master state is stop state\n");
 		}
 
 		dsim->state = DSIM_STATE_STOP;
@@ -835,7 +850,6 @@ static irqreturn_t s5p_mipi_dsi_interrupt_handler(int irq, void *dev_id)
 
 	int_src = ~(int_msk) & int_src;
 
-	/* Test bit */
 	if (int_src & SFR_PL_FIFO_EMPTY)
 		complete(&dsim_wr_comp);
 	if (int_src & SFR_PH_FIFO_EMPTY)
@@ -857,6 +871,13 @@ static int s5p_mipi_dsi_enable(struct mipi_dsim_device *dsim)
 		(struct lcd_platform_data *)dsim->pd->dsim_lcd_config->mipi_ddi_pd;
 
 	dev_info(dsim->dev, "+%s\n", __func__);
+	mutex_lock(&dsim->lock);
+
+	if(dsim->enabled) {
+		dev_info(dsim->dev, "-%s already enabled\n", __func__);
+		mutex_unlock(&dsim->lock);
+		return 0;
+	}
 
 	if (dsim->pd->clock_init) {
 		if (dsim->pd->clock_init() < 0)
@@ -901,6 +922,8 @@ static int s5p_mipi_dsi_enable(struct mipi_dsim_device *dsim)
 
 	dsim->dsim_lcd_drv->displayon(dsim);
 
+	mutex_unlock(&dsim->lock);
+
 	dev_info(dsim->dev, "-%s\n", __func__);
 
 	return 0;
@@ -914,7 +937,17 @@ static int s5p_mipi_dsi_disable(struct mipi_dsim_device *dsim)
 
 	dev_info(dsim->dev, "+%s\n", __func__);
 
+	mutex_lock(&dsim->lock);
+
+	if(!dsim->enabled) {
+		dev_info(dsim->dev, "- %s already disabled\n", __func__);
+		mutex_unlock(&dsim->lock);
+		return 0;
+	}
+
 	dsim->dsim_lcd_drv->suspend(dsim);
+
+	dsim->enabled = false;
 
 	if (lcd_pd && lcd_pd->power_on)
 		lcd_pd->power_on(NULL, 0);
@@ -922,7 +955,17 @@ static int s5p_mipi_dsi_disable(struct mipi_dsim_device *dsim)
 	/* disable interrupts */
 	s5p_mipi_dsi_set_interrupt_mask(dsim, 0xffffffff, 1);
 
-	dsim->enabled = false;
+	/* disable HS clock */
+	s5p_mipi_dsi_enable_hs_clock(dsim, 0);
+
+	/* make CLK/DATA Lane as LP00 */
+	s5p_mipi_dsi_enable_lane(dsim, DSIM_LANE_CLOCK, 0);
+	s5p_mipi_dsi_enable_lane(dsim, dsim->data_lane, 0);
+
+	s5p_mipi_dsi_set_clock(dsim, dsim->dsim_config->e_byte_clk, 0);
+
+	s5p_mipi_dsi_sw_reset(dsim);
+
 	dsim->state = DSIM_STATE_SUSPEND;
 	s5p_mipi_dsi_d_phy_onoff(pdev, 0);
 
@@ -931,9 +974,11 @@ static int s5p_mipi_dsi_disable(struct mipi_dsim_device *dsim)
 
 	clk_disable(dsim->clock);
 
-	dev_info(dsim->dev, "-%s\n", __func__);
-
 	pm_runtime_put_sync(&pdev->dev);
+
+	mutex_unlock(&dsim->lock);
+
+	dev_info(dsim->dev, "-%s\n", __func__);
 
 	return 0;
 }
@@ -959,7 +1004,7 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	struct mipi_dsim_config *dsim_config;
 	struct s5p_platform_mipi_dsim *dsim_pd;
 	struct lcd_platform_data *lcd_pd = NULL;
-	int ret = -1;
+	int ret = -EPERM;
 
 	if (!dsim)
 		dsim = kzalloc(sizeof(struct mipi_dsim_device),
@@ -1009,7 +1054,7 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	if (!res) {
 		dev_err(&pdev->dev, "failed to request io memory region\n");
 		ret = -EINVAL;
-		goto err_mem_region;
+		goto err_platform_get;
 	}
 
 	dsim->res = res;
@@ -1023,18 +1068,12 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	/* clear interrupt */
 	s5p_mipi_dsi_clear_interrupt(dsim, 0xffffffff);
 
-	/*
-	 * it uses frame done interrupt handler
-	 * only in case of MIPI Video mode.
-	 */
-	if (dsim->pd->dsim_config->e_interface == DSIM_VIDEO) {
-		dsim->irq = platform_get_irq(pdev, 0);
-		if (request_irq(dsim->irq, s5p_mipi_dsi_interrupt_handler,
+	dsim->irq = platform_get_irq(pdev, 0);
+	if (request_irq(dsim->irq, s5p_mipi_dsi_interrupt_handler,
 				IRQF_DISABLED, "mipi-dsi", dsim)) {
-			dev_err(&pdev->dev, "request_irq failed.\n");
-			ret = -EINVAL;
-			goto err_irq;
-		}
+		dev_err(&pdev->dev, "request_irq failed.\n");
+		ret = -EINVAL;
+		goto err_irq;
 	}
 
 	dsim->dsim_lcd_drv = dsim->dsim_config->dsim_ddi_pd;
@@ -1079,6 +1118,7 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	s5p_mipi_dsi_set_interrupt_mask(dsim, SFR_PH_FIFO_EMPTY | SFR_PL_FIFO_EMPTY | RX_DAT_DONE, 0);
 
 	mutex_init(&dsim_rd_wr_mutex);
+	mutex_init(&dsim->lock);
 
 	dsim->enabled = true;
 	dsim->dsim_lcd_drv->probe(dsim);
@@ -1092,12 +1132,11 @@ static int s5p_mipi_dsi_probe(struct platform_device *pdev)
 	return 0;
 
 err_irq:
+	iounmap((void __iomem *) dsim->reg_base);
+err_mem_region:
+	release_mem_region(res->start, resource_size(res));
 	release_resource(dsim->res);
 	kfree(dsim->res);
-
-	iounmap((void __iomem *) dsim->reg_base);
-
-err_mem_region:
 err_platform_get:
 	clk_disable(dsim->clock);
 	clk_put(dsim->clock);
@@ -1113,8 +1152,7 @@ static int __devexit s5p_mipi_dsi_remove(struct platform_device *pdev)
 {
 	struct mipi_dsim_device *dsim = platform_get_drvdata(pdev);
 
-	if (dsim->dsim_config->e_interface == DSIM_VIDEO)
-		free_irq(dsim->irq, dsim);
+	free_irq(dsim->irq, dsim);
 
 	iounmap(dsim->reg_base);
 

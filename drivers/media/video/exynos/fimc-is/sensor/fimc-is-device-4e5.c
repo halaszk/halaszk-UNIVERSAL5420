@@ -35,6 +35,7 @@
 #include "../fimc-is-core.h"
 #include "../fimc-is-device-sensor.h"
 #include "../fimc-is-resourcemgr.h"
+#include "../fimc-is-hw.h"
 #include "fimc-is-device-4e5.h"
 
 #define SENSOR_NAME "S5K4E5"
@@ -100,6 +101,8 @@ int sensor_4e5_probe(struct i2c_client *client,
 	module->active_height = 1920;
 	module->max_framerate = 30;
 	module->position = SENSOR_POSITION_REAR;
+	module->mode = CSI_MODE_CH0_ONLY;
+	module->lanes = CSI_DATA_LANES_4;
 	module->setfile_name = "setfile_4e5.bin";
 	module->cfgs = 0;
 	module->cfg = NULL;
@@ -107,7 +110,7 @@ int sensor_4e5_probe(struct i2c_client *client,
 	module->private_data = NULL;
 
 	ext = &module->ext;
-	ext->mipi_lane_num = 4;
+	ext->mipi_lane_num = module->lanes;
 	ext->I2CSclk = I2C_L0;
 
 	ext->sensor_con.product_name = 0;

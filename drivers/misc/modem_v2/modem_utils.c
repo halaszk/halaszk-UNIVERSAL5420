@@ -624,9 +624,9 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 {
 	u8 *frm;			/* HDLC Frame	*/
 	struct fmt_hdr *hh;		/* HDLC Header	*/
-	struct sipc_fmt_hdr *fh;	/* IPC Header	*/
+	struct sipc_main_hdr *fh;	/* IPC Header	*/
 	u16 hh_len = sizeof(struct fmt_hdr);
-	u16 fh_len = sizeof(struct sipc_fmt_hdr);
+	u16 fh_len = sizeof(struct sipc_main_hdr);
 	u8 *data;
 	int dlen;
 
@@ -635,7 +635,7 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 
 	/* Point HDLC header and IPC header */
 	hh = (struct fmt_hdr *)(frm);
-	fh = (struct sipc_fmt_hdr *)(frm + hh_len);
+	fh = (struct sipc_main_hdr *)(frm + hh_len);
 
 	/* Point IPC data */
 	data = frm + (hh_len + fh_len);
@@ -662,8 +662,8 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 
 void print_sipc4_fmt_frame(const u8 *psrc)
 {
-	struct sipc_fmt_hdr *fh = (struct sipc_fmt_hdr *)psrc;
-	u16 fh_len = sizeof(struct sipc_fmt_hdr);
+	struct sipc_main_hdr *fh = (struct sipc_main_hdr *)psrc;
+	u16 fh_len = sizeof(struct sipc_main_hdr);
 	u8 *data;
 	int dlen;
 
@@ -689,7 +689,7 @@ void print_sipc5_link_fmt_frame(const u8 *psrc)
 {
 	u8 *lf;				/* Link Frame	*/
 	struct sipc5_link_hdr *lh;	/* Link Header	*/
-	struct sipc_fmt_hdr *fh;	/* IPC Header	*/
+	struct sipc_main_hdr *fh;	/* IPC Header	*/
 	u16 lh_len;
 	u16 fh_len;
 	u8 *data;
@@ -703,8 +703,8 @@ void print_sipc5_link_fmt_frame(const u8 *psrc)
 		lh_len = SIPC5_HEADER_SIZE_WITH_CTL_FLD;
 	else
 		lh_len = SIPC5_MIN_HEADER_SIZE;
-	fh = (struct sipc_fmt_hdr *)(lf + lh_len);
-	fh_len = sizeof(struct sipc_fmt_hdr);
+	fh = (struct sipc_main_hdr *)(lf + lh_len);
+	fh_len = sizeof(struct sipc_main_hdr);
 
 	/* Point IPC data */
 	data = lf + (lh_len + fh_len);

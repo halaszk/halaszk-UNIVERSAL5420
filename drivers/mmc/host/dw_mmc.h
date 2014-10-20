@@ -140,6 +140,7 @@
 #define SDMMC_FIFOTH_RX_WMARK			16
 /* Internal DMAC interrupt defines */
 #define SDMMC_IDMAC_FSM_MASK		(0x1E000)
+#define SDMMC_IDMAC_FSM_DMA_IDLE	(0x0)
 #define SDMMC_IDMAC_FSM_DMA_SUSPEND	(0x2000)
 /* Internal DMAC interrupt defines */
 #define SDMMC_IDMAC_INT_AI		BIT(9)

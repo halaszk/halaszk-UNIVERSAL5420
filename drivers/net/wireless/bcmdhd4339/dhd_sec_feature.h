@@ -2,13 +2,13 @@
  * Customer HW 4 dependant file
  *
  * Copyright (C) 1999-2013, Broadcom Corporation
- * 
+ *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
- * 
+ *
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -16,7 +16,7 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
- * 
+ *
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
@@ -24,8 +24,46 @@
  * $Id: dhd_sec_feature.h$
  */
 
+/*
+*** Desciption ***
+1. Module vs COB
+   If your model's WIFI HW chip is COB type, you must add below feature
+   - #undef USE_CID_CHECK
+   - #define READ_MACADDR
+   Because COB type chip have not CID and Mac address.
+   So, you must add below feature to defconfig file.
+   - CONFIG_WIFI_BROADCOM_COB
+
+2. PROJECTS
+   If you want add some feature only own Project, you can add it in 'PROJECTS' part.
+
+3. Region code
+   If you want add some feature only own region model, you can use below code.
+   - 100 : EUR OPEN
+   - 101 : EUR ORG
+   - 200 : KOR OPEN
+   - 201 : KOR SKT
+   - 202 : KOR KTT
+   - 203 : KOR LGT
+   - 300 : CHN OPEN
+   - 400 : USA OPEN
+   - 401 : USA ATT
+   - 402 : USA TMO
+   - 403 : USA VZW
+   - 404 : USA SPR
+   - 405 : USA USC
+   You can refer how to using it below this file.
+   And, you can add more region code, too.
+*/
+
 #ifndef _dhd_sec_feature_h_
 #define _dhd_sec_feature_h_
+
+/* For COB type feature */
+#ifdef CONFIG_WIFI_BROADCOM_COB
+#undef USE_CID_CHECK
+#define READ_MACADDR
+#endif  /* CONFIG_WIFI_BROADCOM_COB */
 
 /* PROJECTS */
 
@@ -34,7 +72,7 @@
 #define HW_OOB
 #endif /* CONFIG_MACH_SAMSUNG_ESPRESSO && CONFIG_MACH_SAMSUNG_ESPRESSO_10 */
 
-#if defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE)
+#if defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G) || defined(CONFIG_MACH_MEGA2ELTE)
 #define CUSTOM_SET_CPUCORE
 #define PRIMARY_CPUCORE 0
 #define MAX_RETRY_SET_CPUCORE 5
@@ -55,17 +93,6 @@
 #define HW_OOB
 #define READ_MACADDR
 #endif /* CONFIG_ARCH_MSM7X30 */
-
-#if defined(CONFIG_MACH_GC1) || defined(CONFIG_MACH_U1_NA_SPR) || \
-	defined(CONFIG_MACH_VIENNA) || defined(CONFIG_MACH_LT03EUR) || \
-	defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || \
-	defined(CONFIG_MACH_LT03LGT) || defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_M2LTE)
-#undef USE_CID_CHECK
-#define READ_MACADDR
-#endif	/* CONFIG_MACH_GC1 || CONFIG_MACH_U1_NA_SPR || CONFIG_MACH_VIENNA ||
-	 * CONFIG_MACH_LT03EUR || CONFIG_MACH_LT03SKT || CONFIG_MACH_LT03KTT ||
-	 * CONFIG_MACH_LT03LGT || CONFIG_MACH_HLLTE || CONFIG_MACH_HL3G || CONFIG_MACH_M2LTE
-	 */
 
 #ifdef CONFIG_MACH_P10
 #define READ_MACADDR
@@ -114,7 +141,9 @@
 #undef WRITE_MACADDR
 #ifndef READ_MACADDR
 #define READ_MACADDR
-#endif /* READ_MACADDR */
+#else
+#define RDWR_MACADDR
+#endif /* CONFIG_BCM4334 */
 
 #if (CONFIG_WLAN_REGION_CODE == 201) /* SKT */
 #ifdef CONFIG_MACH_UNIVERSAL5410
@@ -147,6 +176,16 @@
 #define BCMWAPI_WPI
 #define BCMWAPI_WAI
 #endif /* CONFIG_WLAN_REGION_CODE >= 300 && CONFIG_WLAN_REGION_CODE < 400 */
+
+#if (CONFIG_WLAN_REGION_CODE == 402) /* TMO */
+#undef DCUSTOM_SUSPEND_BCN_LI_DTIM
+#define DCUSTOM_SUSPEND_BCN_LI_DTIM 3
+#endif /* CONFIG_WLAN_REGION_CODE == 402 */
+
+#if (CONFIG_WLAN_REGION_CODE == 402) /* TMO */
+#undef CUSTOM_SUSPEND_BCN_LI_DTIM
+#define CUSTOM_SUSPEND_BCN_LI_DTIM      3
+#endif /* CONFIG_WLAN_REGION_CODE == 402 */
 
 #if !defined(READ_MACADDR) && !defined(WRITE_MACADDR) && !defined(RDWR_KORICS_MACADDR) \
 	&& !defined(RDWR_MACADDR)

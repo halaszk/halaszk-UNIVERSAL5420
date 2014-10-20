@@ -286,7 +286,8 @@ void s5p_mfc_clock_off(void)
 		spin_lock_irqsave(&pm->clklock, flags);
 		if ((atomic_dec_return(&clk_ref) == 0) &&
 				(atomic_read(&dev->pm.power) == 1) &&
-				FW_HAS_BUS_RESET(dev)) {
+				FW_HAS_BUS_RESET(dev) &&
+				!dev->skip_bus_waiting) {
 			s5p_mfc_write_reg(0x1, S5P_FIMV_MFC_BUS_RESET_CTRL);
 
 			timeout = jiffies + msecs_to_jiffies(MFC_BW_TIMEOUT);

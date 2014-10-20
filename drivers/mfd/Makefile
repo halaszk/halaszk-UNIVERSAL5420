@@ -80,7 +80,11 @@ obj-$(CONFIG_MFD_MAX8925)	+= max8925.o
 obj-$(CONFIG_MFD_MAX8997)	+= max8997.o max8997-irq.o
 obj-$(CONFIG_MFD_MAX8998)	+= max8998.o max8998-irq.o
 obj-$(CONFIG_MFD_MAX77686)      += max77686.o max77686-irq.o
+ifeq ($(CONFIG_MFD_MAX77804K),y)
+obj-$(CONFIG_MFD_MAX77803)      += max77803.o max77804k-irq.o
+else
 obj-$(CONFIG_MFD_MAX77803)      += max77803.o max77803-irq.o
+endif
 
 pcf50633-objs			:= pcf50633-core.o pcf50633-irq.o
 obj-$(CONFIG_MFD_PCF50633)	+= pcf50633.o

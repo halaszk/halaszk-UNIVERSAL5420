@@ -39,17 +39,19 @@
 #include "fimc-is-err.h"
 #include "fimc-is-video.h"
 #include "fimc-is-metadata.h"
+#ifndef CONFIG_CAMERA_EXTERNAL
 #include "fimc-is-sec-define.h"
+#endif
 
 const struct v4l2_file_operations fimc_is_isp_video_fops;
 const struct v4l2_ioctl_ops fimc_is_isp_video_ioctl_ops;
 const struct vb2_ops fimc_is_isp_qops;
 
-/*
+#ifdef CONFIG_CAMERA_EXTERNAL
 extern struct fimc_is_from_info		*sysfs_finfo;
 extern struct fimc_is_from_info		*sysfs_pinfo;
 extern bool is_dumped_fw_loading_needed;
-*/
+#endif
 
 int fimc_is_isp_video_probe(void *data)
 {
@@ -704,7 +706,9 @@ static int fimc_is_isp_video_g_ext_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	struct v4l2_ext_control *ctrl;
+#ifndef CONFIG_CAMERA_EXTERNAL
 	struct fimc_is_from_info *pinfo = NULL;
+#endif
 
 	dbg_isp("%s\n", __func__);
 
@@ -713,12 +717,20 @@ static int fimc_is_isp_video_g_ext_ctrl(struct file *file, void *priv,
 
 	switch (ctrl->id) {
 	case V4L2_CID_CAM_SENSOR_FW_VER:
+#ifdef CONFIG_CAMERA_EXTERNAL
+		if (sysfs_pinfo != NULL) {
+			strncpy(ctrl->string, sysfs_pinfo->header_ver,
+						strlen(ctrl->string) - 1);
+			ctrl->string[strlen(ctrl->string) - 1] = '\0';
+		}
+#else
 		fimc_is_sec_get_sysfs_pinfo(&pinfo);
 		if((pinfo != NULL) && (pinfo->header_ver != NULL)) {
 			strncpy(ctrl->string, pinfo->header_ver,
 						strlen(pinfo->header_ver));
 			ctrl->string[strlen(pinfo->header_ver)] = '\0';
 		}
+#endif
 		break;
 
 	default:

@@ -66,8 +66,11 @@ static int tkey_code[] = { 0,
 	KEY_SEARCH, KEY_BACK, KEY_HOMEPAGE, KEY_MENU,
 
 #elif defined(TK_USE_2KEY_TYPE_M0)
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+	KEY_BACK, KEY_RECENT,
+#else
 	KEY_BACK, KEY_MENU,
-
+#endif
 #else
 	KEY_MENU, KEY_BACK,
 
@@ -1165,7 +1168,6 @@ static void touchkey_i2c_update_work(struct work_struct *work)
 	while (retry--) {
 		ret = ISSP_main(tkey_i2c);
 		if (ret != 0) {
-			msleep(50);
 			dev_err(&tkey_i2c->client->dev, "failed to update f/w. retry\n");
 			continue;
 		}
@@ -1250,7 +1252,8 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 #endif
 	return IRQ_HANDLED;
 }
-
+#if defined(CONFIG_MACH_HLLTE) || \
+	defined(CONFIG_MACH_HL3G)
 #define is_key_changed(code, dev, pressed) (!!test_bit(code, dev->key) != pressed)
 
 static irqreturn_t touchkey_mt_interrupt(int irq, void *dev_id)
@@ -1311,7 +1314,7 @@ static irqreturn_t touchkey_mt_interrupt(int irq, void *dev_id)
 #endif
 	return IRQ_HANDLED;
 }
-
+#endif
 static int touchkey_stop(struct touchkey_i2c *tkey_i2c)
 {
 	int i;
@@ -2289,7 +2292,7 @@ err_register_device:
 	wake_lock_destroy(&tkey_i2c->fw_wakelock);
 	mutex_destroy(&tkey_i2c->lock);
 #ifdef TKEY_GRIP_MODE
-	mutex_destroy(&tkey_i2c->grip_mode_lock);
+	mutex_destroy(&tkey_i2c->grip_mode_lock);	
 #endif
 	input_free_device(input_dev);
 err_allocate_input_device:

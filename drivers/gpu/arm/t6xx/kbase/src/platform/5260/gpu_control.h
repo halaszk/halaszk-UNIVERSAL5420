@@ -81,7 +81,7 @@ typedef enum {
 #endif /* CONFIG_MALI_T6XX_RT_PM */
 
 /* GPU DVFS HANDLER */
-#if defined(CONFIG_LCD_MIPI_D6EA8061)	/* Resolution - LOW */
+#if defined(CONFIG_LCD_MIPI_D6EA8061) || defined(CONFIG_LCD_MIPI_HX8394)	/* Resolution - LOW */
 #if SOC_NAME == 5260
 #define MALI_DVFS_START_FREQ        160 /* for 720P */
 #define MALI_DVFS_BL_CONFIG_FREQ    160 /* for 720P */

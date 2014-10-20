@@ -192,7 +192,9 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 	xhci_dev = hcd->self.controller;
 
 	if (on) {
+#if !defined(CONFIG_USB_HOST_NOTIFY)
 		wake_lock(&drd_switch->wakelock);
+#endif
 		/*
 		 * Clear runtime_error flag. The flag could be
 		 * set when user space accessed the host while DRD
@@ -218,8 +220,10 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 		ret = pm_runtime_put_sync(xhci_dev);
 		if (ret == -EAGAIN)
 			pm_runtime_get_noresume(xhci_dev);
+#if !defined(CONFIG_USB_HOST_NOTIFY)
 		else
 			wake_unlock(&drd_switch->wakelock);
+#endif
 	}
 
 err:
@@ -408,6 +412,9 @@ static void exynos_drd_switch_handle_vbus(struct exynos_drd_switch *drd_switch,
 	struct device *dev = drd_switch->otg.phy->dev;
 	unsigned long flags;
 	int res;
+
+	printk(KERN_INFO "usb: %s drd_switch->id_state: %d, drd_switch->vbus_active: %d, vbus_active: %d \n",
+		__func__, drd_switch->id_state, drd_switch->vbus_active, vbus_active);
 
 	spin_lock_irqsave(&drd_switch->lock, flags);
 
@@ -925,10 +932,10 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	}
 #endif
 	spin_lock_init(&drd_switch->lock);
-
+#if !defined(CONFIG_USB_HOST_NOTIFY)
 	wake_lock_init(&drd_switch->wakelock,
 		WAKE_LOCK_SUSPEND, "drd_switch");
-
+#endif
 	exynos_drd_switch_reset(drd, 0);
 
 	drd_switch->wq = create_freezable_workqueue("drd_switch");
@@ -974,8 +981,9 @@ err_irq:
 	cancel_delayed_work_sync(&drd_switch->work);
 	destroy_workqueue(drd_switch->wq);
 err_wq:
+#if !defined(CONFIG_USB_HOST_NOTIFY)
 	wake_lock_destroy(&drd_switch->wakelock);
-
+#endif
 	return ret;
 }
 
@@ -994,8 +1002,9 @@ void exynos_drd_switch_exit(struct exynos_drd *drd)
 	if (otg) {
 		drd_switch = container_of(otg,
 					struct exynos_drd_switch, otg);
-
+#if !defined(CONFIG_USB_HOST_NOTIFY)
 		wake_lock_destroy(&drd_switch->wakelock);
+#endif
 		sysfs_remove_group(&drd->dev->kobj,
 			&exynos_drd_switch_attr_group);
 		cancel_delayed_work_sync(&drd_switch->work);

@@ -72,6 +72,8 @@
 #define S3C64XX_SPI_MODE_TXDMA_ON		(1<<1)
 #define S3C64XX_SPI_MODE_4BURST			(1<<0)
 
+#define S3C64XX_SPI_SLAVE_NSC_CNT_2		(2<<4)
+#define S3C64XX_SPI_SLAVE_NSC_CNT_1		(1<<4)
 #define S3C64XX_SPI_SLAVE_AUTO			(1<<1)
 #define S3C64XX_SPI_SLAVE_SIG_INACT		(1<<0)
 
@@ -407,14 +409,25 @@ static inline void enable_cs(struct s3c64xx_spi_driver_data *sdd,
 		if (sdd->tgl_spi != spi) { /* if last mssg on diff device */
 			/* Deselect the last toggled device */
 			cs = sdd->tgl_spi->controller_data;
-			cs->set_level(cs->line,
+			if (cs->set_level != NULL) {
+				cs->set_level(cs->line,
 					spi->mode & SPI_CS_HIGH ? 0 : 1);
+			}
 		}
 		sdd->tgl_spi = NULL;
 	}
 
 	cs = spi->controller_data;
-	cs->set_level(cs->line, spi->mode & SPI_CS_HIGH ? 1 : 0);
+	if (cs->set_level != NULL)
+		cs->set_level(cs->line, spi->mode & SPI_CS_HIGH ? 1 : 0);
+
+	if (cs->cs_mode == AUTO_CS_MODE) {
+		/* Set auto chip selection */
+		writel(readl(sdd->regs + S3C64XX_SPI_SLAVE_SEL)
+			| S3C64XX_SPI_SLAVE_AUTO
+			| S3C64XX_SPI_SLAVE_NSC_CNT_2,
+			sdd->regs + S3C64XX_SPI_SLAVE_SEL);
+	}
 }
 
 static int wait_for_xfer(struct s3c64xx_spi_driver_data *sdd,
@@ -427,7 +440,9 @@ static int wait_for_xfer(struct s3c64xx_spi_driver_data *sdd,
 
 	/* millisecs to xfer 'len' bytes @ 'cur_speed' */
 	ms = xfer->len * 8 * 1000 / sdd->cur_speed;
-	ms += 10; /* some tolerance */
+
+	ms = (ms * 10) + 30; /* some tolerance */
+	ms = max(ms, 100); /* minimum timeout */
 
 	if (dma_mode) {
 		val = msecs_to_jiffies(ms) + 10;
@@ -501,7 +516,8 @@ static inline void disable_cs(struct s3c64xx_spi_driver_data *sdd,
 	if (sdd->tgl_spi == spi)
 		sdd->tgl_spi = NULL;
 
-	cs->set_level(cs->line, spi->mode & SPI_CS_HIGH ? 0 : 1);
+	if (cs->set_level != NULL)
+		cs->set_level(cs->line, spi->mode & SPI_CS_HIGH ? 0 : 1);
 }
 
 static void s3c64xx_spi_config(struct s3c64xx_spi_driver_data *sdd)
@@ -759,6 +775,7 @@ static int s3c64xx_spi_transfer_one_message(struct spi_master *master,
 			if (xfer->len > fifo_lvl)
 				xfer->len = fifo_lvl;
 		} else {
+			cs->cs_mode = AUTO_CS_MODE;
 			/* Polling method for xfers not bigger than FIFO capacity */
 			if (xfer->len <= fifo_lvl)
 				use_dma = 0;
@@ -772,13 +789,23 @@ try_transfer:
 		sdd->state &= ~RXBUSY;
 		sdd->state &= ~TXBUSY;
 
-		enable_datapath(sdd, spi, xfer, use_dma);
+		if (cs->cs_mode == AUTO_CS_MODE) {
+			/* Start the signals */
+			S3C64XX_SPI_ACT(sdd);
 
-		/* Slave Select */
-		enable_cs(sdd, spi);
+			/* Slave Select */
+			enable_cs(sdd, spi);
 
-		/* Start the signals */
-		S3C64XX_SPI_ACT(sdd);
+			enable_datapath(sdd, spi, xfer, use_dma);
+		} else {
+			enable_datapath(sdd, spi, xfer, use_dma);
+
+			/* Slave Select */
+			enable_cs(sdd, spi);
+
+			/* Start the signals */
+			S3C64XX_SPI_ACT(sdd);
+		}
 
 		spin_unlock_irqrestore(&sdd->lock, flags);
 
@@ -899,7 +926,7 @@ static int s3c64xx_spi_setup(struct spi_device *spi)
 	unsigned long flags;
 	int err = 0;
 
-	if (cs == NULL || cs->set_level == NULL) {
+	if (cs == NULL) {
 		dev_err(&spi->dev, "No CS for SPI(%d)\n", spi->chip_select);
 		return -ENODEV;
 	}

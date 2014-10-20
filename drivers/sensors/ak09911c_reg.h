@@ -15,6 +15,9 @@
 #ifndef __AK09911C_REG__
 #define __AK09911C_REG__
 
+#define I2C_M_WR 0		/* for i2c Write */
+#define I2c_M_RD 1		/* for i2c Read */
+
 /* Compass device dependent definition */
 #define AK09911C_REG_WIA1			0x00
 #define AK09911C_REG_WIA2			0x01

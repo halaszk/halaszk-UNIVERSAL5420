@@ -141,8 +141,9 @@ fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_hl.fw
+fw-shipped-$(CONFIG_KEYBOARD_TC370L_TOUCHKEY) += coreriver/tc370_m2.fw
 fw-shipped-$(CONFIG_EPEN_WACOM_G9PM) += epen/W9001_HL_EUR.bin
-
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_M2) += tsp_melfas/m2/mms_ts_m2.fw
 TSPFIRMWARE_DIRECTORY = firmware/tsp_atmel
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_MXT540E) += tsp_atmel/mXT540E.fw
@@ -157,6 +158,16 @@ ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY_MEL_NOTE) && echo yes),yes)
 	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_NOTE) += tsp_melfas/note/CORE.fw
 	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_NOTE) += tsp_melfas/note/CONF.fw
 	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_NOTE) += tsp_melfas/note/mms_boot.fw
+else
+	$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
+endif
+
+TSPFIRMWARE_DIRECTORY = firmware/tsp_melfas
+ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
+	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS) += tsp_melfas/BOOT.fw
+	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS) += tsp_melfas/CORE.fw
+	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS) += tsp_melfas/PRIV.fw
+	fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS) += tsp_melfas/PUBL.fw
 else
 	$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
 endif

@@ -584,5 +584,13 @@ config SENSORS_HALL
 	tristate "HALL"
 	help
 	  Say Y here to enable the HALL.
+
+config KEYBOARD_TC370L_TOUCHKEY
+	tristate "Coreriver touchkey support"
+	help
+	  Say Y here to enable the Coreriver touchkey.
+
+	  To compile this driver as a module, choose TC370L here.
+
 source "drivers/input/keyboard/cypress/Kconfig"
 endif

@@ -29,7 +29,6 @@ struct fimc_is_fmt {
 
 struct fimc_is_image {
 	u32			framerate;
-	u32			num_lanes;
 	struct fimc_is_window 	window;
 	struct fimc_is_fmt	format;
 };

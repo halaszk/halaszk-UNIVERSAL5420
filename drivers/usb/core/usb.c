@@ -41,7 +41,7 @@
 #include <linux/scatterlist.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 #include <linux/usb/quirks.h>
 #endif
 
@@ -287,6 +287,7 @@ static int usb_dev_suspend(struct device *dev)
 
 static int usb_dev_resume(struct device *dev)
 {
+#ifndef CONFIG_SEC_MODEM_SHANNON
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 	struct usb_device *udev = to_usb_device(dev);
 	struct device *pdev = dev->parent;
@@ -297,6 +298,7 @@ static int usb_dev_resume(struct device *dev)
 	/* EHCI root-hub resume later */
 	if (pdev && !strcmp("s5p-ehci", pdev->driver->name))
 		return 0;
+#endif
 #endif
 	return usb_resume(dev, PMSG_RESUME);
 }

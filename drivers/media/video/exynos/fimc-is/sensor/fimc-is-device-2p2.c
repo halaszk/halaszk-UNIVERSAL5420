@@ -35,6 +35,7 @@
 #include "../fimc-is-core.h"
 #include "../fimc-is-device-sensor.h"
 #include "../fimc-is-resourcemgr.h"
+#include "../fimc-is-hw.h"
 #include "fimc-is-device-2p2.h"
 
 #define SENSOR_NAME "S5K2P2"
@@ -115,6 +116,8 @@ int sensor_2p2_probe(struct i2c_client *client,
 	module->pixel_height = module->active_height + 10;
 	module->max_framerate = 300;
 	module->position = SENSOR_POSITION_REAR;
+	module->mode = CSI_MODE_CH0_ONLY;
+	module->lanes = CSI_DATA_LANES_4;
 	module->setfile_name = "setfile_2p2.bin";
 	module->cfgs = ARRAY_SIZE(config_2p2);
 	module->cfg = config_2p2;
@@ -122,7 +125,7 @@ int sensor_2p2_probe(struct i2c_client *client,
 	module->private_data = NULL;
 
 	ext = &module->ext;
-	ext->mipi_lane_num = 4;
+	ext->mipi_lane_num = module->lanes;
 	ext->I2CSclk = I2C_L0;
 
 	ext->sensor_con.product_name = SENSOR_NAME_S5K2P2;
@@ -137,11 +140,7 @@ int sensor_2p2_probe(struct i2c_client *client,
 	ext->actuator_con.peri_setting.i2c.slave_address = 0x5A;
 	ext->actuator_con.peri_setting.i2c.speed = 400000;
 
-#if defined(CONFIG_SOC_EXYNOS5422)
-	ext->flash_con.product_name = FLADRV_NAME_MAX77693;
-#else
 	ext->flash_con.product_name = FLADRV_NAME_LM3560;
-#endif
 	ext->flash_con.peri_type = SE_GPIO;
 	ext->flash_con.peri_setting.gpio.first_gpio_port_no = 1;
 	ext->flash_con.peri_setting.gpio.second_gpio_port_no = 2;
@@ -151,11 +150,7 @@ int sensor_2p2_probe(struct i2c_client *client,
 	ext->companion_con.product_name = COMPANION_NAME_73C1;
 	ext->companion_con.peri_info0.valid = true;
 	ext->companion_con.peri_info0.peri_type = SE_SPI;
-#if defined(CONFIG_SOC_EXYNOS5422)
-	ext->companion_con.peri_info0.peri_setting.spi.channel = 0;
-#else
 	ext->companion_con.peri_info0.peri_setting.spi.channel = 1;
-#endif
 	ext->companion_con.peri_info1.valid = true;
 	ext->companion_con.peri_info1.peri_type = SE_I2C;
 	ext->companion_con.peri_info1.peri_setting.i2c.channel = 0;

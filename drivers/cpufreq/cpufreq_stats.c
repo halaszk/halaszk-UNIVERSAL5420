@@ -256,7 +256,7 @@ static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
 	stat->last_time = get_jiffies_64();
 	stat->last_index = freq_table_get_index(stat, policy->cur);
 	if ((int)stat->last_index < 0)
-		stat->last_index = INT_MAX;
+		stat->last_index = 0;
 	spin_unlock(&cpufreq_stats_lock);
 	cpufreq_cpu_put(data);
 	return 0;

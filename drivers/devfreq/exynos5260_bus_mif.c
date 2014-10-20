@@ -24,6 +24,10 @@
 #include <mach/asv-exynos.h>
 #include <mach/tmu.h>
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+#include <mach/sec_debug.h>
+#endif
+
 #include "exynos5260_ppmu.h"
 #include "exynos_ppmu2.h"
 #include "devfreq_exynos.h"
@@ -332,9 +336,9 @@ unsigned int media_lock_fullhd[2][5][3] = {
 	{ /* Fimc disable */
 		{LV7,	LV2,	LV2},
 		{LV7,	LV2,	LV2},
-		{LV6,	LV2,	LV2},
-		{LV5,	LV2,	LV2},
-		{LV5,	LV2,	LV2},
+		{LV3,	LV2,	LV2},
+		{LV3,	LV2,	LV2},
+		{LV3,	LV2,	LV2},
 	}, { /* Fimc enable */
 		{LV2,	LV1,	LV1},
 		{LV2,	LV1,	LV1},
@@ -383,6 +387,8 @@ static struct devfreq_data_mif *data_mif;
 extern unsigned int system_rev;
 
 extern void exynos5_update_media_layer_int(int int_qos);
+
+int exynos_mif_cur_level;
 
 static ssize_t mif_show_state(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -795,6 +801,11 @@ static int exynos5_devfreq_mif_set_freq(struct devfreq_data_mif *data,
 	struct devfreq_clk_info *clk_info;
 	struct devfreq_clk_states *clk_states;
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE,
+		"old:%7d new:%7d (MIF)",
+	old_idx, target_idx);
+#endif
 	if (LV0 != old_idx) {
 		exynos5_devfreq_change_setting(data, LV0, false);
 		exynos5_devfreq_mif_timing_parameter(data, LV0);
@@ -906,6 +917,7 @@ static int exynos5_devfreq_mif_target(struct device *dev,
 
 	exynos5_devfreq_dynamic_phy_gate(mif_data,false);
 	exynos5_devfreq_mif_set_freq(mif_data, target_idx, old_idx);
+	exynos_mif_cur_level = target_idx;
 	exynos5_devfreq_dynamic_phy_gate(mif_data,true);	
 out:
 	exynos5_devfreq_mif_update_time(mif_data, target_idx);
@@ -1212,6 +1224,9 @@ static int exynos5_devfreq_mif_probe(struct platform_device *pdev)
 	struct devfreq_data_mif *data;
 	struct devfreq_notifier_block *devfreq_nb;
 	struct exynos_devfreq_platdata *plat_data;
+	int index = -1;
+	struct opp *target_opp;
+	unsigned long freq;
 
 	if (exynos5_devfreq_mif_init_clock()) {
 		ret = -EINVAL;
@@ -1252,6 +1267,32 @@ static int exynos5_devfreq_mif_probe(struct platform_device *pdev)
 	data->volt_offset = COLD_VOLT_OFFSET;
 	data->dev = &pdev->dev;
 	data->vdd_mif = regulator_get(NULL, "vdd_mif");
+
+	rcu_read_lock();
+	freq = exynos5_devfreq_mif_profile.initial_freq;
+	target_opp = devfreq_recommended_opp(data->dev, &freq, 0);
+	if (IS_ERR(target_opp)) {
+		rcu_read_unlock();
+		dev_err(data->dev, "DEVFREQ(MIF) : Invalid OPP to set voltagen");
+		ret = PTR_ERR(target_opp);
+		goto err_inittable;
+	}
+	data->old_volt = opp_get_voltage(target_opp);
+#ifdef CONFIG_EXYNOS_THERMAL
+	data->old_volt = get_limit_voltage(data->old_volt, data->volt_offset);
+#endif
+	rcu_read_unlock();
+	regulator_set_voltage(data->vdd_mif, data->old_volt, data->old_volt + VOLT_STEP);
+	index = exynos5_devfreq_mif_get_idx(devfreq_mif_opp_list,
+			ARRAY_SIZE(devfreq_mif_opp_list),
+			freq);
+	if (index < 0) {
+		pr_err("DEVFREQ(MIF) : Failed to find index abb\n");
+		ret = -EINVAL;
+		goto err_nb;
+	}
+	set_match_abb(ID_MIF, devfreq_mif_asv_abb[index]);
+
 	data->devfreq = devfreq_add_device(data->dev,
 						&exynos5_devfreq_mif_profile,
 						&devfreq_simple_ondemand,
@@ -1376,6 +1417,7 @@ static int __init exynos5_devfreq_mif_init(void)
 {
 	int ret;
 
+	exynos_mif_cur_level = -1;
 	use_timing_set_0 = false;
 	exynos5_devfreq_mif_device.dev.platform_data = &exynos5260_qos_mif;
 

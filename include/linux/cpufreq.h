@@ -21,7 +21,7 @@
 #include <linux/cpumask.h>
 #include <asm/div64.h>
 
-#define CPUFREQ_NAME_LEN 16
+#define CPUFREQ_NAME_LEN 20
 
 
 /*********************************************************************

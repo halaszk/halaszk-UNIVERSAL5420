@@ -35,7 +35,7 @@
 
 
 /* definitions */
-#define	SEC_SIZEOF_POWER_SUPPLY_TYPE	14
+#define	SEC_SIZEOF_POWER_SUPPLY_TYPE	17
 
 enum sec_battery_voltage_mode {
 	/* average voltage */

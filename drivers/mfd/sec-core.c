@@ -264,6 +264,7 @@ err2:
 err3:
 	regmap_exit(sec_pmic->regmap);
 err4:
+	devm_kfree(&i2c->dev, sec_pmic);
 	return ret;
 }
 

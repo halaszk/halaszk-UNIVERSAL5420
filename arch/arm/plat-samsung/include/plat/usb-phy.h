@@ -34,4 +34,11 @@ extern int unregister_usb2phy_notifier(struct notifier_block *nfb);
 #define is_cp_wait_for_resume() \
 	(usb2phy_notifier(STATE_HSIC_CHECK_HOSTWAKE, NULL) == NOTIFY_BAD)
 #endif
+
+#if defined(CONFIG_MDM_HSIC_PM)
+extern int usb2phy_notifier(unsigned cmd, void *arg);
+extern int register_usb2phy_notifier(struct notifier_block *nfb);
+extern int unregister_usb2phy_notifier(struct notifier_block *nfb);
+#endif
+
 #endif /* __PLAT_SAMSUNG_USB_PHY_H */

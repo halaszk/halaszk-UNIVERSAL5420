@@ -25,8 +25,8 @@ struct fimc_is_device_ischain;
 #define SENSOR_MAX_ENUM			20
 #define SENSOR_DEFAULT_FRAMERATE	30
 
-#define SENSOR_DRIVING_MASK		0xF0000000
-#define SENSOR_DRIVING_SHIFT		28
+#define SENSOR_SCENARIO_MASK		0xF0000000
+#define SENSOR_SCENARIO_SHIFT		28
 #define SENSOR_MODULE_MASK		0x0FFFFFFF
 #define SENSOR_MODULE_SHIFT		0
 
@@ -99,6 +99,10 @@ struct fimc_is_module_enum {
 	u32				active_height;
 	u32				max_framerate;
 	u32				position;
+	u32				mode;
+	u32				lanes;
+	u32				vcis; /* vci is valid only if mode is vc mode */
+	struct fimc_is_vci		*vci;
 	u32				cfgs;
 	struct fimc_is_sensor_cfg	*cfg;
 	struct i2c_client		*client;
@@ -177,11 +181,17 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
 int fimc_is_sensor_close(struct fimc_is_device_sensor *device);
 int fimc_is_sensor_s_input(struct fimc_is_device_sensor *device,
 	u32 input,
-	u32 driving);
+	u32 scenario);
 int fimc_is_sensor_s_format(struct fimc_is_device_sensor *device,
 	struct fimc_is_fmt *format,
 	u32 width,
 	u32 height);
+int fimc_is_sensor_s_ctrl(struct fimc_is_device_sensor *device,
+	struct v4l2_control *ctrl);
+int fimc_is_sensor_noti_ctrl(struct fimc_is_device_sensor *device,
+	struct v4l2_control *ctrl);
+int fimc_is_sensor_s_ext_ctrls(struct fimc_is_device_sensor *device,
+	struct v4l2_ext_controls *ctrl);
 int fimc_is_sensor_buffer_queue(struct fimc_is_device_sensor *device,
 	u32 index);
 int fimc_is_sensor_buffer_finish(struct fimc_is_device_sensor *device,
@@ -215,14 +225,24 @@ int fimc_is_sensor_g_bns_ratio(struct fimc_is_device_sensor *device);
 int fimc_is_sensor_g_bratio(struct fimc_is_device_sensor *device);
 int fimc_is_sensor_g_module(struct fimc_is_device_sensor *device,
 	struct fimc_is_module_enum **module);
+int fimc_is_sensor_g_ctrl(struct fimc_is_device_sensor *device,
+	struct v4l2_control *ctrl);
+int fimc_is_sensor_g_ext_ctrls(struct fimc_is_device_sensor *device,
+	struct v4l2_ext_controls *ctrl);
 int fimc_is_sensor_find_module(struct fimc_is_device_sensor *device,
 	enum exynos_sensor_id input, struct fimc_is_module_enum **module);
 
 /* sensor driver */
-int fimc_is_sensor_read(struct i2c_client *client,
-	u32 addr, u8 *val);
+int fimc_is_sensor_read8(struct i2c_client *client,
+	u16 addr, u8 *val);
+int fimc_is_sensor_read16(struct i2c_client *client,
+	u16 addr, u16 *val);
 int fimc_is_sensor_write(struct i2c_client *client,
-	u32 addr, u8 val);
+	u8 *buf, u32 size);
+int fimc_is_sensor_write8(struct i2c_client *client,
+	u16 addr, u8 val);
+int fimc_is_sensor_write16(struct i2c_client *client,
+	u16 addr, u16 val);
 
 #define CALL_MOPS(s, op, args...) (((s)->ops->op) ? ((s)->ops->op(args)) : 0)
 

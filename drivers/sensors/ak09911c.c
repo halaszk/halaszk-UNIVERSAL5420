@@ -34,7 +34,7 @@
 
 /* Rx buffer size. i.e ST,TMPS,H1X,H1Y,H1Z*/
 #define SENSOR_DATA_SIZE		9
-#define AK09911C_DEFAULT_DELAY		200
+#define AK09911C_DEFAULT_DELAY		200000000LL
 #define AK09911C_DRDY_TIMEOUT_MS	100
 #define AK09911C_WIA1_VALUE		0x48
 #define AK09911C_WIA2_VALUE		0x05
@@ -70,48 +70,65 @@ struct ak09911c_p {
 	int m_rst_n;
 };
 
-static int ak09911c_smbus_read_byte_block(struct i2c_client *client,
+static int ak09911c_i2c_read(struct i2c_client *client,
+		unsigned char reg_addr, unsigned char *buf)
+{
+	int ret;
+	struct i2c_msg msg[2];
+
+	msg[0].addr = client->addr;
+	msg[0].flags = I2C_M_WR;
+	msg[0].len = 1;
+	msg[0].buf = &reg_addr;
+
+	msg[1].addr = client->addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].len = 1;
+	msg[1].buf = buf;
+
+	ret = i2c_transfer(client->adapter, msg, 2);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - i2c bus read error %d\n",
+			__func__, ret);
+		return ret;
+	}
+	return 0;
+}
+
+static int ak09911c_i2c_write(struct i2c_client *client,
+		unsigned char reg_addr, unsigned char buf)
+{
+	int ret;
+	struct i2c_msg msg;
+	unsigned char w_buf[2];
+
+	w_buf[0] = reg_addr;
+	w_buf[1] = buf;
+
+	msg.addr = client->addr;
+	msg.flags = I2C_M_WR;
+	msg.len = 2;
+	msg.buf = (char *)w_buf;
+
+	ret = i2c_transfer(client->adapter, &msg, 1);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - i2c bus write error %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int ak09911c_i2c_read_block(struct i2c_client *client,
 		unsigned char reg_addr, unsigned char *buf, unsigned char len)
 {
-	s32 dummy;
+	int i, ret = 0;
 
-	dummy = i2c_smbus_read_i2c_block_data(client, reg_addr, len, buf);
-	if (dummy < 0) {
-		pr_err("[SENSOR]: %s - i2c bus read error %d\n",
-			__func__, dummy);
-		return -EIO;
-	}
-	return 0;
-}
+	for (i = 0; i < len; i++)
+		ret += ak09911c_i2c_read(client, reg_addr + i, &buf[i]);
 
-static int ak09911c_smbus_read_byte(struct i2c_client *client,
-		unsigned char reg_addr, unsigned char *buf)
-{
-	s32 dummy;
-
-	dummy = i2c_smbus_read_byte_data(client, reg_addr);
-	if (dummy < 0) {
-		pr_err("[SENSOR]: %s - i2c bus read error %d\n",
-			__func__, dummy);
-		return -EIO;
-	}
-	*buf = dummy & 0x000000ff;
-
-	return 0;
-}
-
-static int ak09911c_smbus_write_byte(struct i2c_client *client,
-		unsigned char reg_addr, unsigned char *buf)
-{
-	s32 dummy;
-
-	dummy = i2c_smbus_write_byte_data(client, reg_addr, *buf);
-	if (dummy < 0) {
-		pr_err("[SENSOR]: %s - i2c bus write error %d\n",
-			__func__, dummy);
-		return -EIO;
-	}
-	return 0;
+	return ret;
 }
 
 static int ak09911c_ecs_set_mode_power_down(struct ak09911c_p *data)
@@ -120,7 +137,7 @@ static int ak09911c_ecs_set_mode_power_down(struct ak09911c_p *data)
 	int ret;
 
 	reg = AK09911C_MODE_POWERDOWN;
-	ret = ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 
 	return ret;
 }
@@ -133,13 +150,11 @@ static int ak09911c_ecs_set_mode(struct ak09911c_p *data, char mode)
 	switch (mode & 0x1F) {
 	case AK09911C_MODE_SNG_MEASURE:
 		reg = AK09911C_MODE_SNG_MEASURE;
-		ret = ak09911c_smbus_write_byte(data->client,
-				AK09911C_REG_CNTL2, &reg);
+		ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 		break;
 	case AK09911C_MODE_FUSE_ACCESS:
 		reg = AK09911C_MODE_FUSE_ACCESS;
-		ret = ak09911c_smbus_write_byte(data->client,
-				AK09911C_REG_CNTL2, &reg);
+		ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 		break;
 	case AK09911C_MODE_POWERDOWN:
 		reg = AK09911C_MODE_SNG_MEASURE;
@@ -147,8 +162,7 @@ static int ak09911c_ecs_set_mode(struct ak09911c_p *data, char mode)
 		break;
 	case AK09911C_MODE_SELF_TEST:
 		reg = AK09911C_MODE_SELF_TEST;
-		ret = ak09911c_smbus_write_byte(data->client,
-				AK09911C_REG_CNTL2, &reg);
+		ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 		break;
 	default:
 		return -EINVAL;
@@ -183,9 +197,8 @@ static int ak09911c_read_mag_xyz(struct ak09911c_p *data, struct ak09911c_v *mag
 	if (ret < 0)
 		goto exit_i2c_read_err;
 
-retry:
-	ret = ak09911c_smbus_read_byte(data->client,
-			AK09911C_REG_ST1, &temp[0]);
+again:
+	ret = ak09911c_i2c_read(data->client, AK09911C_REG_ST1, &temp[0]);
 	if (ret < 0)
 		goto exit_i2c_read_err;
 
@@ -193,14 +206,14 @@ retry:
 	if (!(temp[0] & 0x01)) {
 		if ((retries++ < 5) && (temp[0] == 0)) {
 			mdelay(2);
-			goto retry;
+			goto again;
 		} else {
 			ret = -EAGAIN;
 			goto exit_i2c_read_fail;
 		}
 	}
 
-	ret = ak09911c_smbus_read_byte_block(data->client, AK09911C_REG_ST1 + 1,
+	ret = ak09911c_i2c_read_block(data->client, AK09911C_REG_ST1 + 1,
 			&temp[1], SENSOR_DATA_SIZE - 1);
 	if (ret < 0)
 		goto exit_i2c_read_err;
@@ -221,8 +234,8 @@ retry:
 
 exit_i2c_read_fail:
 exit_i2c_read_err:
-	pr_err("[SENSOR]: %s - failed. ret = %d, ST1 = %u, ST2 = %u\n",
-			__func__, ret, temp[0], temp[8]);
+	pr_err("[SENSOR]: %s - ST1 = %u, ST2 = %u\n",
+		__func__, temp[0], temp[8]);
 exit:
 	mutex_unlock(&data->lock);
 	return ret;
@@ -230,11 +243,11 @@ exit:
 
 static void ak09911c_work_func(struct work_struct *work)
 {
+	int ret = 0;
 	struct ak09911c_v mag;
 	struct ak09911c_p *data = container_of((struct delayed_work *)work,
 			struct ak09911c_p, work);
-	unsigned long delay = msecs_to_jiffies(atomic_read(&data->delay));
-	int ret;
+	unsigned long delay = nsecs_to_jiffies(atomic_read(&data->delay));
 
 	ret = ak09911c_read_mag_xyz(data, &mag);
 	if (ret >= 0) {
@@ -256,7 +269,7 @@ static void ak09911c_set_enable(struct ak09911c_p *data, int enable)
 		if (pre_enable == 0) {
 			ak09911c_ecs_set_mode(data, AK09911C_MODE_SNG_MEASURE);
 			schedule_delayed_work(&data->work,
-				msecs_to_jiffies(atomic_read(&data->delay)));
+				nsecs_to_jiffies(atomic_read(&data->delay)));
 			atomic_set(&data->enable, 1);
 		}
 	} else {
@@ -318,7 +331,7 @@ static ssize_t ak09911c_delay_store(struct device *dev,
 		return ret;
 	}
 
-	atomic_set(&data->delay, (unsigned int)delay);
+	atomic_set(&data->delay, (int64_t)delay);
 	pr_info("[SENSOR]: %s - poll_delay = %lld\n", __func__, delay);
 
 	return size;
@@ -339,7 +352,7 @@ static struct attribute_group ak09911c_attribute_group = {
 	.attrs = ak09911c_attributes
 };
 
-static int ak09911c_selftest(struct ak09911c_p *data, int *sf)
+static int ak09911c_selftest(struct ak09911c_p *data, int *dac_ret, int *sf)
 {
 	u8 temp[6], reg;
 	s16 x, y, z;
@@ -350,28 +363,29 @@ retry:
 	mutex_lock(&data->lock);
 	/* power down */
 	reg = AK09911C_MODE_POWERDOWN;
-	ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	*dac_ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
+	udelay(100);
+	*dac_ret += ak09911c_i2c_read(data->client, AK09911C_REG_CNTL2, &reg);
 
 	/* read device info */
-	ak09911c_smbus_read_byte_block(data->client, AK09911C_REG_WIA1, temp, 2);
+	ak09911c_i2c_read_block(data->client, AK09911C_REG_WIA1, temp, 2);
 	pr_info("[SENSOR]: %s - device id = 0x%x, info = 0x%x\n",
 		__func__, temp[0], temp[1]);
 
 	/* start self test */
 	reg = AK09911C_MODE_SELF_TEST;
-	ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 
 	/* wait for data ready */
 	while (ready_count < 10) {
 		msleep(20);
-		ret = ak09911c_smbus_read_byte(data->client,
-				AK09911C_REG_ST1, &reg);
+		ret = ak09911c_i2c_read(data->client, AK09911C_REG_ST1, &reg);
 		if ((reg == 1) && (ret == 0))
 			break;
 		ready_count++;
 	}
 
-	ak09911c_smbus_read_byte_block(data->client, AK09911C_REG_HXL,
+	ak09911c_i2c_read_block(data->client, AK09911C_REG_HXL,
 		temp, sizeof(temp));
 	mutex_unlock(&data->lock);
 
@@ -412,8 +426,8 @@ retry:
 	if (((x >= -30) && (x <= 30)) &&
 		((y >= -30) && (y <= 30)) &&
 		((z >= -400) && (z <= -50))) {
-		pr_info("[SENSOR] %s, Selftest is successful.\n", __func__);
-		return 1;
+		pr_info("%s, Selftest is successful.\n", __func__);
+		return 0;
 	} else {
 		if (retry_count < 5) {
 			retry_count++;
@@ -424,7 +438,7 @@ retry:
 		} else {
 			pr_err("[SENSOR]: %s - Selftest is failed.\n",
 				__func__);
-			return 0;
+			return -1;
 		}
 	}
 }
@@ -453,12 +467,51 @@ static ssize_t ak09911c_get_asa(struct device *dev,
 static ssize_t ak09911c_get_selftest(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	int ret = 0;
-	int sf[3] = {0,};
+	int status, dac_ret = -1, adc_ret = -1;
+	int sf_ret, sf[3] = {0,}, retries;
+	struct ak09911c_v mag;
+	struct ak09911c_p *data = dev_get_drvdata(dev);
 
-	ret = ak09911c_selftest(dev_get_drvdata(dev), sf);
-	return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d\n",
-			ret, sf[0], sf[1], sf[2]);
+	/* STATUS */
+	if ((data->asa[0] == 0) | (data->asa[0] == 0xff)
+		| (data->asa[1] == 0) | (data->asa[1] == 0xff)
+		| (data->asa[2] == 0) | (data->asa[2] == 0xff))
+		status = -1;
+	else
+		status = 0;
+
+	if (atomic_read(&data->enable) == 1) {
+		ak09911c_ecs_set_mode(data, AK09911C_MODE_POWERDOWN);
+		cancel_delayed_work_sync(&data->work);
+	}
+
+	sf_ret = ak09911c_selftest(data, &dac_ret, sf);
+
+	for (retries = 0; retries < 5; retries++) {
+		if (ak09911c_read_mag_xyz(data, &mag) == 0) {
+			if ((mag.x < 1600) && (mag.x > -1600)
+				&& (mag.y < 1600) && (mag.y > -1600)
+				&& (mag.z < 1600) && (mag.z > -1600))
+				adc_ret = 0;
+			else
+				pr_err("[SENSOR]: %s adc specout %d, %d, %d\n",
+					__func__, mag.x, mag.y, mag.z);
+			break;
+		}
+
+		msleep(20);
+		pr_err("[SENSOR]: %s - adc retries %d", __func__, retries);
+	}
+
+	if (atomic_read(&data->enable) == 1) {
+		ak09911c_ecs_set_mode(data, AK09911C_MODE_SNG_MEASURE);
+		schedule_delayed_work(&data->work,
+			nsecs_to_jiffies(atomic_read(&data->delay)));
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			status, sf_ret, sf[0], sf[1], sf[2], dac_ret,
+			adc_ret, mag.x, mag.y, mag.z);
 }
 
 static ssize_t ak09911c_check_registers(struct device *dev,
@@ -470,9 +523,9 @@ static ssize_t ak09911c_check_registers(struct device *dev,
 	mutex_lock(&data->lock);
 	/* power down */
 	reg = AK09911C_MODE_POWERDOWN;
-	ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 	/* get the value */
-	ak09911c_smbus_read_byte_block(data->client, AK09911C_REG_WIA1, temp, 13);
+	ak09911c_i2c_read_block(data->client, AK09911C_REG_WIA1, temp, 13);
 
 	mutex_unlock(&data->lock);
 
@@ -494,9 +547,9 @@ static ssize_t ak09911c_check_cntl(struct device *dev,
 	/* power down */
 	reg = AK09911C_MODE_POWERDOWN;
 
-	ret = ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 	udelay(100);
-	ret += ak09911c_smbus_read_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret += ak09911c_i2c_read(data->client, AK09911C_REG_CNTL2, &reg);
 	mutex_unlock(&data->lock);
 
 	return snprintf(buf, PAGE_SIZE, "%s\n",
@@ -592,14 +645,14 @@ static int ak09911c_read_fuserom(struct ak09911c_p *data)
 
 	/* put into fuse access mode to read asa data */
 	reg = AK09911C_MODE_FUSE_ACCESS;
-	ret = ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - unable to enter fuse rom mode\n",
 			__func__);
 		goto exit_default_value;
 	}
 
-	ret = ak09911c_smbus_read_byte_block(data->client, AK09911C_FUSE_ASAX,
+	ret = ak09911c_i2c_read_block(data->client, AK09911C_FUSE_ASAX,
 			data->asa, sizeof(data->asa));
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - unable to load factory sensitivity "\
@@ -610,7 +663,7 @@ static int ak09911c_read_fuserom(struct ak09911c_p *data)
 			__func__, data->asa[0], data->asa[1], data->asa[2]);
 
 	reg = AK09911C_MODE_POWERDOWN;
-	ret = ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 	if (ret < 0)
 		pr_err("[SENSOR] Error in setting power down mode\n");
 
@@ -629,8 +682,7 @@ static int ak09911c_check_device(struct ak09911c_p *data)
 	unsigned char reg, buf[2];
 	int ret;
 
-	ret = ak09911c_smbus_read_byte_block(data->client,
-			AK09911C_REG_WIA1, buf, 2);
+	ret = ak09911c_i2c_read_block(data->client, AK09911C_REG_WIA1, buf, 2);
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - unable to read AK09911C_REG_WIA1\n",
 			__func__);
@@ -638,14 +690,15 @@ static int ak09911c_check_device(struct ak09911c_p *data)
 	}
 
 	reg = AK09911C_MODE_POWERDOWN;
-	ret = ak09911c_smbus_write_byte(data->client, AK09911C_REG_CNTL2, &reg);
+	ret = ak09911c_i2c_write(data->client, AK09911C_REG_CNTL2, reg);
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - Error in setting power down mode\n",
 			__func__);
 		return ret;
 	}
 
-	if ((buf[0] != AK09911C_WIA1_VALUE) || (buf[1] != AK09911C_WIA2_VALUE)) {
+	if ((buf[0] != AK09911C_WIA1_VALUE)
+			|| (buf[1] != AK09911C_WIA2_VALUE)) {
 		pr_err("[SENSOR]: %s - The device is not AKM Compass. %u, %u",
 			__func__, buf[0], buf[1]);
 		return -ENXIO;
@@ -733,6 +786,7 @@ static int ak09911c_parse_dt(struct ak09911c_p *data,
 		pdata->get_pos(&data->chip_pos);
 	else
 		data->chip_pos = AK09911C_TOP_LOWER_RIGHT;
+	pr_info("[SENSOR] %s : chip pose:(%d)\n", __func__, data->chip_pos);
 
 	data->m_rst_n = pdata->m_rst_n;
 	if (data->m_rst_n < 0) {
@@ -872,7 +926,7 @@ static int ak09911c_resume(struct device *dev)
 	if (atomic_read(&data->enable) == 1) {
 		ak09911c_ecs_set_mode(data, AK09911C_MODE_SNG_MEASURE);
 		schedule_delayed_work(&data->work,
-		msecs_to_jiffies(atomic_read(&data->delay)));
+			nsecs_to_jiffies(atomic_read(&data->delay)));
 	}
 
 	return 0;

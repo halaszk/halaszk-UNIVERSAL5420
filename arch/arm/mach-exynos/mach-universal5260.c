@@ -138,6 +138,13 @@ static struct platform_device persistent_clock = {
 }; 
 #endif /*CONFIG_EXYNOS_PERSISTENT_CLOCK*/
 
+#ifdef CONFIG_SND_SAMSUNG_AUX_HDMI
+static struct platform_device hdmi_snd_card_device = {
+	.name	= "adonisuniv-hdmi",
+	.id	= -1,
+};
+#endif
+
 static struct platform_device *universal5260_devices[] __initdata = {
 #ifdef CONFIG_EXYNOS_PERSISTENT_CLOCK
 	&persistent_clock,
@@ -156,9 +163,12 @@ static struct platform_device *universal5260_devices[] __initdata = {
 	&s5p_device_sss,
 	&s5p_device_slimsss,
 #endif
-
 #ifdef CONFIG_BT_BCM4339
 	&bcm4339_bluetooth_device,
+#endif
+#ifdef CONFIG_SND_SAMSUNG_AUX_HDMI
+	&exynos5_device_i2s1,
+	&hdmi_snd_card_device,
 #endif
 };
 
@@ -353,7 +363,9 @@ static void __init universal5260_machine_init(void)
 #ifdef CONFIG_W1
 	exynos5_universal5260_cover_id_init();
 #endif
-
+#ifdef CONFIG_VIDEO_MHL_SII8246
+	exynos5_universal5260_mhl_init();
+#endif
 	/*
 	 * Please note that exynos5_universal5260_gpio_init() should be called
 	 * after initializing other devices

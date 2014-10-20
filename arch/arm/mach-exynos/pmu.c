@@ -1219,6 +1219,39 @@ void exynos_pmu_wdt_control(bool on, unsigned int pmu_wdt_reset_type)
 	__raw_writel(value, EXYNOS_MASK_WDT_RESET_REQUEST);
 }
 
+#if defined(CONFIG_SOC_EXYNOS5260)
+#define CLUSTER_STATE (S5P_VA_SYSRAM_NS + 0x48)
+#define ARM_CPU_STATE (S5P_VA_SYSRAM_NS + 0x28)
+#define KFC_CPU_STATE (S5P_VA_SYSRAM_NS + 0x38)
+void show_exynos_pmu(void)
+{
+	int i;
+	pr_info("\n");
+	pr_info(" -----------------------------------------------------------------------------------\n");
+	pr_info(" **** CPU PMU register dump ****\n");
+	for (i=0; i < 4; i++) {
+		printk("[%d]   CONFIG : 0x%8x  STATUS : 0x%8x  OPTION : 0x%8x  STATE : 0x%8x\n", i,	
+			__raw_readl(EXYNOS_KFC_CORE0_CONFIGURATION + i * 0x80),
+			__raw_readl(EXYNOS_KFC_CORE0_STATUS + i * 0x80),
+			__raw_readl(EXYNOS_KFC_CORE0_OPTION + i * 0x80),
+			__raw_readl(KFC_CPU_STATE + i * 4));
+	}
+	for (i=0; i < 2; i++) {
+		printk("[%d]   CONFIG : 0x%8x  STATUS : 0x%8x  OPTION : 0x%8x  STATE : 0x%8x\n", i + 4,	
+			__raw_readl(EXYNOS_ARM_CORE0_CONFIGURATION + i * 0x80),
+			__raw_readl(EXYNOS_ARM_CORE0_STATUS + i * 0x80),
+			__raw_readl(EXYNOS_ARM_CORE0_OPTION + i * 0x80),
+			__raw_readl(ARM_CPU_STATE + i * 4));
+	}
+	printk(" INFORM5 : 0x%8x\n", __raw_readl(EXYNOS_INFORM5));
+	printk(" CLUSTER STATE EGL : 0x%8x  KFC : 0x%8x\n",
+			__raw_readl(CLUSTER_STATE),
+			__raw_readl(CLUSTER_STATE + 4));
+	pr_info(" -----------------------------------------------------------------------------------\n");
+}
+#endif
+
+
 static int __init exynos_pmu_init(void)
 {
 	unsigned int value, i, j;

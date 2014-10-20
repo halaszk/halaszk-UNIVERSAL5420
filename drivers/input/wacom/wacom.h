@@ -41,7 +41,7 @@
 
 /*Wacom Command*/
 #if defined(CONFIG_HA) || defined(CONFIG_V1A) || \
-	defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G)
+	defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_MEGA2ELTE)
 #define COM_COORD_NUM	12
 #elif defined(CONFIG_N1A)
 #define COM_COORD_NUM	8
@@ -49,7 +49,7 @@
 #define COM_COORD_NUM	7
 #endif
 
-#if defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G)
+#if defined(CONFIG_MACH_HLLTE) || defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_MEGA2ELTE)
 #define COM_QUERY_NUM 13
 #elif defined(CONFIG_HA)
 #define COM_QUERY_NUM	11
@@ -115,7 +115,7 @@
 #endif
 
 #if defined(CONFIG_MACH_HLLTE) || \
-	defined(CONFIG_MACH_HL3G)
+	defined(CONFIG_MACH_HL3G) || defined(CONFIG_MACH_MEGA2ELTE)
 
 /* softkey block workaround */
 #define WACOM_USE_SOFTKEY_BLOCK

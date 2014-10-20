@@ -45,3 +45,9 @@ config DHD_USE_SCHED_SCAN
 	default n
 	---help---
 	  Use CFG80211 sched scan
+
+config BRCM_CCX
+	bool "Enable CCX"
+	default n
+	---help---
+		Enable Cisco Compatible eXtenstion

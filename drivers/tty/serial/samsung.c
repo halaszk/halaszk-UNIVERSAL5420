@@ -1043,9 +1043,15 @@ static void s3c24xx_serial_pm(struct uart_port *port, unsigned int level,
 			      unsigned int old)
 {
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
+	unsigned int umcon;
 
 	switch (level) {
 	case 3:
+		/* disable auto flow control & set nRTS for High */
+		umcon = rd_regl(port, S3C2410_UMCON);
+		umcon &= ~(S3C2410_UMCOM_AFC | S3C2410_UMCOM_RTS_LOW);
+		wr_regl(port, S3C2410_UMCON, umcon);
+
 		if (!IS_ERR(ourport->baudclk))
 			clk_disable(ourport->baudclk);
 

@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wlioctl.h 433418 2013-10-31 20:16:40Z $
+ * $Id: wlioctl.h 450748 2014-01-23 00:49:46Z $
  */
 
 #ifndef _wlioctl_h_
@@ -37,6 +37,7 @@
 #include <proto/bcmip.h>
 #include <proto/bcmevent.h>
 #include <proto/802.11.h>
+#include <proto/802.1d.h>
 #include <bcmwifi_channels.h>
 #include <bcmwifi_rates.h>
 #include <devctrl_if/wlioctl_defs.h>
@@ -2217,6 +2218,12 @@ typedef struct wlc_ba_cnt {
 struct ampdu_tid_control {
 	uint8 tid;			/* tid */
 	uint8 enable;			/* enable/disable */
+};
+
+/* struct for per-tid, per-mode ampdu control */
+struct ampdu_tid_control_mode {
+	struct ampdu_tid_control control[NUMPRIO]; /* tid will be 0xff for not used element */
+	char mode_name[8]; /* supported mode : AIBSS */
 };
 
 /* structure for identifying ea/tid for sending addba/delba */

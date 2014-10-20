@@ -147,7 +147,7 @@ typedef enum {
 #define EGL_L2_EMA_SHIFT	12
 #define COLD_VOLT_OFFSET        50000
 #define ENABLE_MIN_COLD         1
-#define LIMIT_COLD_VOLTAGE      1250000
+#define LIMIT_COLD_VOLTAGE      1300000
 #define MIN_COLD_VOLTAGE        950000
 #define NR_CA7		4
 #define NR_CA15		2
@@ -201,8 +201,20 @@ static inline void exynos_lowpower_for_cluster(cluster_type cluster, bool on) {}
 #endif
 #if defined(CONFIG_SCHED_HMP) && defined(CONFIG_EXYNOS5_DYNAMIC_CPU_HOTPLUG)
 int big_cores_hotplug(bool out_flag);
+void event_hotplug_in(void);
+bool is_big_hotpluged(void);
 #else
 static inline int big_cores_hotplug(bool out_flag)
+{
+	return 0;
+}
+
+static inline void event_hotplug_in(void)
+{
+	return;
+}
+
+static inline bool is_big_hotpluged(void)
 {
 	return 0;
 }

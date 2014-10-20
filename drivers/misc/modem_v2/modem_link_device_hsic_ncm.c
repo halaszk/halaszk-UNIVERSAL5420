@@ -43,7 +43,7 @@
 
 /* /sys/module/modem_link_device_hsic_ncm/parameters/... */
 static int tx_qlen = 10;
-module_param(tx_qlen, int, S_IRUGO);
+module_param(tx_qlen, int, S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(tx_qlen, "tx qlen");
 
 enum bit_debug_flags {
@@ -117,11 +117,11 @@ static void logging_ipc_data(enum mif_log_id id, struct io_device *iod,
 		case SIPC5_CH_ID_RFS_0 ... SIPC5_CH_ID_RFS_9:
 			mif_ipc_log(id, msd, skb->data, skb->len);
 			break;
-		case SIPC5_CH_ID_CS_VT_DATA ... SIPC5_CH_ID_TRANSFER_SCREEN:
-		case SIPC5_CH_ID_BT_DUN ... SIPC5_CH_ID_CPLOG2:
+		case SIPC_CH_ID_CS_VT_DATA ... SIPC_CH_ID_TRANSFER_SCREEN:
+		case SIPC_CH_ID_BT_DUN ... SIPC_CH_ID_CPLOG2:
 			/* To do something */
 			break;
-		case SIPC5_CH_ID_PDP_0 ... SIPC5_CH_ID_PDP_14:
+		case SIPC_CH_ID_PDP_0 ... SIPC_CH_ID_PDP_14:
 			/* To do something */
 			break;
 		default:
@@ -175,9 +175,9 @@ static void pr_tx_skb_with_format(int format, struct sk_buff *skb)
 			if (test_bit(LINK_DEBUG_LOG_RFS_RX, &dflags))
 				pr_skb("RFS-TX", skb);
 			break;
-		case SIPC5_CH_ID_CS_VT_DATA ... SIPC5_CH_ID_TRANSFER_SCREEN:
-		case SIPC5_CH_ID_BT_DUN ... SIPC5_CH_ID_CPLOG2:
-		case SIPC5_CH_ID_PDP_0 ... SIPC5_CH_ID_PDP_14:
+		case SIPC_CH_ID_CS_VT_DATA ... SIPC_CH_ID_TRANSFER_SCREEN:
+		case SIPC_CH_ID_BT_DUN ... SIPC_CH_ID_CPLOG2:
+		case SIPC_CH_ID_PDP_0 ... SIPC_CH_ID_PDP_14:
 			if (test_bit(LINK_DEBUG_LOG_RAW_RX, &dflags))
 				pr_skb("RAW-TX", skb);
 			break;
@@ -232,9 +232,9 @@ static void pr_rx_skb_with_format(int format, struct sk_buff *skb)
 			if (test_bit(LINK_DEBUG_LOG_RFS_RX, &dflags))
 				pr_skb("RFS-RX", skb);
 			break;
-		case SIPC5_CH_ID_CS_VT_DATA ... SIPC5_CH_ID_TRANSFER_SCREEN:
-		case SIPC5_CH_ID_BT_DUN ... SIPC5_CH_ID_CPLOG2:
-		case SIPC5_CH_ID_PDP_0 ... SIPC5_CH_ID_PDP_14:
+		case SIPC_CH_ID_CS_VT_DATA ... SIPC_CH_ID_TRANSFER_SCREEN:
+		case SIPC_CH_ID_BT_DUN ... SIPC_CH_ID_CPLOG2:
+		case SIPC_CH_ID_PDP_0 ... SIPC_CH_ID_PDP_14:
 			if (test_bit(LINK_DEBUG_LOG_RAW_RX, &dflags))
 				pr_skb("RAW-RX", skb);
 			break;
@@ -395,14 +395,18 @@ static int usb_init_communication(struct link_device *ld, struct io_device *iod)
 
 	mif_info("%d:%s\n", task->pid, get_task_comm(str, task));
 
-	if (iod->format == IPC_BOOT)
+	if (iod->format == IPC_BOOT) {
+		mif_err("start ipc packet isn't required for boot iod\n");
 		return 0;
-
+	}
 	if (!usb_ld->if_usb_connected) {
 		mif_err("HSIC not connected, open fail\n");
 		return -ENODEV;
 	}
-
+	if (ld->mc->phone_state != STATE_ONLINE) {
+		mif_err("MODEM is not ONLINE yet! %s open failed\n", iod->name);
+		return -ENODEV;
+	}
 	if (iod->format == IPC_RAW_NCM)
 		pipe_data->ndev = iod->ndev;
 
@@ -436,7 +440,7 @@ static void usb_terminate_communication(struct link_device *ld,
 		return;
 
 	if (iod->mc->phone_state == STATE_CRASH_RESET ||
-			iod->mc->phone_state == STATE_CRASH_EXIT)
+		iod->mc->phone_state == STATE_CRASH_EXIT)
 		stop_ipc(ld);
 
 	return;
@@ -600,7 +604,9 @@ static void usb_rx_complete(struct urb *urb)
 		skb_put(skb, urb->actual_length);
 		if (pipe_data->info->rx_fixup) {
 			pr_rx_skb_with_format(iod->format, skb);
-			pipe_data->info->rx_fixup(pipe_data, skb);
+			if (!pipe_data->info->rx_fixup(pipe_data, skb))
+				/* free skb if error in NCM packet recv */
+				dev_kfree_skb_any(skb);
 			/* cdc_ncm_rx_fixup will be free the skb */
 			goto rx_submit;
 		}
@@ -611,7 +617,8 @@ static void usb_rx_complete(struct urb *urb)
 					urb->actual_length);
 			if (ret < 0)
 				mif_err("no multi raw device (%d)\n", ret);
-			goto free_rx_submit;
+			dev_kfree_skb_any(skb);
+			goto rx_submit;
 		}
 
 		pr_rx_skb_with_format(iod->format, skb);
@@ -623,9 +630,6 @@ static void usb_rx_complete(struct urb *urb)
 			dev_kfree_skb_any(skb);
 			break;
 		}
-free_rx_submit:
-		if (skb)
-			dev_kfree_skb_any(skb);
 rx_submit:
 		if (urb->status == 0) {
 			if (pipe_data->usbdev)
@@ -706,6 +710,7 @@ static int usb_send(struct link_device *ld, struct io_device *iod,
 		/* TODO: */
 		mif_err("usb_tx_skb fail(%d)\n", ret);
 	}
+
 	return tx_size;
 exit:
 	mif_err("%s: drop packet, size=%d, com_state=%d\n",
@@ -823,7 +828,16 @@ int usb_tx_skb(struct if_usb_devdata *pipe_data, struct sk_buff *skb)
 	}
 
 	usb_ld->tx_cnt++;
+#if defined(CONFIG_UMTS_MODEM_XMM6360)
+	pm_runtime_get_noresume(dev); /* get usage */
+	if (usb_get_rpm_status(dev) != RPM_ACTIVE) {
+		ret = usb_linkpm_request_resume(usb_ld->usbdev);
+		if (ret < 0)
+			pm_request_resume(dev);
+	}
+#else
 	pm_runtime_get(dev);
+#endif
 
 	if (pipe_data->info->tx_fixup) {
 		/* check the modem status before sending IP packet */
@@ -1532,7 +1546,7 @@ static int __devinit if_usb_probe(struct usb_interface *intf,
 			pipe_data->format = dev_index;
 			if (mc->fixed_log_ch && dev_index == mc->fixed_log_ch)
 				pipe_data->iod = link_get_iod_with_channel(
-					&usb_ld->ld, SIPC5_CH_ID_CPLOG1);
+					&usb_ld->ld, SIPC_CH_ID_CPLOG1);
 			else
 				pipe_data->iod = link_get_iod_with_format(
 							&usb_ld->ld, dev_index);
@@ -1776,10 +1790,18 @@ static struct usb_device_id if_usb_ids[] = {
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x04cc, 0x0500, 0xff, 0x01, 0xff),
 	.driver_info = (unsigned long)&ste_boot_down_info,
 	}, /* Ericsson M74XX BOOT */
+	{ USB_DEVICE_AND_INTERFACE_INFO(0x8087, 0x07ed, 0xdc,
+		0, USB_CDC_PROTO_NONE),
+	.driver_info = (unsigned long)&hsic_boot_down_info,
+	}, /* IMC XMM7260 BOOTROM */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x04cc, 0x2342,	USB_CLASS_COMM,
 		USB_CDC_SUBCLASS_ACM, 1),
 	.driver_info = (unsigned long)&ste_cdc_acm_info,
 	}, /* Ericsson M74XX MAIN */
+	{ USB_DEVICE_AND_INTERFACE_INFO(0x8087, 0x07ed, 0xdc,
+		0, USB_CDC_PROTO_NONE),
+	.driver_info = (unsigned long)&hsic_boot_down_info,
+	}, /* IMC XMM7260 BOOTROM */
 	{ USB_DEVICE_AND_INTERFACE_INFO(0x04e8, 0x7000, USB_CLASS_COMM,
 		USB_CDC_SUBCLASS_ACM, 1),
 	.driver_info = (unsigned long)&cmc_boot_down_info,

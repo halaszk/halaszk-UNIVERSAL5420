@@ -12,6 +12,7 @@
 #ifndef FIMC_IS_DEVICE_FLITE_H
 #define FIMC_IS_DEVICE_FLITE_H
 
+#include <linux/interrupt.h>
 #include "fimc-is-type.h"
 
 #define EXPECT_FRAME_START	0
@@ -30,7 +31,7 @@
 
 #define FLITE_OVERFLOW_COUNT	300
 
-#define FLITE_VVALID_TIME_BASE 32 /* ms */
+#define FLITE_VVALID_TIME 32 /* ms */
 
 
 struct fimc_is_device_sensor;
@@ -41,6 +42,8 @@ enum fimc_is_flite_state {
 	FLITE_B_SLOT_VALID,
 	/* finish state */
 	FLITE_LAST_CAPTURE,
+	/* flite join ischain */
+	FLITE_JOIN_ISCHAIN,
 	/* one the fly output */
 	FLITE_OTF_WITH_3AA,
 };
@@ -51,18 +54,16 @@ enum fimc_is_flite_buf_done_mode {
 };
 
 /*
- * 10p means 10% early than end irq. We supposed that VVALID time is variable
- * ex. 32 * 0.1 = 3ms, early interval is (33 - 3) = 29ms
- *     32 * 0.2 = 6ms,                   (33 - 6) = 26ms
- *     32 * 0.3 = 9ms,                   (33 - 9) = 23ms
- *     32 * 0.4 = 12ms,                  (33 - 12) = 20ms
+ * 10p means 10% early than end irq. We supposed that VVALID time is 32ms (FLITE_VVALID_TIME)
+ * ex. 32 * 0.1 = 3ms, early interval is (32 - 3) = 29ms
+ *     32 * 0.2 = 6ms,                   (32 - 6) = 26ms
+ *     32 * 0.3 = 9ms,                   (32 - 9) = 23ms
  */
 enum fimc_is_flite_early_buf_done_mode {
 	FLITE_BUF_EARLY_NOTHING	= 0,
 	FLITE_BUF_EARLY_10P	= 1, /* 10%(29ms) 3ms */
 	FLITE_BUF_EARLY_20P	= 2, /* 20%(26ms) 6ms */
 	FLITE_BUF_EARLY_30P	= 3, /* 30%(23ms) 9ms */
-	FLITE_BUF_EARLY_40P	= 4, /* 40%(20ms) 12ms */
 };
 
 struct fimc_is_device_flite {
@@ -76,8 +77,10 @@ struct fimc_is_device_flite {
 
 	u32				overflow_cnt;
 
-	/* which 3aa gorup is connected when otf is enable */
-	u32				group;
+	u32				module; /* which module is connceted */
+	u32				csi; /* which csi channel is connceted */
+	u32				group; /* which 3aa gorup is connected when otf is enable */
+
 	u32				sw_checker;
 	u32				sw_trigger;
 	atomic_t			bcount;

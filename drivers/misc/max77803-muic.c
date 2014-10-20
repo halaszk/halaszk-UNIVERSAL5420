@@ -40,6 +40,15 @@
 #include <linux/delay.h>
 /* #include <linux/extcon.h> */
 
+#if defined(CONFIG_MACH_HLLTE)//Don't add other models Feature
+#include <linux/pm_qos.h>
+#define MAX_KFC_VALUE 1200000 //1.2GHz
+#define MAX_CPU_VALUE 1500000 //1.5GHz
+static struct pm_qos_request max_kfc_qos;
+static struct pm_qos_request max_cpu_qos;
+// Clock control in otg_control function.
+#endif
+
 #define DEV_NAME	"max77803-muic"
 
 //#undef REGARD_442K_AS_523K
@@ -48,6 +57,7 @@ extern unsigned int lpcharge;
 
 /* for providing API */
 static struct max77803_muic_info *gInfo;
+extern unsigned int system_rev;
 
 /* For restore charger interrupt states */
 static u8 chg_int_state;
@@ -90,6 +100,10 @@ enum {
 	ADC_DOCK_PLAY_PAUSE_KEY = 0x0d,
 	ADC_SMARTDOCK		= 0x10, /* 0x10000 40.2K ohm */
 	ADC_AUDIODOCK		= 0x12, /* 0x10010 64.9K ohm */
+	ADC_LANHUB      = 0x13,
+#ifdef CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE
+	ADC_PS_CABLE        = 0x14, /* 0x10100 102K ohm */
+#endif  /* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	ADC_CEA936ATYPE1_CHG	= 0x17,	/* 0x10111 200K ohm */
 	ADC_JIG_USB_OFF		= 0x18, /* 0x11000 255K ohm */
 	ADC_JIG_USB_ON		= 0x19, /* 0x11001 301K ohm */
@@ -241,6 +255,27 @@ static int max77803_muic_get_comp2_comn1_pass2
 	return val;
 }
 #endif
+
+#ifdef CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE
+/* When we use the PS cable, VBUS has an output */
+/* MUIC has to ignore that output */
+/* This function will control the CDETCTRL1 REG's bit0 (CHGDETEN) */
+static int max77803_muic_set_chgdeten(struct max77803_muic_info *info, bool enable)
+{
+	int ret = 0, val;
+	const u8 reg = MAX77803_MUIC_REG_CDETCTRL1;
+	const u8 mask = CHGDETEN_MASK;
+	const u8 shift = CHGDETEN_SHIFT;
+
+	dev_info(info->dev, "%s called with %d\n", __func__, enable);
+	val = (enable ? 1 : 0);
+	ret = max77803_update_reg(info->muic, reg, (val << shift), mask);
+	if (ret)
+		pr_err("%s fail to read reg[0x%02x], ret(%d)\n", __func__, reg, ret);
+
+	return ret;
+}
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 
 static int max77803_muic_set_comp2_comn1_pass2
 	(struct max77803_muic_info *info, int type, int path)
@@ -535,6 +570,8 @@ static ssize_t max77803_muic_show_device(struct device *dev,
 		return sprintf(buf, "Smart Dock+USB\n");
 	case CABLE_TYPE_AUDIODOCK_MUIC:
 		return sprintf(buf, "Audio Dock\n");
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		return sprintf(buf, "Power Sharing\n");
 	default:
 		break;
 	}
@@ -998,6 +1035,115 @@ static ssize_t max77803_muic_show_charger_type(struct device *dev,
 	}
 }
 
+#if defined(CONFIG_MACH_HL3G)
+/* This is W/A for FRESCO camera flash */
+void max77803_otgboost(struct max77803_muic_info *info, int enable)
+{
+	u8 cdetctrl1, chg_cnfg_00;
+	pr_info("%s: enable(%d)\n", __func__, enable);
+	if (enable) {
+
+		/* disable charger detection */
+		max77803_read_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, &cdetctrl1);
+		cdetctrl1 &= ~(1 << 0);
+		max77803_write_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, cdetctrl1);
+
+		/* OTG on, boost on, DIS_MUIC_CTRL=1 */
+		max77803_read_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_00, &chg_cnfg_00);
+		chg_cnfg_00 &= ~(CHG_CNFG_00_CHG_MASK
+				| CHG_CNFG_00_OTG_MASK
+				| CHG_CNFG_00_BUCK_MASK
+				| CHG_CNFG_00_BOOST_MASK
+				| CHG_CNFG_00_DIS_MUIC_CTRL_MASK);
+		chg_cnfg_00 |= (CHG_CNFG_00_OTG_MASK
+				| CHG_CNFG_00_BOOST_MASK
+				| CHG_CNFG_00_DIS_MUIC_CTRL_MASK);
+		max77803_write_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_00, chg_cnfg_00);
+
+		/* Update CHG_CNFG_11 to 0x50(5V) */
+		max77803_write_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_11, 0x50);
+	} else {
+		/* OTG off, boost off, (buck on),
+		   DIS_MUIC_CTRL = 0 unless CHG_ENA = 1 */
+		max77803_read_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_00, &chg_cnfg_00);
+		chg_cnfg_00 &= ~(CHG_CNFG_00_OTG_MASK
+				| CHG_CNFG_00_BOOST_MASK
+				| CHG_CNFG_00_DIS_MUIC_CTRL_MASK);
+		chg_cnfg_00 |= CHG_CNFG_00_BUCK_MASK;
+		max77803_write_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_00, chg_cnfg_00);
+
+		/* Update CHG_CNFG_11 to 0x00(3V) */
+		max77803_write_reg(info->max77803->i2c,
+			MAX77803_CHG_REG_CHG_CNFG_11, 0x00);
+
+		mdelay(10);
+
+//#if defined(CONFIG_HA_3G) // CHECK ME1-1!!
+		/* [MAX77804] Workaround to git rid of reading dummy(0x00) */
+		/* disable charger detection again */
+		max77803_read_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, &cdetctrl1);
+		cdetctrl1 &= ~(1 << 0);
+		max77803_write_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, cdetctrl1);
+
+		mdelay(10);
+//#endif // CHECK ME1-2!!
+		/* enable charger detection */
+		max77803_read_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, &cdetctrl1);
+		cdetctrl1 |= (1 << 0);
+		max77803_write_reg(info->max77803->muic,
+			MAX77803_MUIC_REG_CDETCTRL1, cdetctrl1);
+
+	}
+
+	pr_info("%s: CDETCTRL1(0x%x), CHG_CNFG_00(0x%x)\n",
+				__func__, cdetctrl1, chg_cnfg_00);
+}
+#endif // CONFIG_MACH_HL3G
+
+static ssize_t max77803_muic_force_otgboost(struct device *dev,
+					  struct device_attribute *attr,
+					  const char *buf, size_t count)
+{
+	struct max77803_muic_info *info = dev_get_drvdata(dev);
+	u8 val;
+
+	dev_info(info->dev, "func:%s cable_type:%d buf:%s system_rev:%d\n",
+		 __func__, info->cable_type, buf, system_rev);
+
+	if (!strncmp(buf, "0", 1))
+		val = 0;
+	else if (!strncmp(buf, "1", 1))
+		val = 1;
+	else {
+		dev_warn(info->dev, "%s: Wrong command\n", __func__);
+		return count;
+	}
+
+	if (system_rev > 10) return count;
+
+#if defined(CONFIG_MACH_HL3G)
+	switch (info->cable_type) {
+	case CABLE_TYPE_NONE_MUIC:
+		max77803_otgboost(info, val);
+	break;
+
+	default:
+	break;
+	}
+#endif
+
+	return count;
+}
 
 static DEVICE_ATTR(chg_type, 0664, max77803_muic_show_charger_type, NULL);
 static DEVICE_ATTR(uart_sel, 0664, max77803_muic_show_uart_sel,
@@ -1011,6 +1157,8 @@ static DEVICE_ATTR(audio_path, 0664,
 		max77803_muic_show_audio_path, max77803_muic_set_audio_path);
 static DEVICE_ATTR(otg_test, 0664,
 		max77803_muic_show_otg_test, max77803_muic_set_otg_test);
+static DEVICE_ATTR(force_otgboost, 0664,
+		NULL, max77803_muic_force_otgboost);
 static DEVICE_ATTR(adc_debounce_time, 0664,
 		max77803_muic_show_adc_debounce_time,
 		max77803_muic_set_adc_debounce_time);
@@ -1033,6 +1181,7 @@ static struct attribute *max77803_muic_attributes[] = {
 	&dev_attr_adc.attr,
 	&dev_attr_audio_path.attr,
 	&dev_attr_otg_test.attr,
+	&dev_attr_force_otgboost.attr,
 	&dev_attr_adc_debounce_time.attr,
 #if !defined(CONFIG_MUIC_MAX77803_SUPPORT_CAR_DOCK)
 	&dev_attr_apo_factory.attr,
@@ -1805,7 +1954,25 @@ void otg_control(int enable)
 {
 	pr_debug("%s: enable(%d)\n", __func__, enable);
 
+#if defined(CONFIG_MACH_HLLTE) //Don't add other models Feature
+	if(enable)
+	{
+		pm_qos_add_request(&max_kfc_qos, PM_QOS_KFC_FREQ_MAX, MAX_KFC_VALUE);
+		pm_qos_add_request(&max_cpu_qos, PM_QOS_CPU_FREQ_MAX, MAX_CPU_VALUE );
+	}
+#endif	
 	max77803_otg_control(gInfo, enable);
+
+#if defined(CONFIG_MACH_HLLTE)//Don't add other models Feature
+	if(!enable)
+	{
+		if (pm_qos_request_active(&max_kfc_qos))
+			pm_qos_remove_request(&max_kfc_qos);
+
+		if (pm_qos_request_active(&max_cpu_qos))
+			pm_qos_remove_request(&max_cpu_qos);
+	}
+#endif
 }
 
 /* use in mach for powered-otg */
@@ -2164,6 +2331,16 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 		}
 		break;
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
+#ifdef CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		if (adc != ADC_PS_CABLE) {
+			dev_warn(info->dev, "%s: assume power sharing cable detach\n",
+					__func__);
+			info->cable_type = CABLE_TYPE_NONE_MUIC;
+			max77803_muic_set_charging_type(info, false);
+		}
+		break;
+#endif /* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	default:
 		break;
 	}
@@ -2230,6 +2407,18 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 			max77803_muic_attach_dock_type(info, adc, chgtyp);
 		break;
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
+#ifdef CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE
+	case ADC_PS_CABLE:
+		dev_info(info->dev, "%s: power sharing cable attached\n", __func__);
+		info->cable_type = CABLE_TYPE_PS_CABLE_MUIC;
+		ret = max77803_muic_set_chgdeten(info, false);
+		if (ret)
+			pr_err("%s fail to disable chgdet\n", __func__);
+		ret = max77803_muic_set_charging_type(info, false);
+		if (ret)
+			pr_err("%s fail to set chg type\n", __func__);
+		break;
+#endif /* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case ADC_JIG_UART_OFF:
 		max77803_muic_handle_jig_uart(info, vbvolt);
 		mdata->jig_state(true);
@@ -2608,6 +2797,18 @@ static int max77803_muic_handle_detach(struct max77803_muic_info *info, int irq)
 			mdata->earjack_cb(MAX77803_MUIC_DETACHED);
 		break;
 #endif
+#ifdef CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		dev_info(info->dev, "%s: power sharing cable\n", __func__);
+		info->cable_type = CABLE_TYPE_NONE_MUIC;
+		ret = max77803_muic_set_charging_type(info, true);
+		if (ret)
+			pr_err("%s fail to set chg type\n", __func__);
+		ret = max77803_muic_set_chgdeten(info, true);
+		if (ret)
+			pr_err("%s fail to enable chgdet\n", __func__);
+		break;
+#endif /* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case CABLE_TYPE_UNKNOWN_MUIC:
 		dev_info(info->dev, "%s: UNKNOWN\n", __func__);
 		info->cable_type = CABLE_TYPE_NONE_MUIC;
@@ -2668,7 +2869,14 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 #if !defined(CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK)
 	case ADC_AUDIODOCK:
 #endif /* !CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
-	case (ADC_AUDIODOCK + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
+#if !defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
+	case ADC_LANHUB:
+#endif /* !CONFIG_MUIC_MAX77803_SUPPORT_LANHUB */
+#if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
+	case (ADC_PS_CABLE + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
+#else /* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
+	case (ADC_LANHUB + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
+#endif
 		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n",
 				__func__, adc);
 		intr = INT_DETACH;

@@ -38,11 +38,18 @@ register */
 #define S5P_DSIM_FIFOTHLD	(0x40)	/* FIFO threshold level register */
 #define S5P_DSIM_FIFOCTRL	(0x44)	/* FIFO status and control register
 */
+#define DSIM_INIT_SFR		(1 << 3)	/* SFR FIFO write point initialize */
 
 /* PLL ctrl register */
 #define S5P_DSIM_PLLCTRL	(0x4c)  /* PLL control register */
 /* PLL timer register */
-#define S5P_DSIM_PLLTMR		(soc_is_exynos5250() ? (0x50) : (0x58))
+#if defined(CONFIG_SOC_EXYNOS5250) ||	\
+defined(CONFIG_SOC_EXYNOS3250) ||	\
+defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS3472)
+#define S5P_DSIM_PLLTMR		(0x50)
+#else
+#define S5P_DSIM_PLLTMR		(0x58)
+#endif
 
 #define S5P_DSIM_PLLCTRL1	(0x50)  /* PLL timer register 1 */
 #define S5P_DSIM_PLLCTRL2	(0x54)  /* PLL timer register 2 */
@@ -97,10 +104,16 @@ register */
 #define DSIM_HFP_MODE_SHIFT		(22)
 #define DSIM_HSE_MODE_SHIFT		(23)
 #define DSIM_AUTO_MODE_SHIFT		(24)
-#define DSIM_CLKLANE_ENABLE		(1 << 30)
+#define DSIM_CLKLANE_SHIFT		(30)
 #define DSIM_LANE_ENx(x)		(((x) & 0x1f) << 0)
 
 #define DSIM_NUM_OF_DATA_LANE(x)	((x) << DSIM_NUM_OF_DATALANE_SHIFT)
+
+#if defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS5260)
+#define DSIM_CLKLANE_ENABLE		(1)
+#else
+#define DSIM_CLKLANE_ENABLE		(0)	/* some of exynos are 30th is reserved bit */
+#endif
 
 /* S5P_DSIM_ESCMODE */
 #define DSIM_TX_LPDT_SHIFT		(6)
@@ -161,5 +174,38 @@ register */
 /* S5P_DSIM_PLLCTRL */
 #define DSIM_PLL_EN_SHIFT		(23)
 #define DSIM_FREQ_BAND_SHIFT		(24)
+
+#if defined(CONFIG_SOC_EXYNOS5250) ||	\
+defined(CONFIG_SOC_EXYNOS3250) ||	\
+defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS3472) ||	\
+defined(CONFIG_SOC_EXYNOS4210) || defined(CONFIG_SOC_EXYNOS4212) || defined(CONFIG_SOC_EXYNOS4412)
+#define dphy_support_upto_1GHz()	1
+#else
+#define dphy_support_upto_1GHz()	0
+#endif
+
+#if defined(CONFIG_SOC_EXYNOS3250)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS3470)
+#define DPHY_PLL_STABLE_TIME		32000
+#elif defined(CONFIG_SOC_EXYNOS3472)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS4415)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5260)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5410)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5420)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5422)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5430)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5433)
+#define DPHY_PLL_STABLE_TIME		22200
+#else
+#define DPHY_PLL_STABLE_TIME		32000
+#endif
 
 #endif /* _REGS_MIPIDSIM_H */

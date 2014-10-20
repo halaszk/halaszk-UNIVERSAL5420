@@ -370,210 +370,6 @@ static int fts_set_noise_param(struct fts_ts_info *info)
 }
 #endif				// FTS_SUPPORT_NOISE_PARAM
 
-#ifdef TSP_BOOSTER
-static void fts_change_dvfs_lock(struct work_struct *work)
-{
-	struct fts_ts_info *info = container_of(work,
-						struct fts_ts_info,
-						work_dvfs_chg.work);
-
-	mutex_lock(&info->dvfs_lock);
-
-	switch (info->boost_level) {
-	case TSP_BOOSTER_LEVEL1:
-	case TSP_BOOSTER_LEVEL3:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_remove_request(&info->tsp_cpu_qos);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_remove_request(&info->tsp_mif_qos);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_remove_request(&info->tsp_int_qos);
-		tsp_debug_dbg(false, &info->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS OFF\n",
-			__func__, info->boost_level);
-		break;
-	case TSP_BOOSTER_LEVEL2:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_update_request(&info->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_2);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_update_request(&info->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_2);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_update_request(&info->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_2);
-		tsp_debug_dbg(false, &info->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS CHANGED\n",
-			__func__, info->boost_level);
-		break;
-	case TSP_BOOSTER_LEVEL4:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_update_request(&info->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_4);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_update_request(&info->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_4);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_update_request(&info->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_4);
-		tsp_debug_dbg(false, &info->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS CHANGED\n",
-			__func__, info->boost_level);
-		break;
-	default:
-		tsp_debug_err(true, &info->i2c_client->dev, "%s: [TSP_DVFS] Undefined type passed %d\n",
-			__func__, info->boost_level);
-		break;
-	}
-
-	mutex_unlock(&info->dvfs_lock);
-}
-
-static void fts_set_dvfs_off(struct work_struct *work)
-{
-	struct fts_ts_info *info = container_of(work,
-						struct fts_ts_info,
-						work_dvfs_off.work);
-
-	mutex_lock(&info->dvfs_lock);
-
-	if (pm_qos_request_active(&info->tsp_cpu_qos))
-		pm_qos_remove_request(&info->tsp_cpu_qos);
-
-	if (pm_qos_request_active(&info->tsp_mif_qos))
-		pm_qos_remove_request(&info->tsp_mif_qos);
-
-	if (pm_qos_request_active(&info->tsp_int_qos))
-		pm_qos_remove_request(&info->tsp_int_qos);
-
-	info->dvfs_lock_status = false;
-	mutex_unlock(&info->dvfs_lock);
-
-	tsp_debug_dbg(false, &info->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS OFF\n",
-		__func__, info->boost_level);
-}
-
-static void fts_init_dvfs_level(struct fts_ts_info *info)
-{
-	/* DVFS level is depend on booster_level which is writed by sysfs
-	 * booster_level : 1	(press)CPU 1300000, MIF 543000, INT 266000 -> after 130msec -> OFF
-	 * booster_level : 2	(press)CPU 1300000, MIF 543000, INT 266000 -> after 130msec
-	 *					-> CPU 1300000, MIF 543000, INT 160000 -> after 500msec -> OFF
-	 * booster_level : 3	(press)CPU 1300000, MIF 206000, INT 160000 -> after 130msec -> OFF
-	 * booster_level : 4	(press)CPU 1300000, MIF 413000, INT 266000 -> after 130msec
-	 *					-> CPU 1300000, MIF 413000, INT 160000 -> after 500msec -> OFF
-	 */
-	unsigned int level = info->boost_level;
-
-	switch (level) {
-	case TSP_BOOSTER_LEVEL1:
-	case TSP_BOOSTER_LEVEL2:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_update_request(&info->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_1);
-		else
-			pm_qos_add_request(&info->tsp_cpu_qos, PM_QOS_KFC_FREQ_MIN, TOUCH_BOOSTER_CPU_FRQ_1);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_update_request(&info->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_1);
-		else
-			pm_qos_add_request(&info->tsp_mif_qos, PM_QOS_BUS_THROUGHPUT, TOUCH_BOOSTER_MIF_FRQ_1);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_update_request(&info->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_1);
-		else
-			pm_qos_add_request(&info->tsp_int_qos, PM_QOS_DEVICE_THROUGHPUT, TOUCH_BOOSTER_INT_FRQ_1);
-		break;
-	case TSP_BOOSTER_LEVEL3:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_update_request(&info->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_3);
-		else
-			pm_qos_add_request(&info->tsp_cpu_qos, PM_QOS_KFC_FREQ_MIN, TOUCH_BOOSTER_CPU_FRQ_3);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_update_request(&info->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_3);
-		else
-			pm_qos_add_request(&info->tsp_mif_qos, PM_QOS_BUS_THROUGHPUT, TOUCH_BOOSTER_MIF_FRQ_3);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_update_request(&info->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_3);
-		else
-			pm_qos_add_request(&info->tsp_int_qos, PM_QOS_DEVICE_THROUGHPUT, TOUCH_BOOSTER_INT_FRQ_3);
-		break;
-	case TSP_BOOSTER_LEVEL4:
-		if (pm_qos_request_active(&info->tsp_cpu_qos))
-			pm_qos_update_request(&info->tsp_cpu_qos, TOUCH_BOOSTER_CPU_FRQ_1);
-		else
-			pm_qos_add_request(&info->tsp_cpu_qos, PM_QOS_KFC_FREQ_MIN, TOUCH_BOOSTER_CPU_FRQ_1);
-
-		if (pm_qos_request_active(&info->tsp_mif_qos))
-			pm_qos_update_request(&info->tsp_mif_qos, TOUCH_BOOSTER_MIF_FRQ_4);
-		else
-			pm_qos_add_request(&info->tsp_mif_qos, PM_QOS_BUS_THROUGHPUT, TOUCH_BOOSTER_MIF_FRQ_4);
-
-		if (pm_qos_request_active(&info->tsp_int_qos))
-			pm_qos_update_request(&info->tsp_int_qos, TOUCH_BOOSTER_INT_FRQ_1);
-		else
-			pm_qos_add_request(&info->tsp_int_qos, PM_QOS_DEVICE_THROUGHPUT, TOUCH_BOOSTER_INT_FRQ_1);
-		break;
-	default:
-		tsp_debug_err(true, &info->i2c_client->dev, "%s: [TSP_DVFS] Undefined type passed %d\n",
-			__func__, level);
-		break;
-	}
-}
-
-static void fts_set_dvfs_lock(struct fts_ts_info *info, unsigned int mode, bool restart)
-{
-	if (info->boost_level == TSP_BOOSTER_DISABLE)
-		return;
-
-	mutex_lock(&info->dvfs_lock);
-
-	switch (mode) {
-	case TSP_BOOSTER_OFF:
-		if (info->dvfs_lock_status) {
-			schedule_delayed_work(&info->work_dvfs_off,
-				msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME));
-		}
-		break;
-	case TSP_BOOSTER_ON:
-		cancel_delayed_work(&info->work_dvfs_off);
-
-		if (!info->dvfs_lock_status || restart) {
-			cancel_delayed_work(&info->work_dvfs_chg);
-			fts_init_dvfs_level(info);
-
-			schedule_delayed_work(&info->work_dvfs_chg,
-							msecs_to_jiffies(TOUCH_BOOSTER_CHG_TIME));
-
-			tsp_debug_dbg(false, &info->i2c_client->dev, "%s: [TSP_DVFS] level[%d] : DVFS ON\n",
-				__func__, info->boost_level);
-
-			info->dvfs_lock_status = true;
-		}
-		break;
-	case TSP_BOOSTER_FORCE_OFF:
-		if (info->dvfs_lock_status) {
-			cancel_delayed_work(&info->work_dvfs_off);
-			cancel_delayed_work(&info->work_dvfs_chg);
-			schedule_work(&info->work_dvfs_off.work);
-		}
-		break;
-	default:
-		break;
-	}
-	mutex_unlock(&info->dvfs_lock);
-}
-
-static int fts_init_dvfs(struct fts_ts_info *info)
-{
-	mutex_init(&info->dvfs_lock);
-
-	INIT_DELAYED_WORK(&info->work_dvfs_off, fts_set_dvfs_off);
-	INIT_DELAYED_WORK(&info->work_dvfs_chg, fts_change_dvfs_lock);
-
-	info->dvfs_lock_status = false;
-	return 0;
-}
-#endif
-
 /* Added for samsung dependent codes such as Factory test,
  * Touch booster, Related debug sysfs.
  */
@@ -685,7 +481,7 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 	unsigned char LastLeftEvent = 0;
 	int x = 0, y = 0, z = 0;
 	int bw = 0, bh = 0, angle = 0, palm = 0;
-#if defined (CONFIG_INPUT_BOOSTER) || defined(TSP_BOOSTER)
+#if defined (CONFIG_INPUT_BOOSTER)
 	bool booster_restart = false;
 #endif
 
@@ -761,7 +557,7 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 
 		case EVENTID_ENTER_POINTER:
 			info->touch_count++;
-#if defined (CONFIG_INPUT_BOOSTER) || defined(TSP_BOOSTER)
+#if defined (CONFIG_INPUT_BOOSTER)
 			booster_restart = true;
 #endif
 		case EVENTID_MOTION_POINTER:
@@ -908,15 +704,6 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 
 	input_sync(info->input_dev);
 
-#ifdef TSP_BOOSTER
-	if ((EventID == EVENTID_ENTER_POINTER)
-		|| (EventID == EVENTID_LEAVE_POINTER)) {
-		if (info->touch_count)
-			fts_set_dvfs_lock(info, TSP_BOOSTER_ON, booster_restart);
-		else
-			fts_set_dvfs_lock(info, TSP_BOOSTER_OFF, false);
-	}
-#endif
 #if defined (CONFIG_INPUT_BOOSTER)
 	if ((EventID == EVENTID_ENTER_POINTER)
 			|| (EventID == EVENTID_LEAVE_POINTER)) {
@@ -1023,6 +810,8 @@ static int fts_irq_enable(struct fts_ts_info *info,
 	return retval;
 }
 
+extern unsigned int lpcharge;
+
 static int fts_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 {
 	int retval;
@@ -1039,6 +828,12 @@ static int fts_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		tsp_debug_err(true, &client->dev, "FTS err = EIO!\n");
 		return -EIO;
+	}
+
+	if (lpcharge == 1) {
+		tsp_debug_err(true, &client->dev, "%s : Do not load driver due to : lpm %d\n",
+			 __func__, lpcharge);
+		return -ENODEV;
 	}
 
 	info = kzalloc(sizeof(struct fts_ts_info), GFP_KERNEL);
@@ -1105,11 +900,6 @@ static int fts_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 #endif
 
 	init_completion(&info->init_done);
-
-#ifdef TSP_BOOSTER
-	fts_init_dvfs(info);
-	info->boost_level = TSP_BOOSTER_LEVEL2;
-#endif
 
 #ifdef CONFIG_GLOVE_TOUCH
 	input_set_capability(info->input_dev, EV_SW, SW_GLOVE);
@@ -1549,10 +1339,6 @@ void fts_release_all_finger(struct fts_ts_info *info)
 #endif
 
 	input_sync(info->input_dev);
-
-#ifdef TSP_BOOSTER
-	fts_set_dvfs_lock(info, TSP_BOOSTER_FORCE_OFF, false);
-#endif
 }
 
 static int fts_stop_device(struct fts_ts_info *info)

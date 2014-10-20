@@ -14,6 +14,11 @@
 
 #include "fimc-is-groupmgr.h"
 
+#define RESOURCE_TYPE_SENSOR0	0
+#define RESOURCE_TYPE_SENSOR1	1
+#define RESOURCE_TYPE_ISCHAIN	2
+#define RESOURCE_TYPE_MAX	3
+
 struct fimc_is_dvfs_ctrl {
 	struct mutex lock;
 	int cur_int_qos;
@@ -41,11 +46,19 @@ struct fimc_is_clk_gate_ctrl {
 	unsigned long chk_on_off_cnt[GROUP_ID_MAX];
 };
 
+struct fimc_is_resource {
+        struct platform_device                  *pdev;
+        void __iomem                            *regs;
+        atomic_t                                rsccount;
+        u32                                     private_data;
+};
+
 struct fimc_is_resourcemgr {
 	atomic_t				rsccount;
-	atomic_t				rsccount_sensor;
-	atomic_t				rsccount_ischain;
 	atomic_t				rsccount_module; /* sensor module */
+	struct fimc_is_resource			resource_sensor0;
+	struct fimc_is_resource			resource_sensor1;
+	struct fimc_is_resource			resource_ischain;
 
 	struct fimc_is_dvfs_ctrl		dvfs_ctrl;
 	struct fimc_is_clk_gate_ctrl		clk_gate_ctrl;
@@ -55,6 +68,12 @@ struct fimc_is_resourcemgr {
 
 int fimc_is_resource_probe(struct fimc_is_resourcemgr *resourcemgr,
 	void *private_data);
-int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr);
-int fimc_is_resource_put(struct fimc_is_resourcemgr *resourcemgr);
+int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type);
+int fimc_is_resource_put(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type);
+
+#define GET_RESOURCE(resourcemgr, type) \
+	((type == RESOURCE_TYPE_SENSOR0) ? &resourcemgr->resource_sensor0 : \
+	((type == RESOURCE_TYPE_SENSOR1) ? &resourcemgr->resource_sensor1 : \
+	&resourcemgr->resource_ischain))
+
 #endif

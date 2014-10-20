@@ -523,7 +523,7 @@ static ssize_t poll_delay_store(struct device *dev,
 	if (err < 0)
 		return err;
 
-	new_delay *= NSEC_PER_MSEC;
+	//new_delay *= NSEC_PER_MSEC;
 
 	taos_dbgmsg("new delay = %lldns, old delay = %lldns\n",
 		    new_delay, ktime_to_ns(taos->light_poll_delay));

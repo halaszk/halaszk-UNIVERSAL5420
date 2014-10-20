@@ -25,12 +25,24 @@
 #include <linux/mfd/samsung/s2mpu01a.h>
 #include <linux/mfd/samsung/irq.h>
 #include <linux/regmap.h>
+#if defined(CONFIG_RTC_ALARM_BOOT)
+#include <linux/reboot.h>
+#include <linux/wakelock.h>
+#endif
 
 struct s2m_rtc_info {
 	struct device *dev;
 	struct sec_pmic_dev *iodev;
 	struct rtc_device *rtc_dev;
 	int irq;
+#if defined(CONFIG_RTC_ALARM_BOOT)
+	int irq1;
+	bool lpm_mode;
+	bool alarm_irq_flag;
+	struct wake_lock alarm_wake_lock;
+	struct workqueue_struct*  sapa_workq;
+	struct delayed_work       sapa_reboot_work;
+#endif
 	int rtc_24hr_mode;
 	bool wtsr_smpl;
 };
@@ -286,11 +298,9 @@ static int s2m_rtc_stop_alarm(struct s2m_rtc_info *info)
 		}
 		break;
 	case S2MPA01:
-		if (info->iodev->rev_num == S2MPA01_REV_00) {
-			ret = s2m_rtc_workaround_operation(info, data);
-			if (ret < 0)
-				return ret;
-		}
+		ret = s2m_rtc_workaround_operation(info, data);
+		if (ret < 0)
+			return ret;
 		break;
 	case S2MPU01X:
 		ret = s2m_rtc_workaround_operation(info, data);
@@ -397,6 +407,148 @@ static int s2m_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	return ret;
 }
 
+#if defined(CONFIG_RTC_ALARM_BOOT)
+static int s2mpa01_rtc_stop_alarm_boot(struct s2m_rtc_info *info)
+{
+	u8 data[7];
+	int ret, i;
+	struct rtc_time tm;
+
+	ret = s2m_rtc_read_time_reg(info);
+	if (ret < 0)
+		return ret;
+
+	ret = sec_rtc_bulk_read(info->iodev, S2M_RTC_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	ret = sec_rtc_bulk_write(info->iodev, S2M_RTC_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	ret = sec_rtc_bulk_read(info->iodev, S2M_ALARM1_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	s2m_data_to_tm(data, &tm, info->rtc_24hr_mode);
+
+	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
+		1900 + tm.tm_year, 1 + tm.tm_mon, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday);
+
+	for (i = 0; i < 7; i++)
+		data[i] &= ~ALARM_ENABLE_MASK;
+
+	ret = sec_rtc_bulk_write(info->iodev, S2M_ALARM1_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	ret = s2m_rtc_set_time_reg(info, 1);
+	return ret;
+}
+
+static int s2mpa01_rtc_start_alarm_boot(struct s2m_rtc_info *info)
+{
+	int ret;
+	u8 data[7];
+	struct rtc_time tm;
+
+	ret = sec_rtc_bulk_read(info->iodev, S2M_ALARM1_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	s2m_data_to_tm(data, &tm, info->rtc_24hr_mode);
+
+	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
+		1900 + tm.tm_year, 1 + tm.tm_mon, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday);
+
+	data[RTC_SEC] |= ALARM_ENABLE_MASK;
+	data[RTC_MIN] |= ALARM_ENABLE_MASK;
+	data[RTC_HOUR] |= ALARM_ENABLE_MASK;
+	data[RTC_WEEKDAY] &= 0x00;
+	if (data[RTC_DATE] & 0x1f)
+		data[RTC_DATE] |= ALARM_ENABLE_MASK;
+	if (data[RTC_MONTH] & 0xf)
+		data[RTC_MONTH] |= ALARM_ENABLE_MASK;
+	if (data[RTC_YEAR1] & 0x7f)
+		data[RTC_YEAR1] |= ALARM_ENABLE_MASK;
+
+	ret = sec_rtc_bulk_write(info->iodev, S2M_ALARM1_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	ret = s2m_rtc_set_time_reg(info, 1);
+
+	return ret;
+}
+
+static int s2mpa01_rtc_set_alarm_boot(struct device *dev,
+					struct rtc_wkalrm *alrm)
+{
+	struct s2m_rtc_info *info = dev_get_drvdata(dev);
+	u8 data[7];
+	unsigned int rtcwake;
+	int ret;
+
+	s2m_tm_to_data(&alrm->time, data);
+
+	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
+		1900 + alrm->time.tm_year, 1 + alrm->time.tm_mon,
+		alrm->time.tm_mday, alrm->time.tm_hour, alrm->time.tm_min,
+		alrm->time.tm_sec, alrm->time.tm_wday);
+
+	ret = s2mpa01_rtc_stop_alarm_boot(info);
+	if (ret < 0)
+		return ret;
+
+	ret = sec_rtc_read(info->iodev, S2M_RTC_UPDATE, &rtcwake);
+	if (ret < 0)
+		return ret;
+
+	if (alrm->enabled)
+		rtcwake |= RTC_WAKE_MASK;
+	else
+		rtcwake &= ~RTC_WAKE_MASK;
+
+	ret = sec_rtc_write(info->iodev, S2M_RTC_UPDATE, (char)rtcwake);
+
+	if (ret < 0) {
+		dev_err(info->dev, "%s: fail to write update reg(%d)\n",
+				__func__, ret);
+	} else {
+		usleep_range(1000, 1000);
+	}
+
+	ret = sec_rtc_bulk_write(info->iodev, S2M_ALARM1_SEC, 7, data);
+	if (ret < 0)
+		return ret;
+
+	ret = s2m_rtc_set_time_reg(info, 1);
+	if (ret < 0)
+		return ret;
+
+	if (alrm->enabled)
+		ret = s2mpa01_rtc_start_alarm_boot(info);
+
+	return ret;
+}
+
+static int s2mpa01_rtc_get_alarm_boot(struct device *dev,
+				      struct rtc_wkalrm *alrm)
+{
+	struct s2m_rtc_info *info = dev_get_drvdata(dev);
+
+	if( info->alarm_irq_flag)
+		alrm->enabled = 0x1;
+	else
+		alrm->enabled = 0x0;
+	printk("max77686_rtc_get_alarm_boot : %d, %d\n",
+						info->lpm_mode, alrm->enabled);
+	return info->lpm_mode;
+}
+#endif
+
 static int s2m_rtc_alarm_irq_enable(struct device *dev,
 					unsigned int enabled)
 {
@@ -417,11 +569,44 @@ static irqreturn_t s2m_rtc_alarm_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+#if defined(CONFIG_RTC_ALARM_BOOT)
+static void sapa_reboot(struct work_struct *work)
+{
+	//machine_restart(NULL);
+	kernel_restart(NULL);
+	//panic("Test panic");
+}
+
+static irqreturn_t s2m_rtc_alarm1_irq(int irq, void *data)
+{
+	struct s2m_rtc_info *info = data;
+
+	dev_info(info->dev, "%s:irq(%d), lpm_mode:(%d)\n",
+						__func__, irq, info->lpm_mode);
+
+	if (info->lpm_mode) {
+		wake_lock(&info->alarm_wake_lock);
+		info->alarm_irq_flag = true;
+		if (info->sapa_workq) {
+			queue_delayed_work(info->sapa_workq, &info->sapa_reboot_work, (1*HZ));
+		}
+	}
+
+	rtc_update_irq(info->rtc_dev, 1, RTC_IRQF | RTC_AF);
+
+	return IRQ_HANDLED;
+}
+#endif
+
 static const struct rtc_class_ops s2m_rtc_ops = {
 	.read_time = s2m_rtc_read_time,
 	.set_time = s2m_rtc_set_time,
 	.read_alarm = s2m_rtc_read_alarm,
 	.set_alarm = s2m_rtc_set_alarm,
+#if defined(CONFIG_RTC_ALARM_BOOT)
+	.set_alarm_boot = s2mpa01_rtc_set_alarm_boot,
+	.get_alarm_boot = s2mpa01_rtc_get_alarm_boot,
+#endif
 	.alarm_irq_enable = s2m_rtc_alarm_irq_enable,
 };
 
@@ -480,6 +665,34 @@ static int s2m_rtc_init_reg(struct s2m_rtc_info *info)
 	unsigned int data, tp_read, tp_read1;
 	int ret;
 	struct rtc_time tm;
+#if defined(CONFIG_RTC_ALARM_BOOT)
+	u8 data_alm1[7];
+	struct rtc_time alrm;
+
+	info->rtc_24hr_mode = 1;
+
+	ret = sec_rtc_bulk_read(info->iodev, S2M_ALARM1_SEC, 7, data_alm1);
+	if (ret < 0)
+		return ret;
+
+	s2m_data_to_tm(data_alm1, &alrm, info->rtc_24hr_mode);
+
+	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
+		1900 + alrm.tm_year, 1 + alrm.tm_mon,
+		alrm.tm_mday, alrm.tm_hour,
+		alrm.tm_min, alrm.tm_sec,
+		alrm.tm_wday);
+	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
+		data_alm1[6], data_alm1[5],
+		data_alm1[4], data_alm1[2],
+		data_alm1[1], data_alm1[0],
+		data_alm1[3]);
+
+	ret = sec_rtc_read(info->iodev, S2M_RTC_UPDATE, &data);
+	if (ret < 0)
+		return ret;
+	printk(KERN_INFO "%s: RTC_UPDATE(%d)\n", __func__, data);
+#endif
 
 	ret = sec_rtc_read(info->iodev, S2M_RTC_CTRL, &tp_read);
 	if (ret < 0) {
@@ -500,16 +713,16 @@ static int s2m_rtc_init_reg(struct s2m_rtc_info *info)
 				__func__, ret);
 		return ret;
 	}
-	/* In first boot time, Set rtc time to 1/1/2013 00:00:00(SUN) */
+	/* In first boot time, Set rtc time to 1/1/2014 00:00:00(WEN) */
 	if ((tp_read & MODEL24_MASK) == 0 || (tp_read1 != 0xf8)) {
 		dev_info(info->dev, "rtc init\n");
 		tm.tm_sec = 0;
 		tm.tm_min = 0;
 		tm.tm_hour = 0;
-		tm.tm_wday = 2;
+		tm.tm_wday = 3;
 		tm.tm_mday = 1;
 		tm.tm_mon = 0;
-		tm.tm_year = 113;
+		tm.tm_year = 114;
 		tm.tm_yday = 0;
 		tm.tm_isdst = 0;
 		ret = s2m_rtc_set_time(info->dev, &tm);
@@ -521,12 +734,14 @@ static int s2m_rtc_init_reg(struct s2m_rtc_info *info)
 				__func__, ret);
 		return ret;
 	}
+#if !defined(CONFIG_RTC_ALARM_BOOT)
 	ret = sec_rtc_update(info->iodev, S2M_RTC_UPDATE, 0x00, 0x04);
 	if (ret < 0) {
 		dev_err(info->dev, "%s: fail to update rtc update reg(%d)\n",
 				__func__, ret);
 		return ret;
 	}
+#endif
 
 	ret = sec_rtc_update(info->iodev, S2M_RTC_CTRL,
 		data, 0x3);
@@ -565,6 +780,9 @@ static int __devinit s2m_rtc_probe(struct platform_device *pdev)
 		break;
 	case S2MPA01:
 		s2m->irq = pdata->irq_base + S2MPA01_IRQ_RTCA0;
+#if defined(CONFIG_RTC_ALARM_BOOT)
+		s2m->irq1 = pdata->irq_base + S2MPA01_IRQ_RTCA1;
+#endif
 		break;
 
 	case S2MPU01X:
@@ -607,6 +825,29 @@ static int __devinit s2m_rtc_probe(struct platform_device *pdev)
 		goto out_rtc;
 	}
 
+#if defined(CONFIG_RTC_ALARM_BOOT)
+	ret = request_threaded_irq(s2m->irq1, NULL, s2m_rtc_alarm1_irq, 0,
+			"rtc-alarm1", s2m);
+
+	if (ret < 0)
+		dev_err(&pdev->dev, "Failed to request alarm IRQ: %d: %d\n",
+			s2m->irq1, ret);
+
+	s2m->lpm_mode = lpcharge;
+	if(s2m->lpm_mode) {
+		wake_lock_init(&s2m->alarm_wake_lock, WAKE_LOCK_SUSPEND,
+												"alarm_wake_lock");
+
+		s2m->sapa_workq = create_singlethread_workqueue("pwron_alarm_resume");
+		if (s2m->sapa_workq == NULL) {
+			pr_err("[SAPA] pwron_alarm work creating failed\n");
+		}
+		else {
+			INIT_DELAYED_WORK(&s2m->sapa_reboot_work, sapa_reboot);
+		}
+	}
+#endif
+
 	return 0;
 
 out_rtc:
@@ -620,6 +861,9 @@ static int __devexit s2m_rtc_remove(struct platform_device *pdev)
 
 	if (s2m) {
 		free_irq(s2m->irq, s2m);
+#if defined(CONFIG_RTC_ALARM_BOOT)
+		free_irq(s2m->irq1, s2m);
+#endif
 		rtc_device_unregister(s2m->rtc_dev);
 	}
 
@@ -652,6 +896,11 @@ static void s2m_rtc_shutdown(struct platform_device *pdev)
 
 	/* Disable SMPL when power off */
 	s2m_rtc_enable_smpl(info, false);
+
+#if defined(CONFIG_RTC_ALARM_BOOT)
+	/* Disable alarm0 interrupt */
+	s2m_rtc_stop_alarm(info);
+#endif
 }
 
 static const struct platform_device_id s2m_rtc_id[] = {

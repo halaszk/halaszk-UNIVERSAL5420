@@ -15,124 +15,28 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 
 #include <mach/map.h>
 #include <mach/regs-clock.h>
 #include <mach/exynos-mipiphy.h>
 
-#include "fimc-is-core.h"
+#include "fimc-is-config.h"
+#include "fimc-is-regs.h"
+#include "fimc-is-hw.h"
 #include "fimc-is-device-csi.h"
+#include "fimc-is-device-sensor.h"
 
-/* PMU for FIMC-IS*/
-#define MIPICSI0_REG_BASE	(S5P_VA_MIPICSI0)   /* phy : 0x13c2_0000 */
-#define MIPICSI1_REG_BASE	(S5P_VA_MIPICSI1)   /* phy : 0x13c3_0000 */
-#define MIPICSI2_REG_BASE	(S5P_VA_MIPICSI2)   /* phy : 0x13d1_0000 */
-
-/* CSIS global control */
-#define S5PCSIS_CTRL					(0x00)
-#define S5PCSIS_CTRL_DPDN_SWAP_CLOCK_DEFAULT		(0 << 31)
-#define S5PCSIS_CTRL_DPDN_SWAP_CLOCK			(1 << 31)
-#define S5PCSIS_CTRL_DPDN_SWAP_DATA_DEFAULT		(0 << 30)
-#define S5PCSIS_CTRL_DPDN_SWAP_DATA			(1 << 30)
-#define S5PCSIS_CTRL_INTERLEAVE_MODE(x)			((x & 0x3) << 22)
-#define S5PCSIS_CTRL_ALIGN_32BIT			(1 << 20)
-#define S5PCSIS_CTRL_UPDATE_SHADOW(x)			((1 << (x)) << 16)
-#define S5PCSIS_CTRL_WCLK_EXTCLK			(1 << 8)
-#define S5PCSIS_CTRL_RESET				(1 << 4)
-#define S5PCSIS_CTRL_NUMOFDATALANE(x)			((x) << 2)
-#define S5PCSIS_CTRL_ENABLE				(1 << 0)
-
-/* D-PHY control */
-#define S5PCSIS_DPHYCTRL				(0x04)
-#if defined(CONFIG_SOC_EXYNOS5260)
-#define S5PCSIS_DPHYCTRL_HSS_MASK			(0x1f << 27)
-#define S5PCSIS_DPHYCTRL_ENABLE				(0x7 << 0)
-#else
-#define S5PCSIS_DPHYCTRL_HSS_MASK			(0xff << 24)
-#define S5PCSIS_DPHYCTRL_CLKSETTLEMASK			(0x3 << 22)
-#define S5PCSIS_DPHYCTRL_ENABLE				(0x1f << 0)
+#if (FIMC_IS_CSI_VERSION == CSI_VERSION_0000_0000)
+extern void s5pcsis_enable_interrupts(unsigned long __iomem *base_reg, struct fimc_is_image *image, bool on);
+extern void s5pcsis_set_hsync_settle(unsigned long __iomem *base_reg, int settle);
+extern void s5pcsis_set_params(unsigned long __iomem *base_reg, struct fimc_is_image *image, u32 lanes);
+extern void s5pcsis_reset(unsigned long __iomem *base_reg);
+extern void s5pcsis_system_enable(unsigned long __iomem *base_reg, int on);
 #endif
-
-/* Configuration */
-#define S5PCSIS_CONFIG					(0x08)
-#define S5PCSIS_CONFIG_CH1				(0x40)
-#define S5PCSIS_CONFIG_CH2				(0x50)
-#define S5PCSIS_CONFIG_CH3				(0x60)
-#define S5PCSIS_CFG_LINE_INTERVAL(x)			(x << 26)
-#define S5PCSIS_CFG_START_INTERVAL(x)			(x << 20)
-#define S5PCSIS_CFG_END_INTERVAL(x)			(x << 8)
-#define S5PCSIS_CFG_FMT_YCBCR422_8BIT			(0x1e << 2)
-#define S5PCSIS_CFG_FMT_RAW8				(0x2a << 2)
-#define S5PCSIS_CFG_FMT_RAW10				(0x2b << 2)
-#define S5PCSIS_CFG_FMT_RAW12				(0x2c << 2)
-/* User defined formats, x = 1...4 */
-#define S5PCSIS_CFG_FMT_USER(x)				((0x30 + x - 1) << 2)
-#define S5PCSIS_CFG_FMT_MASK				(0x3f << 2)
-#define S5PCSIS_CFG_VIRTUAL_CH(x)			(x << 0)
-#define S5PCSIS_CFG_NR_LANE_MASK			(3)
-
-/* Interrupt mask. */
-#define S5PCSIS_INTMSK					(0x10)
-#if defined(CONFIG_SOC_EXYNOS5260)
-#define S5PCSIS_INTMSK_EN_ALL				(0xfc00103f)
-#else
-#define S5PCSIS_INTMSK_EN_ALL				(0xf1101117)
-#endif
-#define S5PCSIS_INTMSK_EVEN_BEFORE			(1 << 31)
-#define S5PCSIS_INTMSK_EVEN_AFTER			(1 << 30)
-#define S5PCSIS_INTMSK_ODD_BEFORE			(1 << 29)
-#define S5PCSIS_INTMSK_ODD_AFTER			(1 << 28)
-#define S5PCSIS_INTMSK_FRAME_START_CH3			(1 << 27)
-#define S5PCSIS_INTMSK_FRAME_START_CH2			(1 << 26)
-#define S5PCSIS_INTMSK_FRAME_START_CH1			(1 << 25)
-#define S5PCSIS_INTMSK_FRAME_START_CH0			(1 << 24)
-#define S5PCSIS_INTMSK_FRAME_END_CH3			(1 << 23)
-#define S5PCSIS_INTMSK_FRAME_END_CH2			(1 << 22)
-#define S5PCSIS_INTMSK_FRAME_END_CH1			(1 << 21)
-#define S5PCSIS_INTMSK_FRAME_END_CH0			(1 << 20)
-#define S5PCSIS_INTMSK_ERR_SOT_HS			(1 << 16)
-#define S5PCSIS_INTMSK_ERR_LOST_FS_CH3			(1 << 15)
-#define S5PCSIS_INTMSK_ERR_LOST_FS_CH2			(1 << 14)
-#define S5PCSIS_INTMSK_ERR_LOST_FS_CH1			(1 << 13)
-#define S5PCSIS_INTMSK_ERR_LOST_FS_CH0			(1 << 12)
-#define S5PCSIS_INTMSK_ERR_LOST_FE_CH3			(1 << 11)
-#define S5PCSIS_INTMSK_ERR_LOST_FE_CH2			(1 << 10)
-#define S5PCSIS_INTMSK_ERR_LOST_FE_CH1			(1 << 9)
-#define S5PCSIS_INTMSK_ERR_LOST_FE_CH0			(1 << 8)
-#define S5PCSIS_INTMSK_ERR_OVER_CH3			(1 << 7)
-#define S5PCSIS_INTMSK_ERR_OVER_CH2			(1 << 6)
-#define S5PCSIS_INTMSK_ERR_OVER_CH1			(1 << 5)
-#define S5PCSIS_INTMSK_ERR_OVER_CH0			(1 << 4)
-#define S5PCSIS_INTMSK_ERR_ECC				(1 << 2)
-#define S5PCSIS_INTMSK_ERR_CRC				(1 << 1)
-#define S5PCSIS_INTMSK_ERR_ID				(1 << 0)
-
-/* Interrupt source */
-#define S5PCSIS_INTSRC					(0x14)
-#define S5PCSIS_INTSRC_EVEN_BEFORE			(1 << 31)
-#define S5PCSIS_INTSRC_EVEN_AFTER			(1 << 30)
-#define S5PCSIS_INTSRC_EVEN				(0x3 << 30)
-#define S5PCSIS_INTSRC_ODD_BEFORE			(1 << 29)
-#define S5PCSIS_INTSRC_ODD_AFTER			(1 << 28)
-#define S5PCSIS_INTSRC_ODD				(0x3 << 28)
-#define S5PCSIS_INTSRC_FRAME_START			(0xf << 24)
-#define S5PCSIS_INTSRC_FRAME_END			(0xf << 20)
-#define S5PCSIS_INTSRC_ERR_SOT_HS			(0xf << 16)
-#define S5PCSIS_INTSRC_ERR_LOST_FS			(0xf << 12)
-#define S5PCSIS_INTSRC_ERR_LOST_FE			(0xf << 8)
-#define S5PCSIS_INTSRC_ERR_OVER				(0xf << 4)
-#define S5PCSIS_INTSRC_ERR_ECC				(1 << 2)
-#define S5PCSIS_INTSRC_ERR_CRC				(1 << 1)
-#define S5PCSIS_INTSRC_ERR_ID				(1 << 0)
-#define S5PCSIS_INTSRC_ERRORS				(0xf1111117)
-
-/* Pixel resolution */
-#define S5PCSIS_RESOL					(0x2c)
-#define CSIS_MAX_PIX_WIDTH				(0xffff)
-#define CSIS_MAX_PIX_HEIGHT				(0xffff)
 
 static u32 get_hsync_settle(struct fimc_is_sensor_cfg *cfg,
-	u32 cfgs, u32 width, u32 height, u32 framerate)
+	const u32 cfgs, u32 width, u32 height, u32 framerate)
 {
 	u32 settle;
 	u32 max_settle;
@@ -181,162 +85,25 @@ static u32 get_hsync_settle(struct fimc_is_sensor_cfg *cfg,
 	return settle;
 }
 
-static void s5pcsis_enable_interrupts(unsigned long __iomem *base_reg,
-	struct fimc_is_image *image, bool on)
+static u32 get_vci_channel(struct fimc_is_vci *vci,
+	const u32 vcis, u32 pixelformat)
 {
-	u32 val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_INTMSK));
-
-	val = on ? val | S5PCSIS_INTMSK_EN_ALL :
-		   val & ~S5PCSIS_INTMSK_EN_ALL;
-
-	if (image->format.field == V4L2_FIELD_INTERLACED) {
-		if (on) {
-			val |= S5PCSIS_INTMSK_FRAME_START_CH2;
-			val |= S5PCSIS_INTMSK_FRAME_END_CH2;
-		} else {
-			val &= ~S5PCSIS_INTMSK_FRAME_START_CH2;
-			val &= ~S5PCSIS_INTMSK_FRAME_END_CH2;
+	u32 i;
+	u32 index = vcis;
+	BUG_ON(!vci);
+	for (i = 0; i < vcis; i++) {
+		if (vci[i].pixelformat == pixelformat) {
+			index = i;
+			break;
 		}
 	}
 
-#if defined(CONFIG_SOC_EXYNOS5260)
-	/* FIXME: hard coded, only for rhea */
-	writel(0xFFF01037, base_reg + TO_WORD_OFFSET(S5PCSIS_INTMSK));
-#else
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_INTMSK));
-#endif
-}
-
-static void s5pcsis_reset(unsigned long __iomem *base_reg)
-{
-	u32 val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-
-	writel(val | S5PCSIS_CTRL_RESET, base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-	udelay(10);
-}
-
-static void s5pcsis_system_enable(unsigned long __iomem *base_reg, int on)
-{
-	u32 val;
-
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-
-#if defined(CONFIG_SOC_EXYNOS5430) || defined(CONFIG_SOC_EXYNOS5422)
-	val |= S5PCSIS_CTRL_WCLK_EXTCLK;
-#endif
-
-	if (on) {
-		val |= S5PCSIS_CTRL_ENABLE;
-		val |= S5PCSIS_CTRL_WCLK_EXTCLK;
-	} else
-		val &= ~S5PCSIS_CTRL_ENABLE;
-#if defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS5260)
-	/* FIXME: hard coded, only for rhea */
-	writel(0x0000010D, base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-#else
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-#endif
-
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-	if (on)
-		val |= S5PCSIS_DPHYCTRL_ENABLE;
-	else
-		val &= ~S5PCSIS_DPHYCTRL_ENABLE;
-#if defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS5260)
-	/* FIXME: hard coded, only for rhea */
-	writel(0x0E00001F, base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-#else
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-#endif
-}
-
-/* Called with the state.lock mutex held */
-static void __s5pcsis_set_format(unsigned long __iomem *base_reg,
-	struct fimc_is_image *image)
-{
-	u32 val;
-
-	BUG_ON(!image);
-
-	/* Color format */
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CONFIG));
-
-	if (image->format.pixelformat == V4L2_PIX_FMT_SGRBG8)
-		val = (val & ~S5PCSIS_CFG_FMT_MASK) | S5PCSIS_CFG_FMT_RAW8;
-	else
-		val = (val & ~S5PCSIS_CFG_FMT_MASK) | S5PCSIS_CFG_FMT_RAW10;
-
-#if defined(CONFIG_SOC_EXYNOS5430) || defined(CONFIG_SOC_EXYNOS5422)
-	val |= S5PCSIS_CFG_END_INTERVAL(1);
-#endif
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_CONFIG));
-
-	/* Pixel resolution */
-	val = (image->window.o_width << 16) | image->window.o_height;
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_RESOL));
-
-	/* Output channel2 for DT */
-	if (image->format.field == V4L2_FIELD_INTERLACED) {
-		val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CONFIG_CH2));
-		val |= S5PCSIS_CFG_VIRTUAL_CH(2);
-		val |= S5PCSIS_CFG_END_INTERVAL(1);
-		val = (val & ~S5PCSIS_CFG_FMT_MASK) | S5PCSIS_CFG_FMT_USER(1);
-		writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_CONFIG_CH2));
-	}
-}
-
-static void s5pcsis_set_hsync_settle(unsigned long __iomem *base_reg, u32 settle)
-{
-	u32 val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-
-	val = (val & ~S5PCSIS_DPHYCTRL_HSS_MASK) | (settle << 24);
-
-#if defined(CONFIG_SOC_EXYNOS5260)
-	/* FIXME: hard coded, only for rhea */
-	writel(0x0E00001F, base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-#elif defined(CONFIG_SOC_EXYNOS3470)
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-	val = (val & ~S5PCSIS_DPHYCTRL_HSS_MASK) | (0x6 << 28);
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-#else
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_DPHYCTRL));
-#endif
-}
-
-static void s5pcsis_set_params(unsigned long __iomem *base_reg,
-	struct fimc_is_image *image)
-{
-	u32 val;
-	u32 num_lanes = 0x3;
-
-	if (image->num_lanes)
-		num_lanes = image->num_lanes - 1;
-
-#if defined(CONFIG_SOC_EXYNOS3470)
-	writel(0x000000AC, base_reg + TO_WORD_OFFSET(S5PCSIS_CONFIG)); /* only for carmen */
-#endif
-	__s5pcsis_set_format(base_reg, image);
-
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-	val &= ~S5PCSIS_CTRL_ALIGN_32BIT;
-
-	val |= S5PCSIS_CTRL_NUMOFDATALANE(num_lanes);
-
-	/* Interleaved data */
-	if (image->format.field == V4L2_FIELD_INTERLACED) {
-		pr_info("set DT only\n");
-		val |= S5PCSIS_CTRL_INTERLEAVE_MODE(1); /* DT only */
-		val |= S5PCSIS_CTRL_UPDATE_SHADOW(2); /* ch2 shadow reg */
+	if (index == vcis) {
+		err("invalid vc setting(foramt : %d)", pixelformat);
+		BUG();
 	}
 
-	/* Not using external clock. */
-	val &= ~S5PCSIS_CTRL_WCLK_EXTCLK;
-
-	writel(val, base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-
-	/* Update the shadow register. */
-	val = readl(base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
-	writel(val | S5PCSIS_CTRL_UPDATE_SHADOW(0), base_reg + TO_WORD_OFFSET(S5PCSIS_CTRL));
+	return index;
 }
 
 int fimc_is_csi_open(struct v4l2_subdev *subdev)
@@ -386,8 +153,11 @@ static int csi_init(struct v4l2_subdev *subdev, u32 value)
 	module = (struct fimc_is_module_enum *)value;
 	csi->sensor_cfgs = module->cfgs;
 	csi->sensor_cfg = module->cfg;
+	csi->vcis = module->vcis;
+	csi->vci = module->vci;
 	csi->image.framerate = SENSOR_DEFAULT_FRAMERATE; /* default frame rate */
-	csi->image.num_lanes = module->ext.mipi_lane_num;
+	csi->mode = module->mode;
+	csi->lanes = module->lanes;
 
 p_err:
 	return ret;
@@ -414,7 +184,7 @@ static int csi_s_power(struct v4l2_subdev *subdev,
 	}
 
 p_err:
-	mdbgd_front("%s(%d, %d)\n", csi, __func__, on, ret);
+	mdbgd_front("%s(%d, %d, instance(%d))\n", csi, __func__, on, ret, csi->instance);
 	return ret;
 }
 
@@ -427,11 +197,12 @@ static int csi_stream_on(struct fimc_is_device_csi *csi)
 {
 	int ret = 0;
 	u32 settle;
+	unsigned long __iomem *base_reg;
 
 	BUG_ON(!csi);
 	BUG_ON(!csi->sensor_cfg);
 
-	s5pcsis_reset(csi->base_reg);
+	base_reg = csi->base_reg;
 
 	settle = get_hsync_settle(
 		csi->sensor_cfg,
@@ -440,29 +211,78 @@ static int csi_stream_on(struct fimc_is_device_csi *csi)
 		csi->image.window.height,
 		csi->image.framerate);
 
-	info("[CSI:D:%d] settle(%dx%d@%d) = %d\n",
-		csi->instance,
+	minfo("[CSI:D] settle(%dx%d@%d) = %d\n",
+		csi,
 		csi->image.window.width,
 		csi->image.window.height,
 		csi->image.framerate,
 		settle);
 
-	s5pcsis_set_hsync_settle(csi->base_reg, settle);
-	s5pcsis_set_params(csi->base_reg, &csi->image);
-	s5pcsis_system_enable(csi->base_reg, true);
+#if (FIMC_IS_CSI_VERSION == CSI_VERSION_0000_0000)
+	s5pcsis_reset(base_reg);
+	s5pcsis_set_hsync_settle(base_reg, settle);
+	s5pcsis_set_params(base_reg, &csi->image, csi->lanes);
+	s5pcsis_system_enable(base_reg, true);
 	s5pcsis_enable_interrupts(csi->base_reg, &csi->image, true);
+#else
+	csi_hw_reset(base_reg);
+	csi_hw_s_settle(base_reg, settle);
+	csi_hw_s_control(base_reg, csi->mode, csi->lanes);
+
+	if (csi->mode == CSI_MODE_CH0_ONLY) {
+		csi_hw_s_config(base_reg,
+			CSI_VIRTUAL_CH_0,
+			CSI_VIRTUAL_CH_0,
+			csi->image.format.pixelformat,
+			csi->image.window.width,
+			csi->image.window.height);
+	} else {
+		u32 index = get_vci_channel(csi->vci, csi->vcis, csi->image.format.pixelformat);
+		csi_hw_s_config(base_reg,
+			CSI_VIRTUAL_CH_0,
+			csi->vci[index].vc_map[CSI_VIRTUAL_CH_0],
+			csi->image.format.pixelformat,
+			csi->image.window.width,
+			csi->image.window.height);
+		csi_hw_s_config(base_reg,
+			CSI_VIRTUAL_CH_1,
+			csi->vci[index].vc_map[CSI_VIRTUAL_CH_1],
+			csi->image.format.pixelformat,
+			csi->image.window.width,
+			csi->image.window.height);
+		csi_hw_s_config(base_reg,
+			CSI_VIRTUAL_CH_2,
+			csi->vci[index].vc_map[CSI_VIRTUAL_CH_2],
+			csi->image.format.pixelformat,
+			csi->image.window.width,
+			csi->image.window.height);
+	}
+
+	csi_hw_s_interrupt(base_reg, true);
+	csi_hw_enable(base_reg);
+#endif
 
 	return ret;
 }
 
 static int csi_stream_off(struct fimc_is_device_csi *csi)
 {
+	int ret = 0;
+	unsigned long __iomem *base_reg;
+
 	BUG_ON(!csi);
 
-	s5pcsis_enable_interrupts(csi->base_reg, &csi->image, false);
-	s5pcsis_system_enable(csi->base_reg, false);
+	base_reg = csi->base_reg;
 
-	return 0;
+#if (FIMC_IS_CSI_VERSION == CSI_VERSION_0000_0000)
+	s5pcsis_enable_interrupts(csi->base_reg, &csi->image, false);
+	s5pcsis_system_enable(base_reg, false);
+#else
+	csi_hw_s_interrupt(base_reg, false);
+	csi_hw_disable(base_reg);
+#endif
+
+	return ret;
 }
 
 static int csi_s_stream(struct v4l2_subdev *subdev, int enable)
@@ -559,12 +379,27 @@ static const struct v4l2_subdev_ops subdev_ops = {
 	.video = &video_ops
 };
 
-int fimc_is_csi_probe(struct fimc_is_device_sensor *device,
-	u32 instance)
+#ifdef DBG_CSIISR
+static irqreturn_t fimc_is_csi_isr(int irq, void *data)
+{
+	u32 status;
+	struct fimc_is_device_csi *csi;
+
+	csi = data;
+
+	status = csi_hw_g_interrupt(csi->base_reg);
+	info("CSI%d : irq%d(%X)\n",csi->instance, irq, status);
+
+	return IRQ_HANDLED;
+}
+#endif
+
+int fimc_is_csi_probe(void *parent, u32 instance)
 {
 	int ret = 0;
-	struct v4l2_subdev *subdev_csi;
+	struct fimc_is_device_sensor *device = parent;
 	struct fimc_is_device_csi *csi;
+	struct v4l2_subdev *subdev_csi;
 
 	BUG_ON(!device);
 
@@ -572,7 +407,7 @@ int fimc_is_csi_probe(struct fimc_is_device_sensor *device,
 	if (!subdev_csi) {
 		merr("subdev_csi is NULL", device);
 		ret = -ENOMEM;
-		goto err_alloc_subdev_csi;
+		goto p_err;
 	}
 	device->subdev_csi = subdev_csi;
 
@@ -580,16 +415,38 @@ int fimc_is_csi_probe(struct fimc_is_device_sensor *device,
 	if (!csi) {
 		merr("csi is NULL", device);
 		ret = -ENOMEM;
-		goto err_alloc_csi;
+		goto p_err_free1;
 	}
 
 	csi->instance = instance;
-	switch (instance) {
+	switch(instance) {
 	case CSI_ID_A:
 		csi->base_reg = (unsigned long *)MIPICSI0_REG_BASE;
+#ifdef DBG_CSIISR
+		ret = request_irq(IRQ_MIPICSI0,
+			fimc_is_csi_isr,
+			IRQF_SHARED,
+			"mipi-csi0",
+			csi);
+		if (ret) {
+			err("request_irq(IRQ_MIPICSI0) is fail(%d)", ret);
+			goto p_err_free2;
+		}
+#endif
 		break;
 	case CSI_ID_B:
 		csi->base_reg = (unsigned long *)MIPICSI1_REG_BASE;
+#ifdef DBG_CSIISR
+		ret = request_irq(IRQ_MIPICSI1,
+			fimc_is_csi_isr,
+			IRQF_SHARED,
+			"mipi-csi1",
+			csi);
+		if (ret) {
+			err("request_irq(IRQ_MIPICSI1) is fail(%d)", ret);
+			goto p_err_free2;
+		}
+#endif
 		break;
 	case CSI_ID_C:
 		csi->base_reg = (unsigned long *)MIPICSI2_REG_BASE;
@@ -597,7 +454,7 @@ int fimc_is_csi_probe(struct fimc_is_device_sensor *device,
 	default:
 		err("instance is invalid(%d)", instance);
 		ret = -EINVAL;
-		goto err_invalid_instance;
+		goto p_err_free2;
 	}
 
 	v4l2_subdev_init(subdev_csi, &subdev_ops);
@@ -607,21 +464,20 @@ int fimc_is_csi_probe(struct fimc_is_device_sensor *device,
 	ret = v4l2_device_register_subdev(&device->v4l2_dev, subdev_csi);
 	if (ret) {
 		merr("v4l2_device_register_subdev is fail(%d)", device, ret);
-		goto err_reg_v4l2_subdev;
+		goto p_err_free2;
 	}
 
-	info("[FRT:D:%d] %s(%d)\n", instance, __func__, ret);
+	info("[%d][FRT:D] %s(%d)\n", instance, __func__, ret);
 	return 0;
 
-err_reg_v4l2_subdev:
-err_invalid_instance:
+p_err_free2:
 	kfree(csi);
 
-err_alloc_csi:
+p_err_free1:
 	kfree(subdev_csi);
 	device->subdev_csi = NULL;
 
-err_alloc_subdev_csi:
-	err("[FRT:D:%d] %s(%d)\n", instance, __func__, ret);
+p_err:
+	err("[%d][FRT:D] %s(%d)\n", instance, __func__, ret);
 	return ret;
 }

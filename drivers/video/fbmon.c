@@ -1237,6 +1237,7 @@ int fb_edid_add_monspecs(unsigned char *edid, struct fb_monspecs *specs)
 		specs->audiodb_len = sad_n;
 	} else {
 		kfree(specs->audiodb);
+		specs->audiodb = NULL;
 		specs->audiodb_len = 0;
 	}
 
@@ -1258,6 +1259,7 @@ int fb_edid_add_monspecs(unsigned char *edid, struct fb_monspecs *specs)
 		specs->videodb_len = svd_n;
 	} else {
 		kfree(specs->videodb);
+		specs->videodb = NULL;
 		specs->videodb_len = 0;
 	}
 
@@ -1274,6 +1276,7 @@ int fb_edid_add_monspecs(unsigned char *edid, struct fb_monspecs *specs)
 		specs->vsdb = vsdb;
 	} else {
 		kfree(specs->vsdb);
+		specs->vsdb = NULL;
 	}
 
 	block = edid + edid[2];

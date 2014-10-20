@@ -385,13 +385,24 @@ static int exynos_pd_isp_power_off_pre(struct exynos_pm_domain *pd)
 	s3c_pm_do_save(exynos_pd_isp_clk_save,
 			ARRAY_SIZE(exynos_pd_isp_clk_save));
 
-	__raw_writel(0x00007fff, EXYNOS5260_CLKGATE_ACLK_ISP0);
-	__raw_writel(0x01ffffff, EXYNOS5260_CLKGATE_ACLK_ISP1);
-	__raw_writel(0x004003ff, EXYNOS5260_CLKGATE_PCLK_ISP0);
+	__raw_writel(0x1, EXYNOS5260_A5IS_SYS_PWR_REG);
+
+	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_ACLK_ISP0);
+	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_ACLK_ISP1);
+	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_PCLK_ISP0);
 	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_PCLK_ISP1);
-	__raw_writel(0x000003a0, EXYNOS5260_CLKGATE_SCLK_ISP);
-	__raw_writel(0x0001ffff, EXYNOS5260_CLKGATE_IP_ISP0);
+	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_SCLK_ISP);
+	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_IP_ISP0);
 	__raw_writel(0xffffffff, EXYNOS5260_CLKGATE_IP_ISP1);
+
+	return 0;
+}
+
+static int exynos_pd_isp_power_off_post(struct exynos_pm_domain *pd)
+{
+	DEBUG_PRINT_INFO("%s post power off\n", pd->name);
+
+	__raw_writel(0x0, EXYNOS5260_A5IS_CONFIGURATION);
 
 	return 0;
 }
@@ -410,8 +421,11 @@ static int force_down_pre(const char *name)
 		__raw_writel(reg, EXYNOS5260_A5IS_OPTION);
 
 		__set_mask(EXYNOS5260_LPI_MASK_ISP_BUSMASTER);
-		__set_mask(EXYNOS5260_LPI_MASK_ISP_ASYNCBRIDGE);
-		__set_mask(EXYNOS5260_LPI_MASK_ISP_NOCBUS);
+
+		reg = 0;
+		reg |= EXYNOS5260_LPI_MASK_ISP_ASYNCBRIDGE_AXIM_CORTEX;
+		reg |= EXYNOS5260_LPI_MASK_ISP_ASYNCBRIDGE_AXIS_CORTEX;
+		__raw_writel(reg, EXYNOS5260_LPI_MASK_ISP_ASYNCBRIDGE);
 	} else {
 		return -EINVAL;
 	}
@@ -451,6 +465,9 @@ static int exynos_pd_isp_power_off(struct exynos_pm_domain *pd, int power_flags)
 
 	mutex_lock(&pd->access_lock);
 	if (likely(pd->base)) {
+		if (force_down_pre(pd->name))
+			pr_warn("%s: failed to make force down state\n", pd->name);
+
 		/* sc_feedback to OPTION register */
 		__raw_writel(0x0102, pd->base+0x8);
 
@@ -460,26 +477,12 @@ static int exynos_pd_isp_power_off(struct exynos_pm_domain *pd, int power_flags)
 		timeout = check_power_status(pd, power_flags, TIMEOUT_COUNT);
 
 		if (unlikely(!timeout)) {
-			pr_err(PM_DOMAIN_PREFIX "%s can't control power, try again\n", pd->name);
-
-			/* check power ON status */
-			if (__raw_readl(pd->base+0x4) & EXYNOS_INT_LOCAL_PWR_EN) {
-				if (force_down_pre(pd->name))
-					pr_warn("%s: failed to make force down state\n", pd->name);
-
-				timeout = check_power_status(pd, power_flags, TIMEOUT_COUNT);
-
-				if (unlikely(!timeout)) {
-					pr_err(PM_DOMAIN_PREFIX "%s can't control power forcedly, timeout\n",
-							pd->name);
-					mutex_lock(&pd->access_lock);
-					return -ETIMEDOUT;
-				} else {
-					pr_warn(PM_DOMAIN_PREFIX "%s force power down success\n", pd->name);
-				}
-			} else {
-				pr_warn(PM_DOMAIN_PREFIX "%s power-off already\n", pd->name);
-			}
+			pr_err(PM_DOMAIN_PREFIX "%s can't control power, timeout\n",
+					pd->name);
+			mutex_unlock(&pd->access_lock);
+			return -ETIMEDOUT;
+		} else {
+			pr_info(PM_DOMAIN_PREFIX "%s power down success\n", pd->name);
 		}
 
 		if (unlikely(timeout < (TIMEOUT_COUNT >> 1))) {
@@ -509,6 +512,7 @@ static struct exynos_pd_callback cb_pd_isp = {
 	.name = "pd-isp",
 	.on_post = exynos_pd_isp_power_on_post,
 	.off_pre = exynos_pd_isp_power_off_pre,
+	.off_post = exynos_pd_isp_power_off_post,
 	.off = exynos_pd_isp_power_off,
 };
 

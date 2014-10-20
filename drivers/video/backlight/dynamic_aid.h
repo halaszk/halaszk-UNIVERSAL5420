@@ -33,6 +33,8 @@ struct dynamic_aid_param_t {
 	const int	*gc_lut; /* Gamma curve for generating the Lookup Table */
 	const int	(*offset_gra)[];
 	const struct rgb_t	(*offset_color)[];
+	const int *volt_table_v35;
+	const int *volt_table_v15;
 };
 
 extern int dynamic_aid(struct dynamic_aid_param_t d_aid, int **gamma);

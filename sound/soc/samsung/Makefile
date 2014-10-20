@@ -51,6 +51,7 @@ snd-soc-tobermory-objs := tobermory.o
 snd-soc-lowland-objs := lowland.o
 snd-soc-littlemill-objs := littlemill.o
 snd-soc-adonisuniv-ymu831-objs := adonisuniv_ymu831.o
+snd-soc-adonisuniv-hdmi-objs := adonisuniv_hdmi.o
 
 obj-$(CONFIG_SND_SOC_SAMSUNG_XYREF4415_ES515) += snd-soc-xyref4415-es515.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_UNIVERSAL4415_WM1811_SLSI) += universal4415_wm1811_slsi.o
@@ -78,3 +79,4 @@ obj-$(CONFIG_SND_SOC_TOBERMORY) += snd-soc-tobermory.o
 obj-$(CONFIG_SND_SOC_LOWLAND) += snd-soc-lowland.o
 obj-$(CONFIG_SND_SOC_LITTLEMILL) += snd-soc-littlemill.o
 obj-$(CONFIG_SND_SOC_ADONISUNIV_YMU831) += snd-soc-adonisuniv-ymu831.o
+obj-$(CONFIG_SND_SOC_ADONISUNIV_HDMI) += snd-soc-adonisuniv-hdmi.o

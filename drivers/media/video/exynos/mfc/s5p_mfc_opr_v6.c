@@ -78,15 +78,11 @@ static inline void s5p_mfc_write_shm(struct s5p_mfc_dev *dev,
 {
 	mfc_debug(2, "SHM: write data(0x%x) to 0x%x\n", data, ofs);
 	writel(data, (dev->dis_shm_buf.virt + ofs));
-	s5p_mfc_mem_clean_priv(dev->dis_shm_buf.alloc, dev->dis_shm_buf.virt,
-								ofs, 4);
 }
 
 static inline u32 s5p_mfc_read_shm(struct s5p_mfc_dev *dev, unsigned int ofs)
 {
 	mfc_debug(2, "SHM: read data from 0x%x\n", ofs);
-	s5p_mfc_mem_inv_priv(dev->dis_shm_buf.alloc, dev->dis_shm_buf.virt,
-								ofs, 4);
 	return readl(dev->dis_shm_buf.virt + ofs);
 }
 
@@ -445,8 +441,6 @@ int alloc_dev_dis_shared_buffer(struct s5p_mfc_dev *dev, void *alloc_ctx)
 	}
 
 	memset((void *)dev->dis_shm_buf.virt, 0, PAGE_SIZE);
-	s5p_mfc_mem_clean_priv(dev->dis_shm_buf.alloc, dev->dis_shm_buf.virt, 0,
-			PAGE_SIZE);
 
 	return 0;
 }
@@ -1567,7 +1561,7 @@ static int s5p_mfc_set_enc_params_h264(struct s5p_mfc_ctx *ctx)
 	if (FW_HAS_POC_TYPE_CTRL(dev)) {
 		reg = READL(S5P_FIMV_E_H264_OPTIONS_2);
 		reg &= ~(0x3 << 0);
-		reg |= (0x1 << 0); /* TODO: add new CID for this */
+		reg |= (0x0 << 0); /* TODO: add new CID for this */
 		WRITEL(reg, S5P_FIMV_E_H264_OPTIONS_2);
 	}
 
@@ -2316,9 +2310,15 @@ static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 	mfc_debug(2, "Temp vb: %p\n", temp_vb);
 	mfc_debug(2, "Src Addr: 0x%08lx\n",
 		(unsigned long)s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0));
-	s5p_mfc_set_dec_stream_buffer(ctx,
-			s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
-			0, temp_vb->vb.v4l2_planes[0].bytesused);
+	if (dec->consumed) {
+		s5p_mfc_set_dec_stream_buffer(ctx,
+				s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
+				dec->consumed, dec->remained_size);
+	} else {
+		s5p_mfc_set_dec_stream_buffer(ctx,
+				s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
+				0, temp_vb->vb.v4l2_planes[0].bytesused);
+	}
 
 	index = temp_vb->vb.v4l2_buf.index;
 	if (call_cop(ctx, set_buf_ctrls_val, ctx, &ctx->src_ctrls[index]) < 0)

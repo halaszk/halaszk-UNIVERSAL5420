@@ -19,21 +19,25 @@
 #define GPIO_LEVEL_HIGH		1
 #define GPIO_LEVEL_NONE		2
 
+/* GPIO should be set in gpio-model-revXX */
+/*
 #define GPIO_WLAN_SDIO_CLK      EXYNOS5260_GPC1(0)
-#define GPIO_WLAN_SDIO_CLK_AF   2
 #define GPIO_WLAN_SDIO_CMD      EXYNOS5260_GPC1(1)
-#define GPIO_WLAN_SDIO_CMD_AF   2
 #define GPIO_WLAN_SDIO_D0       EXYNOS5260_GPC1(2)
-#define GPIO_WLAN_SDIO_D0_AF    2
 #define GPIO_WLAN_SDIO_D1       EXYNOS5260_GPC1(3)
-#define GPIO_WLAN_SDIO_D1_AF    2
 #define GPIO_WLAN_SDIO_D2       EXYNOS5260_GPC1(4)
-#define GPIO_WLAN_SDIO_D2_AF    2
 #define GPIO_WLAN_SDIO_D3       EXYNOS5260_GPC1(5)
-#define GPIO_WLAN_SDIO_D3_AF    2
 #define GPIO_WLAN_EN            EXYNOS5260_GPX3(0)
-#define GPIO_WLAN_EN_AF         1
 #define GPIO_WLAN_HOST_WAKE     EXYNOS5260_GPX2(0)
+*/
+
+#define GPIO_WLAN_SDIO_CLK_AF   2
+#define GPIO_WLAN_SDIO_CMD_AF   2
+#define GPIO_WLAN_SDIO_D0_AF    2
+#define GPIO_WLAN_SDIO_D1_AF    2
+#define GPIO_WLAN_SDIO_D2_AF    2
+#define GPIO_WLAN_SDIO_D3_AF    2
+#define GPIO_WLAN_EN_AF         1
 #define GPIO_WLAN_HOST_WAKE_AF  0xF
 
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
@@ -229,6 +233,9 @@ static int brcm_wlan_power(int onoff)
 		gpio_set_value(GPIO_WLAN_EN, GPIO_LEVEL_HIGH);
 		printk(KERN_DEBUG"WLAN: GPIO_WLAN_EN = %d\n",
 		gpio_get_value(GPIO_WLAN_EN));
+#ifdef CONFIG_BCM4334
+		s3c_config_gpio_alive_table(ARRAY_SIZE(wlan_sdio_on_table), wlan_sdio_on_table);
+#endif
 	} else {
 		gpio_set_value(GPIO_WLAN_EN, GPIO_LEVEL_LOW);
 		s3c_config_gpio_alive_table
@@ -236,6 +243,9 @@ static int brcm_wlan_power(int onoff)
 		s5p_gpio_set_pd_cfg(GPIO_WLAN_EN, S5P_GPIO_PD_OUTPUT0);
 		printk(KERN_DEBUG"WLAN: GPIO_WLAN_EN = %d\n",
 		gpio_get_value(GPIO_WLAN_EN));
+#ifdef CONFIG_BCM4334
+		s3c_config_gpio_alive_table(ARRAY_SIZE(wlan_sdio_off_table), wlan_sdio_off_table);
+#endif
 	}
 
 	return 0;

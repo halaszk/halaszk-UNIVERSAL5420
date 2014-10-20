@@ -111,7 +111,12 @@ struct fimc_is_fmt fimc_is_formats[] = {
 		.name		= "BAYER 16 bit",
 		.pixelformat	= V4L2_PIX_FMT_SBGGR16,
 		.num_planes	= 1 + SPARE_PLANE,
-	},
+	}, {
+		.name		= "JPEG",
+		.pixelformat	= V4L2_PIX_FMT_JPEG,
+		.num_planes	= 1 + SPARE_PLANE,
+		.mbus_code	= V4L2_MBUS_FMT_JPEG_1X8,
+	}
 };
 
 struct fimc_is_fmt *fimc_is_find_format(u32 *pixelformat,
@@ -574,8 +579,7 @@ set_info:
 	for (i = 0; i < frame->planes; i++) {
 		frame->dvaddr_buffer[i] = queue->buf_dva[index][i];
 #ifdef PRINT_BUFADDR
-		pr_info("%04X %d.%d %08X\n", framemgr->id,
-			index, i, frame->dvaddr_buffer[i]);
+		info("%04X %d.%d %08X\n", framemgr->id, index, i, frame->dvaddr_buffer[i]);
 #endif
 	}
 

@@ -508,41 +508,11 @@ int stop_fimc_lite(int channel)
 
 int enable_mipi(void)
 {
-	void __iomem *addr;
-	u32 cfg;
+	exynos_csis_phy_enable(0, 1);
+	exynos_csis_phy_enable(1, 1);
+	exynos_csis_phy_enable(2, 1);
 
-	addr = S5P_MIPI_DPHY_CONTROL(0);
-
-	cfg = __raw_readl(addr);
-	cfg = (cfg | S5P_MIPI_DPHY_SRESETN);
-	__raw_writel(cfg, addr);
-
-	if (1) {
-		cfg |= S5P_MIPI_DPHY_ENABLE;
-	} else if (!(cfg & (S5P_MIPI_DPHY_SRESETN | S5P_MIPI_DPHY_MRESETN)
-			& (~S5P_MIPI_DPHY_SRESETN))) {
-		cfg &= ~S5P_MIPI_DPHY_ENABLE;
-	}
-
-	__raw_writel(cfg, addr);
-
-
-	addr = S5P_MIPI_DPHY_CONTROL(1);
-
-	cfg = __raw_readl(addr);
-	cfg = (cfg | S5P_MIPI_DPHY_SRESETN);
-	__raw_writel(cfg, addr);
-
-	if (1) {
-		cfg |= S5P_MIPI_DPHY_ENABLE;
-	} else if (!(cfg & (S5P_MIPI_DPHY_SRESETN | S5P_MIPI_DPHY_MRESETN)
-			& (~S5P_MIPI_DPHY_SRESETN))) {
-		cfg &= ~S5P_MIPI_DPHY_ENABLE;
-	}
-
-	__raw_writel(cfg, addr);
 	return 0;
-
 }
 
 int start_mipi_csi(int channel, struct flite_frame *f_frame)

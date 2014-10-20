@@ -86,8 +86,8 @@ enum FIMC_IS_DVFS_QOS_TYPE {
 	(t)[s][FIMC_IS_DVFS_INT]	= i;	\
 	(t)[s][FIMC_IS_DVFS_MIF]	= m;	\
 	(t)[s][FIMC_IS_DVFS_I2C]	= _i;	\
-	(t)[s][FIMC_IS_DVFS_CAM]	= c;	\
-	(t)[s][FIMC_IS_DVFS_DISP]	= d;	\
+	(t)[s][FIMC_IS_DVFS_CAM]	= c;\
+	(t)[s][FIMC_IS_DVFS_DISP]	= d;\
 	(t)[s][FIMC_IS_DVFS_PWM]	= p;
 
 enum FIMC_IS_CLK_GATE {
@@ -147,8 +147,8 @@ struct exynos_fimc_is_subip_info {
 
 /*
  * struct exynos_fimc_is_clk_gate_group
- * 	This struct is for host clock gating.
- * 	It decsribes register, masking bit info and other control for each group.
+ *	This struct is for host clock gating.
+ *	It decsribes register, masking bit info and other control for each group.
  *	If you uses host clock gating, You must define this struct in exynos_fimc_is_clk_gate_info.
  */
 struct exynos_fimc_is_clk_gate_group {
@@ -249,6 +249,17 @@ extern int exynos4_fimc_is_sensor_power_off(struct platform_device *pdev, int se
 extern int exynos4_fimc_is_print_cfg(struct platform_device *pdev, u32 channel);
 extern int exynos4_fimc_is_cfg_gpio(struct platform_device *pdev, int channel, bool flag_on);
 #endif
+#elif defined(CONFIG_ARCH_EXYNOS3)
+extern int exynos3_fimc_is_cfg_clk(struct platform_device *pdev);
+extern int exynos3_fimc_is_clk_on(struct platform_device *pdev);
+extern int exynos3_fimc_is_clk_off(struct platform_device *pdev);
+extern int exynos3_fimc_is_sensor_clock_on(struct platform_device *pdev, u32 source);
+extern int exynos3_fimc_is_sensor_clock_off(struct platform_device *pdev, u32 source);
+extern int exynos3_fimc_is_sensor_power_on(struct platform_device *pdev, int sensor_id);
+extern int exynos3_fimc_is_sensor_power_off(struct platform_device *pdev, int sensor_id);
+extern int exynos3_fimc_is_print_cfg(struct platform_device *pdev, u32 channel);
+extern int exynos3_fimc_is_cfg_gpio(struct platform_device *pdev, int channel, bool flag_on);
+extern int exynos3_fimc_is_print_clk(struct platform_device *pdev);
 #else /* exynos 4 */
 /* exynos 5 */
 #if defined(CONFIG_SOC_EXYNOS5250)

@@ -278,6 +278,7 @@ static int exynos_cpu_suspend(unsigned long arg)
 	int loops = 0;
 #ifdef CONFIG_ARM_TRUSTZONE
 	int value = 0;
+	unsigned int addr;
 #endif
 
 #ifdef CONFIG_SEC_GPIO_DVS
@@ -305,7 +306,7 @@ static int exynos_cpu_suspend(unsigned long arg)
 		exynos_smc(SMC_CMD_REG, SMC_REG_ID_SFR_W(0x02020028), value, 0);
 #endif
 
-	if (soc_is_exynos5420()) {
+	if (soc_is_exynos5420() || soc_is_exynos5260()) {
 #ifdef CONFIG_SCHED_HMP
 		for (i = 0; i < 4; i++) {
 #else
@@ -314,7 +315,18 @@ static int exynos_cpu_suspend(unsigned long arg)
 			if (i == 0)
 				continue;
 
-			__raw_writel(0x3, EXYNOS_ARM_CORE_CONFIGURATION(cpu_offset + i));
+			if (soc_is_exynos5260()) {
+				addr = 0x02020000 + i * 4;
+				exynos_smc(SMC_CMD_REG, SMC_REG_ID_SFR_W(addr), 0, 0);
+
+				tmp = 0xF000F;
+				value = 0x4000F;
+			} else {
+				tmp = 0x3;
+				value = 0x3;
+			}
+
+			__raw_writel(tmp, EXYNOS_ARM_CORE_CONFIGURATION(cpu_offset + i));
 
 			/* Wait until changing core status during 5ms */
 			loops = msecs_to_loops(5);
@@ -322,7 +334,7 @@ static int exynos_cpu_suspend(unsigned long arg)
 				if (--loops == 0)
 					BUG();
 				tmp = __raw_readl(EXYNOS_ARM_CORE_STATUS(cpu_offset + i));
-			} while ((tmp & 0x3) != 0x3);
+			} while ((tmp & value) != value);
 		}
 	}
 
@@ -355,7 +367,7 @@ static int exynos_cpu_suspend(unsigned long arg)
 		__raw_writel(EXYNOS5410_USE_STANDBY_WFI_ALL,
 			EXYNOS_CENTRAL_SEQ_OPTION);
 		exynos_lpi_mask_ctrl(false);
-	} else if (soc_is_exynos5420()) {
+	} else if (soc_is_exynos5420() || soc_is_exynos5260()) {
 #ifdef CONFIG_SCHED_HMP
 		for (i = 0; i < 4; i++) {
 #else
@@ -363,6 +375,11 @@ static int exynos_cpu_suspend(unsigned long arg)
 #endif
 			if (i == 0)
 				continue;
+
+			if (soc_is_exynos5260())
+				value = 0x4000F;
+			else
+				value = 0x3;
 
 			__raw_writel(0x0, EXYNOS_ARM_CORE_CONFIGURATION(cpu_offset + i));
 
@@ -372,7 +389,7 @@ static int exynos_cpu_suspend(unsigned long arg)
 				if (--loops == 0)
 					BUG();
 				tmp = __raw_readl(EXYNOS_ARM_CORE_STATUS(cpu_offset + i));
-			} while (tmp & 0x3);
+			} while (tmp & value);
 		}
 
 	}
@@ -719,7 +736,6 @@ static int exynos_pm_suspend(void)
 #ifdef CONFIG_SOC_EXYNOS5260
 	} else if (soc_is_exynos5260()) {
 		s3c_pm_do_save(exynos5260_eint_fltcon, ARRAY_SIZE(exynos5260_eint_fltcon));
-		exynos_eint_fltcon_config(1, 0, 0);
 		__raw_writel(EXYNOS5_USE_STANDBYWFI_KFC_CORE0 |
 					EXYNOS5260_USE_PROLONGED_LOGIC_RESET,
 				EXYNOS_CENTRAL_SEQ_OPTION);

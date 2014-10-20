@@ -169,6 +169,7 @@ int print_fre_work_list(struct fimc_is_work_list *this);
 int print_req_work_list(struct fimc_is_work_list *this);
 
 int fimc_is_hw_logdump(struct fimc_is_interface *this);
+int fimc_is_hw_regdump(struct fimc_is_interface *this);
 int fimc_is_hw_memdump(struct fimc_is_interface *this,
 	u32 start,
 	u32 end);

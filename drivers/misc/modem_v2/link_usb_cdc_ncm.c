@@ -1024,7 +1024,8 @@ error:
 	return NULL;
 }
 
-int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
+static int __cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data,
+					struct sk_buff *skb_in, bool copy)
 {
 	int err = -EINVAL;
 	struct sk_buff *skb;
@@ -1130,13 +1131,23 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 			break;
 
 		} else {
-			skb = alloc_skb(len, GFP_ATOMIC);
-			if (unlikely(!skb)) {
-				mif_err("fragHeader skb alloc fail\n");
-				goto error;
+			if (copy) {
+				skb = alloc_skb(len, GFP_ATOMIC);
+				if (unlikely(!skb)) {
+					mif_err("fragHeader skb alloc fail\n");
+					goto error;
+				}
+				memcpy(skb_put(skb, len),
+					(u8 *)skb_in->data + offset, len);
+			} else {
+				skb = skb_clone(skb_in, GFP_ATOMIC);
+				if (!skb)
+					goto error;
+				skb->len = len;
+				skb->truesize = SKB_TRUESIZE(len); /*tcp_rmem*/
+				skb->data = ((u8 *)skb_in->data) + offset;
+				skb_set_tail_pointer(skb, len);
 			}
-
-			memcpy(skb_put(skb, len), (u8 *)skb_in->data + offset, len);
 			cdc_ncm_pre_rx_framing(skb);
 			skbpriv(skb)->iod = pipe_data->iod;
 
@@ -1146,9 +1157,25 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 				mif_err("rx iod fail err=%d\n", err);
 		}
 	}
+	return 1;
 error:
-	dev_kfree_skb_any(skb_in);
 	return 0;
+}
+
+int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
+{
+	int rc = __cdc_ncm_rx_fixup(pipe_data, skb_in, false);
+	if (rc)
+		dev_kfree_skb_any(skb_in);
+	return rc;
+}
+
+int cdc_ncm_rx_fixup_copyskb(struct if_usb_devdata *pipe_data,
+							struct sk_buff *skb_in)
+{
+	int rc = __cdc_ncm_rx_fixup(pipe_data, skb_in, true);
+	/* skb_in will reuse for static RX NTB buffer */
+	return rc;
 }
 
 static void
@@ -1197,10 +1224,12 @@ static void cdc_ncm_status(struct if_usb_devdata *pipe_data, struct urb *urb)
 			": network connection: %s connected\n",
 			ctx->connected ? "" : "dis");
 
-		if (ctx->connected)
+		if (ctx->connected) {
+			pipe_data->submit_urbs(pipe_data);
 			netif_carrier_on(pipe_data->iod->ndev);
-		else {
+		} else {
 			netif_carrier_off(pipe_data->iod->ndev);
+			schedule_delayed_work(&pipe_data->kill_urbs_work, 0);
 			ctx->tx_speed = ctx->rx_speed = 0;
 		}
 		break;

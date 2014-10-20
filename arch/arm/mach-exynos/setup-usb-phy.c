@@ -25,6 +25,9 @@
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 #include <linux/platform_data/modem_v2.h>
 #endif
+#if defined(CONFIG_MDM_HSIC_PM)
+#include <linux/mdm_hsic_pm.h>
+#endif
 
 #define EXYNOS5_PICO_SLEEP
 #define EXYNOS5_HSIC2_SLEEP
@@ -56,7 +59,7 @@ static atomic_t host_usage;
 static int exynos5_usb_phy20_init(struct platform_device *pdev);
 static void set_exynos_usb_phy_tune(int type);
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 static struct raw_notifier_head phy_nfb;
 
 int __init init_phy_notifier(void)
@@ -688,7 +691,7 @@ static int exynos5_usb_phy_host_resume(struct platform_device *pdev)
 			atomic_dec(&host_usage);
 			set_exynos_usb_phy_tune(S5P_USB_PHY_HOST);
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 		if (!strcmp(pdev->name, "s5p-ehci") && usb_phy_control.lpa_entered)
 			usb2phy_notifier(STATE_HSIC_LPA_WAKE, NULL);
 #endif
@@ -992,9 +995,15 @@ static int exynos5_usb_phy30_tune(struct platform_device *pdev)
 
 	if (!strcmp(pdata->udc_name, pdev->name)) {
 		/* TODO: Peripheral mode */
+#if defined(CONFIG_MACH_M2ALTE_KOR_SKT) || defined(CONFIG_MACH_M2ALTE_KOR_KTT) || defined(CONFIG_MACH_M2ALTE_KOR_LGT)
+		/* sqrxtune [8:6] 3b101 : -10% */
+			phytune &= ~(0x7 << 6);
+			phytune |= (0x5 << 6);
+#else
 		/* sqrxtune [8:6] 3b011 : 0% */
 			phytune &= ~(0x7 << 6);
 			phytune |= (0x3 << 6);
+#endif
 		/* txvreftune[25:22] 4'b1011: +10% */
 			phytune &= ~(0xf << 22);
 			phytune |= (0x8 << 22);
@@ -1344,7 +1353,7 @@ static int exynos5_check_usb_op(void)
 	if (hostphy_ctrl0 & HOST_CTRL0_FORCESUSPEND &&
 		hsic_ctrl1 & HSIC_CTRL_FORCESUSPEND &&
 		hsic_ctrl2 & HSIC_CTRL_FORCESUSPEND) {
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 		/* HSIC LPA: LPA USB phy retention reume call the usb
 		 * reset resume, so we should let CP to HSIC L3 mode. */
 		usb2phy_notifier(STATE_HSIC_LPA_ENTER, NULL);

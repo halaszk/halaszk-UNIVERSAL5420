@@ -76,4 +76,6 @@ obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
 obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_FT5X06)	+= ft5x06_ts.o
 obj-$(CONFIG_TOUCHSCREEN_MELFAS_NOTE)   += mms152_ts.o
+obj-$(CONFIG_TOUCHSCREEN_MELFAS_M2)   += mms_ts_m2.o
 obj-$(CONFIG_TOUCHSCREEN_FTS) += fts_ts.o fts_fwu.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX) += zinitix_ts.o

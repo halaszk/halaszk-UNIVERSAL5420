@@ -1168,14 +1168,14 @@ static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 static int check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
 {
-	struct sipc_fmt_hdr *ipc;
+	struct sipc_main_hdr *ipc;
 	struct link_device *ld = skbpriv(skb)->ld;
 
 	if (!skb || !test_bit(IOD_DEBUG_IPC_LOOPBACK, &dbg_flags)
 						|| iod->format != IPC_FMT)
 		return 0;
 
-	ipc = (struct sipc_fmt_hdr *)skb->data;
+	ipc = (struct sipc_main_hdr *)skb->data;
 	if (ipc->main_cmd == 0x90) { /* loop-back */
 		int ret, timeout;
 		struct sk_buff *skb_bk = skb_copy_expand(skb,

@@ -14,8 +14,15 @@
 #include <linux/gpio.h>
 #include <plat/gpio-cfg.h>
 #include <plat/devs.h>
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77803.h>
+#include <linux/mfd/max77804k-private.h>
+#else
+#ifdef CONFIG_MFD_MAX77803
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
+#endif
+#endif
 #include <mach/gpio-exynos.h>
 
 #include "board-universal5260.h"

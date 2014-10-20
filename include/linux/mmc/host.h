@@ -277,6 +277,14 @@ struct mmc_host {
 #define MMC_HOST_PW_NOTIFY_SHORT	1
 #define MMC_HOST_PW_NOTIFY_LONG		2
 
+	unsigned int		dev_drv_str;	/* device driver strength */
+#define MMC_DRIVER_TYPE_0	0	/* Default, x1 */
+#define MMC_DRIVER_TYPE_1	1	/* x1.5 */
+#define MMC_DRIVER_TYPE_2	2	/* x0.75 */
+#define MMC_DRIVER_TYPE_3	3	/* x0.5 */
+#define MMC_DRIVER_TYPE_4	4	/* x1.2 */
+#define MMC_DRIVER_TYPE_5	5	/* x2 */
+
 #ifdef CONFIG_MMC_CLKGATE
 	int			clk_requests;	/* internal reference counter */
 	unsigned int		clk_delay;	/* number of MCI clk hold cycles */

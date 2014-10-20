@@ -196,6 +196,12 @@ static int exynos_power_up_cpu(unsigned int cpu)
 		if (val & 0x40000)
 			enabled = 1;
 		else {
+			val = __raw_readl(power_base + 0x8);
+			if (val & EXYNOS5_USE_SC_COUNTER) {
+				val &= ~EXYNOS5_USE_SC_COUNTER;
+				val |= EXYNOS5_USE_SC_FEEDBACK;
+				__raw_writel(val, power_base + 0x8);
+			}
 			lpe_bits = 0x000F000F;
 			lpe_bits_status = 0x4000F;
 #ifndef CONFIG_ARM_TRUSTZONE

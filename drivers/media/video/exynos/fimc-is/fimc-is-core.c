@@ -61,7 +61,10 @@
 #include "sensor/fimc-is-device-4h5.h"
 #include "sensor/fimc-is-device-3l2.h"
 #include "sensor/fimc-is-device-2p2.h"
+
+#ifndef CONFIG_CAMERA_EXTERNAL
 #include "fimc-is-sec-define.h"
+#endif
 
 #ifdef USE_OWN_FAULT_HANDLER
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
@@ -87,15 +90,21 @@
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
 #define PM_QOS_CAM_THROUGHPUT	PM_QOS_RESERVED
 #endif
-/*
+#ifdef CONFIG_CAMERA_EXTERNAL
 struct fimc_is_from_info *sysfs_finfo = NULL;
 struct fimc_is_from_info *sysfs_pinfo = NULL;
-*/
+struct device *fimc_is_dev = NULL;
+
+struct class *camera_class;
+struct device *camera_front_dev; /*sys/class/camera/front*/
+struct device *camera_rear_dev; /*sys/class/camera/rear*/
+#else
 extern struct class *camera_class;
 extern struct device *camera_front_dev; /*sys/class/camera/front*/
 extern struct device *camera_rear_dev; /*sys/class/camera/rear*/
 struct device *fimc_is_dev = NULL;
 struct fimc_is_core *sysfs_core;
+#endif
 
 extern struct pm_qos_request exynos_isp_qos_int;
 extern struct pm_qos_request exynos_isp_qos_mem;
@@ -388,6 +397,8 @@ static DEVICE_ATTR(front_camtype, S_IRUGO,
 		camera_front_camtype_show, NULL);
 static DEVICE_ATTR(front_camfw, S_IRUGO, camera_front_camfw_show, NULL);
 
+#ifndef CONFIG_CAMERA_EXTERNAL
+
 struct fimc_is_from_info *pinfo = NULL;
 struct fimc_is_from_info *finfo = NULL;
 
@@ -473,6 +484,7 @@ static DEVICE_ATTR(rear_camtype, S_IRUGO,
 		camera_rear_camtype_show, NULL);
 static DEVICE_ATTR(rear_camfw, S_IRUGO|S_IWUSR|S_IWGRP|S_IROTH,
 		camera_rear_camfw_show, camera_rear_camfw_write);
+#endif
 
 #ifdef USE_OWN_FAULT_HANDLER
 static void __fimc_is_fault_handler(struct device *dev)
@@ -826,7 +838,7 @@ static int fimc_is_probe(struct platform_device *pdev)
 	ret = dev_set_drvdata(fimc_is_dev, core);
 	if (ret) {
 		err("dev_set_drvdata is fail(%d)", ret);
-		return ret;
+		goto p_err1;
 	}
 
 	core->pdev = pdev;
@@ -1056,7 +1068,8 @@ static int fimc_is_probe(struct platform_device *pdev)
 	camera_class = class_create(THIS_MODULE, "camera");
 	if (IS_ERR(camera_class)) {
 		pr_err("Failed to create class(camera)!\n");
-		return PTR_ERR(camera_class);
+		ret = PTR_ERR(camera_class);
+		goto p_err3;
 	}
 
 	camera_front_dev = device_create(camera_class, NULL, 0, NULL, "front");
@@ -1077,6 +1090,7 @@ static int fimc_is_probe(struct platform_device *pdev)
 				dev_attr_front_camfw.attr.name);
 		}
 	}
+#ifndef CONFIG_CAMERA_EXTERNAL
 	camera_rear_dev = device_create(camera_class, NULL, 0, NULL, "rear");
 	if (IS_ERR(camera_rear_dev)) {
 		printk(KERN_ERR "failed to create rear device!\n");
@@ -1096,6 +1110,7 @@ static int fimc_is_probe(struct platform_device *pdev)
 	}
 
 	sysfs_core = core;
+#endif
 
 #ifdef USE_OWN_FAULT_HANDLER
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0))
@@ -1119,7 +1134,9 @@ static int fimc_is_probe(struct platform_device *pdev)
 #endif
 #endif
 	ret = sysfs_create_group(&core->pdev->dev.kobj, &fimc_is_debug_attr_group);
-
+	if (ret)
+		info("%s:sysfs_create_group(%d)", __func__, ret);
+	
 #ifdef ENABLE_DVFS
 	{
 		struct fimc_is_resourcemgr *resourcemgr;
@@ -1129,6 +1146,12 @@ static int fimc_is_probe(struct platform_device *pdev)
 		if (ret)
 			err("%s: fimc_is_dvfs_init failed!\n", __func__);
 	}
+#endif
+#ifdef ENABLE_CLOCK_GATE
+	/* clock gate init */
+	ret = fimc_is_clk_gate_init(core);
+	if (ret)
+		err("%s: fimc_is_clk_gate_init failed!\n", __func__);
 #endif
 
 	info("%s:end\n", __func__);

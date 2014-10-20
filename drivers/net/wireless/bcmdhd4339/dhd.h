@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h 446491 2014-01-05 05:08:57Z $
+ * $Id: dhd.h 457596 2014-02-24 02:24:14Z $
  */
 
 /****************
@@ -52,6 +52,7 @@
 struct task_struct;
 struct sched_param;
 int setScheduler(struct task_struct *p, int policy, struct sched_param *param);
+int get_scheduler_policy(struct task_struct *p);
 
 #define ALL_INTERFACES	0xff
 
@@ -275,6 +276,7 @@ typedef struct dhd_pub {
 	0 - Do not do any proptxtstatus flow control
 	1 - Use implied credit from a packet status
 	2 - Use explicit credit
+	3 - Only AMPDU hostreorder used. no wlfc.
 	*/
 	uint8	proptxstatus_mode;
 	bool	proptxstatus_txoff;
@@ -331,7 +333,7 @@ typedef struct dhd_pub {
 #ifdef CUSTOM_SET_CPUCORE
 	struct task_struct * current_dpc;
 	struct task_struct * current_rxf;
-	bool chan_isvht80;
+	int chan_isvht80;
 #endif /* CUSTOM_SET_CPUCORE */
 } dhd_pub_t;
 #if defined(CUSTOMER_HW4)
@@ -678,6 +680,9 @@ extern int dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pkt);
 extern void dhd_sendup_event_common(dhd_pub_t *dhdp, wl_event_msg_t *event, void *data);
 /* Send event to host */
 extern void dhd_sendup_event(dhd_pub_t *dhdp, wl_event_msg_t *event, void *data);
+#ifdef LOG_INTO_TCPDUMP
+extern void dhd_sendup_log(dhd_pub_t *dhdp, void *data, int len);
+#endif /* LOG_INTO_TCPDUMP */
 extern int dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag);
 extern uint dhd_bus_status(dhd_pub_t *dhdp);
 extern int  dhd_bus_start(dhd_pub_t *dhdp);
@@ -854,12 +859,6 @@ extern uint dhd_pktgen_len;
 
 /* optionally set by a module_param_string() */
 #define MOD_PARAM_PATHLEN	2048
-
-#ifdef WRITE_WLANINFO
-extern char fw_path[MOD_PARAM_PATHLEN];
-extern char nv_path[MOD_PARAM_PATHLEN];
-#endif
-
 #define MOD_PARAM_INFOLEN	512
 
 #ifdef SOFTAP
@@ -910,7 +909,7 @@ int dhd_ndo_enable(dhd_pub_t * dhd, int ndo_enable);
 int dhd_ndo_add_ip(dhd_pub_t *dhd, char* ipaddr, int idx);
 int dhd_ndo_remove_ip(dhd_pub_t *dhd, int idx);
 /* ioctl processing for nl80211 */
-int dhd_ioctl_process(dhd_pub_t *pub, int ifidx, struct dhd_ioctl *ioc);
+int dhd_ioctl_process(dhd_pub_t *pub, int ifidx, struct dhd_ioctl *ioc, void *data_buf);
 
 #if defined(SUPPORT_MULTIPLE_REVISION)
 extern int

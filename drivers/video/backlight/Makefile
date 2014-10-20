@@ -17,10 +17,12 @@ obj-$(CONFIG_LCD_AMS369FG06)	+= ams369fg06.o
 obj-$(CONFIG_LCD_MIPI_S6E8AB0)  += s6e8ab0_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_TC358764) += tc358764_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_S6E8AA0)	+= s6e8aa0_mipi_lcd.o
+obj-$(CONFIG_LCD_MIPI_S6E8AA0A02)	+= dynamic_aid_nonevt.o s6e8aa0a02_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_D6EA8061)	+= dynamic_aid.o ea8061_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_S6E3FA0) += s6e3fa0_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_AMS480GYXX) += ams480gyxx_mipi_lcd.o
 obj-$(CONFIG_LCD_LMS501KF03)       += lms501kf03.o
+obj-$(CONFIG_LCD_MIPI_HX8394)       += hx8394_mipi_lcd.o
 
 obj-$(CONFIG_BACKLIGHT_CLASS_DEVICE) += backlight.o
 obj-$(CONFIG_BACKLIGHT_ATMEL_PWM)    += atmel-pwm-bl.o

@@ -11,7 +11,11 @@
  */
 
 #include <linux/mfd/max77803.h>
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77804k-private.h>
+#else
 #include <linux/mfd/max77803-private.h>
+#endif
 #ifdef CONFIG_USB_HOST_NOTIFY
 #include <linux/host_notify.h>
 #include <mach/usb3-drd.h>
@@ -50,6 +54,7 @@ struct max77803_charger_data {
 	/* wakelock */
 	struct wake_lock recovery_wake_lock;
 	struct wake_lock wpc_wake_lock;
+	struct wake_lock chgin_wake_lock;
 
 	unsigned int	is_charging;
 	unsigned int	charging_type;
@@ -464,10 +469,11 @@ static void max77803_recovery_work(struct work_struct *work)
 	u8 dtls_02, byp_dtls;
 	pr_debug("%s\n", __func__);
 
-	wake_unlock(&charger->recovery_wake_lock);
 	if ((!charger->is_charging) || mutex_is_locked(&charger->ops_lock) ||
-			(charger->cable_type != POWER_SUPPLY_TYPE_MAINS))
+			(charger->cable_type != POWER_SUPPLY_TYPE_MAINS)) {
+		wake_unlock(&charger->recovery_wake_lock);
 		return;
+	}
 	max77803_read_byte(charger->max77803->i2c,
 				MAX77803_CHG_REG_CHG_DTLS_00, &dtls_00);
 	max77803_read_byte(charger->max77803->i2c,
@@ -496,6 +502,7 @@ static void max77803_recovery_work(struct work_struct *work)
 			max77803_set_input_current(charger,
 				charger->charging_current_max);
 		}
+		wake_unlock(&charger->recovery_wake_lock);
 	} else {
 		pr_info("%s: fail to recovery, cnt(%d)\n", __func__,
 				(charger->soft_reg_recovery_cnt + 1));
@@ -511,6 +518,7 @@ static void max77803_recovery_work(struct work_struct *work)
 		} else {
 			pr_info("%s: recovery cnt(%d) is over\n",
 				__func__, RECOVERY_CNT);
+			wake_unlock(&charger->recovery_wake_lock);
 		}
 	}
 
@@ -920,6 +928,7 @@ static int sec_chg_set_property(struct power_supply *psy,
 		POWER_SUPPLY_TYPE_USB].fast_charging_current;
 	const int wpc_charging_current = charger->pdata->charging_current[
 		POWER_SUPPLY_TYPE_WPC].input_current_limit;
+	u8 chg_cnfg_00;
 
 	/* check and unlock */
 	check_charger_unlock_state(charger);
@@ -930,6 +939,25 @@ static int sec_chg_set_property(struct power_supply *psy,
 		break;
 	/* val->intval : type */
 	case POWER_SUPPLY_PROP_ONLINE:
+		if (val->intval == POWER_SUPPLY_TYPE_POWER_SHARING) {
+			psy_do_property("ps", get,
+				POWER_SUPPLY_PROP_STATUS, value);
+			chg_cnfg_00 = CHG_CNFG_00_OTG_MASK
+				| CHG_CNFG_00_BOOST_MASK
+				| CHG_CNFG_00_DIS_MUIC_CTRL_MASK;
+
+			if (value.intval) {
+				max77803_update_reg(charger->max77803->i2c, MAX77803_CHG_REG_CHG_CNFG_00,
+					chg_cnfg_00, chg_cnfg_00);
+				pr_info("%s: ps enable\n", __func__);
+			} else {
+				max77803_update_reg(charger->max77803->i2c, MAX77803_CHG_REG_CHG_CNFG_00,
+					0, chg_cnfg_00);
+				pr_info("%s: ps disable\n", __func__);
+			}
+			break;
+		}
+
 		charger->cable_type = val->intval;
 		psy_do_property("battery", get,
 				POWER_SUPPLY_PROP_HEALTH, value);
@@ -1333,6 +1361,7 @@ static void max77803_chgin_isr_work(struct work_struct *work)
 	union power_supply_propval value;
 	int stable_count = 0;
 
+	wake_lock(&charger->chgin_wake_lock);
 	max77803_read_byte(charger->max77803->i2c,
 		MAX77803_CHG_REG_CHG_INT_MASK, &reg_data);
 	reg_data |= (1 << 6);
@@ -1399,6 +1428,7 @@ static void max77803_chgin_isr_work(struct work_struct *work)
 	reg_data &= ~(1 << 6);
 	max77803_write_byte(charger->max77803->i2c,
 		MAX77803_CHG_REG_CHG_INT_MASK, reg_data);
+	wake_unlock(&charger->chgin_wake_lock);
 }
 
 static irqreturn_t max77803_chgin_irq(int irq, void *data)
@@ -1496,6 +1526,8 @@ static __devinit int max77803_charger_probe(struct platform_device *pdev)
 		pr_err("%s: Fail to Create Workqueue\n", __func__);
 		goto err_free;
 	}
+	wake_lock_init(&charger->chgin_wake_lock, WAKE_LOCK_SUSPEND,
+            "charger-chgin");
 	INIT_WORK(&charger->chgin_work, max77803_chgin_isr_work);
 	INIT_DELAYED_WORK(&charger->chgin_init_work, max77803_chgin_init_work);
 	wake_lock_init(&charger->recovery_wake_lock, WAKE_LOCK_SUSPEND,
@@ -1578,8 +1610,12 @@ err_wc_irq:
 err_irq:
 	power_supply_unregister(&charger->psy_chg);
 err_power_supply_register:
+	wake_lock_destroy(&charger->chgin_wake_lock);
+	wake_lock_destroy(&charger->recovery_wake_lock);
+	wake_lock_destroy(&charger->wpc_wake_lock);
 	destroy_workqueue(charger->wqueue);
 err_free:
+	mutex_destroy(&charger->ops_lock);
 	kfree(charger);
 
 	return ret;

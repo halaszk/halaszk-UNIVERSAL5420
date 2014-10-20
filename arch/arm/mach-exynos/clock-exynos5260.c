@@ -3478,7 +3478,7 @@ static struct clk_ops exynos5260_cpll_ops = {
 /* EPLL(AUD_PLL) */
 static struct vpll_div_data exynos5260_epll_div[] = {
 	{393216000, 7, 459, 2, 49282, 0, 0, 0},
-	{196608000, 7, 459, 3, 49282, 0, 0, 0},
+	{196608000, 7, 459, 3, 16192, 0, 0, 0},
 	{192000000, 1, 64, 3, 0, 0, 0, 0},
 };
 
@@ -3655,6 +3655,12 @@ static struct clk exynos5260_init_clocks_off[] = {
 		.enable		= &exynos5_clk_ip_gscl_fimc_ctrl, /* embedded in gscl_fimc ctrl */
 		.ops		= &exynos5_gate_clk_ops,
 		.ctrlbit	= (1 << 6),
+	}, {
+		.name           = SYSMMU_CLOCK_NAME,
+		.devname        = SYSMMU_CLOCK_DEVNAME(camif2, 14),
+		.enable         = &exynos5_clk_ip_gscl_fimc_ctrl, /* embedded in gscl_fimc ctrl */
+		.ops            = &exynos5_gate_clk_ops,
+		.ctrlbit        = (1 << 7),
 	}, {
 		.name		= SYSMMU_CLOCK_NAME,
 		.devname	= SYSMMU_CLOCK_DEVNAME(2d, 15),

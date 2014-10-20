@@ -96,6 +96,12 @@ config BCM4335BT
 	---help---
 	  This is a configuration for bt lock enable.
 
+config WIFI_BROADCOM_COB
+	bool "BROADCOM COB type chip is enabled"
+	depends on (BCM4330 || BCM4334 || BCM4335 || BCM4339 || BCM43241)
+	---help---
+	  This is a configuration for COB type feature.
+
 config WLAN_REGION_CODE
 	int "---Region codes for Broadcom WiFi Driver"
 	depends on (BCM4330 || BCM4334 || BCM4335 || BCM4339 || BCM4354 || BCM43241)
@@ -109,6 +115,12 @@ config WLAN_REGION_CODE
 		- 202 : KOR KTT
 		- 203 : KOR LGT
 		- 300 : CHN OPEN
+		- 400 : USA OPEN
+		- 401 : USA ATT
+		- 402 : USA TMO
+		- 403 : USA VZW
+		- 404 : USA SPR
+		- 405 : USA USC
 
 config WIFI_2GHZ_VHT_NO_SUPPORT
 	bool "NOT Use VHT mode in 2GHz band"
@@ -123,3 +135,9 @@ config WLAIBSS
 	default y
 	---help---
 	  This is a configuration for Oxygen Network.
+
+config BRCM_CCX
+	bool "Enable CCX"
+	default n
+	---help---
+		Enable Cisco Compatible eXtenstion

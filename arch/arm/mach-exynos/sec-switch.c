@@ -12,8 +12,17 @@
 #include <plat/udc-hs.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
+
+#ifdef CONFIG_MFD_MAX77804K
+#include <linux/mfd/max77803.h>
+#include <linux/mfd/max77804k-private.h>
+#else
+#ifdef CONFIG_MFD_MAX77803
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
+#endif
+#endif
+
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/gpio.h>
@@ -40,6 +49,10 @@
 
 #include <mach/usb3-drd.h>
 
+#ifdef CONFIG_VIDEO_MHL_SII8246
+#include <linux/sii8246.h>
+#endif
+
 #ifdef CONFIG_SWITCH
 static struct switch_dev switch_dock = {
 	.name = "dock",
@@ -51,6 +64,9 @@ static struct switch_dev switch_dock = {
 #endif
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MXTS
 #include <linux/i2c/mxts.h>
+#endif
+#ifdef CONFIG_TOUCHSCREEN_MELFAS_M2
+#include <linux/platform_data/mms152_ts.h>
 #endif
 
 struct device *switch_dev;
@@ -169,10 +185,11 @@ int current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 {
 	struct power_supply *psy = power_supply_get_by_name("battery");
+	struct power_supply *psy_p = power_supply_get_by_name("ps");
 	union power_supply_propval value;
 	static enum cable_type_muic previous_cable_type = CABLE_TYPE_NONE_MUIC;
 
-	pr_info("[BATT] CB enabled %d\n", cable_type);
+	pr_info("[BATT] CB enabled(%d), prev_cable(%d)\n", cable_type, previous_cable_type);
 
 	/* others setting */
 	switch (cable_type) {
@@ -180,6 +197,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_OTG_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
 	case CABLE_TYPE_MHL_MUIC:
+	case CABLE_TYPE_PS_CABLE_MUIC:
 		is_cable_attached = false;
 		break;
 	case CABLE_TYPE_USB_MUIC:
@@ -213,9 +231,8 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	/*  charger setting */
 	if (previous_cable_type == cable_type) {
 		pr_info("%s: SKIP cable setting\n", __func__);
-		goto skip;
+		goto skip_cable_setting;
 	}
-	previous_cable_type = cable_type;
 
 	switch (cable_type) {
 	case CABLE_TYPE_NONE_MUIC:
@@ -259,19 +276,36 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_CDP_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_USB_CDP;
 		break;
+	case CABLE_TYPE_PS_CABLE_MUIC:
+		current_cable_type = POWER_SUPPLY_TYPE_POWER_SHARING;
+		break;
 	default:
 		pr_err("%s: invalid type for charger:%d\n",
 			__func__, cable_type);
 		goto skip;
 	}
 
-	if (!psy || !psy->set_property)
-		pr_err("%s: fail to get battery psy\n", __func__);
-	else {
-		value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
-		psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+	if (!psy || !psy->set_property || !psy_p || !psy_p->set_property) {
+		pr_err("%s: fail to get battery/ps psy\n", __func__);
+	} else {
+		if (current_cable_type == POWER_SUPPLY_TYPE_POWER_SHARING) {
+			value.intval = current_cable_type;
+			psy_p->set_property(psy_p, POWER_SUPPLY_PROP_ONLINE, &value);
+		} else {
+			if (previous_cable_type == CABLE_TYPE_PS_CABLE_MUIC) {
+				value.intval = current_cable_type;
+				psy_p->set_property(psy_p, POWER_SUPPLY_PROP_ONLINE, &value);
+			}
+			value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
+			psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+		}
 	}
+#ifdef CONFIG_TOUCHSCREEN_MELFAS_M2
+	tsp_charger_infom(is_cable_attached);
+#endif
 skip:
+	previous_cable_type = cable_type;
+skip_cable_setting:
 #ifdef CONFIG_JACK_MON
 	jack_event_handler("charger", is_cable_attached);
 #endif
@@ -369,7 +403,7 @@ void max77803_muic_mhl_cb(int attached)
 		acc_notify(MHL_ATTACHED);
 	} else {
 		pr_info("MHL Detached !!\n");
-		acc_notify(MHL_DETTACHED);
+		acc_notify(MHL_DETACHED);
 	}
 }
 #endif

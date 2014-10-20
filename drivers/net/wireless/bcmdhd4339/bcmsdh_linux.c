@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmsdh_linux.c 444405 2013-12-19 12:28:07Z $
+ * $Id: bcmsdh_linux.c 455573 2014-02-14 17:49:31Z $
  */
 
 /**
@@ -133,7 +133,7 @@ bcmsdh_chipmatch(uint16 vendor, uint16 device)
 void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
 	uint bus_num, uint slot_num)
 {
-	uint32 regs;
+	ulong regs;
 	bcmsdh_info_t *bcmsdh;
 	uint32 vendevid;
 	bcmsdh_os_info_t *bcmsdh_osinfo = NULL;

@@ -881,11 +881,19 @@ static void input_booster_init_dvfs(struct input_booster *data, struct booster_k
 #endif
 }
 
+extern unsigned int lpcharge;
+
 static int __devinit input_booster_probe(struct platform_device *pdev)
 {
 	int ret = 0, i;
 	struct input_booster *data;
 	const struct input_booster_platform_data *pdata = pdev->dev.platform_data;
+
+	if (lpcharge == 1) {
+		dev_err(&pdev->dev, "%s : Do not load driver due to : lpm %d\n",
+			 __func__, lpcharge);
+		return -ENODEV;
+	}
 
 	if (!pdata)
 		return -EINVAL;

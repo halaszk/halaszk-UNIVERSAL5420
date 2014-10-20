@@ -35,6 +35,7 @@
 #include "../fimc-is-core.h"
 #include "../fimc-is-device-sensor.h"
 #include "../fimc-is-resourcemgr.h"
+#include "../fimc-is-hw.h"
 #include "fimc-is-device-8b1.h"
 
 #define SENSOR_NAME "S5K8B1"
@@ -135,75 +136,75 @@ static int sensor_8b1_init(struct v4l2_subdev *subdev, u32 val)
 	pr_info("%s\n", __func__);
 	/* sensor init */
 	/* 8 bit mode */
-	fimc_is_sensor_write(client, 0x7030, 0x0E);
-	fimc_is_sensor_write(client, 0x7031, 0x2F);
+	fimc_is_sensor_write8(client, 0x7030, 0x0E);
+	fimc_is_sensor_write8(client, 0x7031, 0x2F);
 
 	/* Analog Tuning */
-	fimc_is_sensor_write(client, 0x7067, 0x00);
-	fimc_is_sensor_write(client, 0x7074, 0x22);
+	fimc_is_sensor_write8(client, 0x7067, 0x00);
+	fimc_is_sensor_write8(client, 0x7074, 0x22);
 
 	/* Dark Tuning */
-	fimc_is_sensor_write(client, 0x7402, 0x1F);
-	fimc_is_sensor_write(client, 0x7403, 0xC0);
-	fimc_is_sensor_write(client, 0x7247, 0x01);
+	fimc_is_sensor_write8(client, 0x7402, 0x1F);
+	fimc_is_sensor_write8(client, 0x7403, 0xC0);
+	fimc_is_sensor_write8(client, 0x7247, 0x01);
 
-	fimc_is_sensor_write(client, 0x7412, 0x09);
-	fimc_is_sensor_write(client, 0x7413, 0xB9);
-	fimc_is_sensor_write(client, 0x7430, 0x05);
-	fimc_is_sensor_write(client, 0x7432, 0x02);
-	fimc_is_sensor_write(client, 0x7433, 0x32);
-	fimc_is_sensor_write(client, 0x7075, 0x3D);
-	fimc_is_sensor_write(client, 0x7066, 0x09);
+	fimc_is_sensor_write8(client, 0x7412, 0x09);
+	fimc_is_sensor_write8(client, 0x7413, 0xB9);
+	fimc_is_sensor_write8(client, 0x7430, 0x05);
+	fimc_is_sensor_write8(client, 0x7432, 0x02);
+	fimc_is_sensor_write8(client, 0x7433, 0x32);
+	fimc_is_sensor_write8(client, 0x7075, 0x3D);
+	fimc_is_sensor_write8(client, 0x7066, 0x09);
 
 	/* AE setting */
-	fimc_is_sensor_write(client, 0x6000, 0x11);
-	fimc_is_sensor_write(client, 0x6001, 0x11);
-	fimc_is_sensor_write(client, 0x6002, 0x14);
-	fimc_is_sensor_write(client, 0x6003, 0x41);
-	fimc_is_sensor_write(client, 0x6004, 0x14);
-	fimc_is_sensor_write(client, 0x6005, 0x41);
-	fimc_is_sensor_write(client, 0x6006, 0x11);
-	fimc_is_sensor_write(client, 0x6007, 0x11);
+	fimc_is_sensor_write8(client, 0x6000, 0x11);
+	fimc_is_sensor_write8(client, 0x6001, 0x11);
+	fimc_is_sensor_write8(client, 0x6002, 0x14);
+	fimc_is_sensor_write8(client, 0x6003, 0x41);
+	fimc_is_sensor_write8(client, 0x6004, 0x14);
+	fimc_is_sensor_write8(client, 0x6005, 0x41);
+	fimc_is_sensor_write8(client, 0x6006, 0x11);
+	fimc_is_sensor_write8(client, 0x6007, 0x11);
 
 	/* Number of pixel */
-	fimc_is_sensor_write(client, 0x5030, 0x20);
-	fimc_is_sensor_write(client, 0x5031, 0xB4);
+	fimc_is_sensor_write8(client, 0x5030, 0x20);
+	fimc_is_sensor_write8(client, 0x5031, 0xB4);
 
 	/* AE target */
-	fimc_is_sensor_write(client, 0x600A, 0x2A);
+	fimc_is_sensor_write8(client, 0x600A, 0x2A);
 
 	/* AE speed */
-	fimc_is_sensor_write(client, 0x5034, 0x00);
+	fimc_is_sensor_write8(client, 0x5034, 0x00);
 
 	/* Inner Target Tolerance */
-	fimc_is_sensor_write(client, 0x503F, 0x03);
+	fimc_is_sensor_write8(client, 0x503F, 0x03);
 
 	/* patch height */
-	fimc_is_sensor_write(client, 0x6015, 0x19);
+	fimc_is_sensor_write8(client, 0x6015, 0x19);
 
 	/* G + R Setting */
 	/* Vision Senser Data = 0.5*Gr + 0.5*R */
-	fimc_is_sensor_write(client, 0x6029, 0x02);
-	fimc_is_sensor_write(client, 0x602A, 0x02);
+	fimc_is_sensor_write8(client, 0x6029, 0x02);
+	fimc_is_sensor_write8(client, 0x602A, 0x02);
 
 	/* For Analog Gain 16x */
-	fimc_is_sensor_write(client, 0x7018, 0xCF);
-	fimc_is_sensor_write(client, 0x7019, 0xDB);
-	fimc_is_sensor_write(client, 0x702A, 0x8D);
-	fimc_is_sensor_write(client, 0x702B, 0x60);
-	fimc_is_sensor_write(client, 0x5035, 0x02);
+	fimc_is_sensor_write8(client, 0x7018, 0xCF);
+	fimc_is_sensor_write8(client, 0x7019, 0xDB);
+	fimc_is_sensor_write8(client, 0x702A, 0x8D);
+	fimc_is_sensor_write8(client, 0x702B, 0x60);
+	fimc_is_sensor_write8(client, 0x5035, 0x02);
 
 	/* frame rate - default 10fps*/
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_MSB, 0x00);
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_LSB, 0x6A);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_MSB, 0x00);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_LSB, 0x6A);
 
 	/* BIT_RATE_MBPS_alv */
-	fimc_is_sensor_write(client, 0x7351, 0x02);
-	fimc_is_sensor_write(client, 0x7352, 0x48);
-	fimc_is_sensor_write(client, 0x7353, 0x00);
-	fimc_is_sensor_write(client, 0x7354, 0x00);
+	fimc_is_sensor_write8(client, 0x7351, 0x02);
+	fimc_is_sensor_write8(client, 0x7352, 0x48);
+	fimc_is_sensor_write8(client, 0x7353, 0x00);
+	fimc_is_sensor_write8(client, 0x7354, 0x00);
 
-	fimc_is_sensor_write(client, 0x7339, 0x03);
+	fimc_is_sensor_write8(client, 0x7339, 0x03);
 
 	pr_info("[MOD:D:%d] %s(%d)\n", module->id, __func__, val);
 
@@ -326,9 +327,9 @@ int sensor_8b1_stream_on(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	ret = fimc_is_sensor_write(client, 0x4100, 1);
-	if (ret) {
-		err("fimc_is_sensor_write is fail(%d)", ret);
+	ret = fimc_is_sensor_write8(client, 0x4100, 1);
+	if (ret < 0) {
+		err("fimc_is_sensor_write8 is fail(%d)", ret);
 		goto p_err;
 	}
 
@@ -358,9 +359,9 @@ int sensor_8b1_stream_off(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	ret = fimc_is_sensor_write(client, 0x4100, 0);
-	if (ret) {
-		err("fimc_is_sensor_write is fail(%d)", ret);
+	ret = fimc_is_sensor_write8(client, 0x4100, 0);
+	if (ret < 0) {
+		err("fimc_is_sensor_write8 is fail(%d)", ret);
 		goto p_err;
 	}
 
@@ -406,8 +407,8 @@ int sensor_8b1_s_duration(struct v4l2_subdev *subdev, u64 duration)
 	value[0] = result & 0xFF;
 	value[1] = (result >> 8) & 0xFF;
 
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_MSB, value[1]);
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_DURATION_LSB, value[0]);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_MSB, value[1]);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_DURATION_LSB, value[0]);
 
 p_err:
 	return ret;
@@ -452,7 +453,7 @@ int sensor_8b1_s_exposure(struct v4l2_subdev *subdev, u64 exposure)
 
 	value = exposure & 0xFF;
 
-	fimc_is_sensor_write(client, SENSOR_REG_VIS_AE_TARGET, value);
+	fimc_is_sensor_write8(client, SENSOR_REG_VIS_AE_TARGET, value);
 
 p_err:
 	return ret;
@@ -567,6 +568,8 @@ int sensor_8b1_probe(struct i2c_client *client,
 	module->pixel_height = module->active_height + 10;
 	module->max_framerate = 30;
 	module->position = SENSOR_POSITION_FRONT;
+	module->mode = CSI_MODE_CH0_ONLY;
+	module->lanes = CSI_DATA_LANES_1;
 	module->setfile_name = "setfile_8b1.bin";
 	module->cfgs = ARRAY_SIZE(config_8b1);
 	module->cfg = config_8b1;
@@ -574,11 +577,12 @@ int sensor_8b1_probe(struct i2c_client *client,
 	if (!module->private_data) {
 		err("private_data is NULL");
 		ret = -ENOMEM;
+		kfree(subdev_module);
 		goto p_err;
 	}
 
 	ext = &module->ext;
-	ext->mipi_lane_num = 1;
+	ext->mipi_lane_num = module->lanes;
 	ext->I2CSclk = I2C_L0;
 	ext->sensor_con.product_name = SENSOR_NAME_S5K8B1;
 	ext->sensor_con.peri_type = SE_I2C;

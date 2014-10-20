@@ -221,6 +221,7 @@ static const char *v4l2_ioctls[] = {
 	[_IOC_NR(VIDIOC_S_CTRL)]           = "VIDIOC_S_CTRL",
 	[_IOC_NR(VIDIOC_G_TUNER)]          = "VIDIOC_G_TUNER",
 	[_IOC_NR(VIDIOC_S_TUNER)]          = "VIDIOC_S_TUNER",
+	[_IOC_NR(VIDIOC_NOTI_CTRL)]        = "VIDIOC_NOTI_CTRL",
 	[_IOC_NR(VIDIOC_G_AUDIO)]          = "VIDIOC_G_AUDIO",
 	[_IOC_NR(VIDIOC_S_AUDIO)]          = "VIDIOC_S_AUDIO",
 	[_IOC_NR(VIDIOC_QUERYCTRL)]        = "VIDIOC_QUERYCTRL",
@@ -1294,6 +1295,20 @@ static long __video_do_ioctl(struct file *file,
 				if (ret == 0)
 					p->value = ctrl.value;
 			}
+		} else
+			break;
+		if (!ret)
+			dbgarg(cmd, "id=0x%x, value=%d\n", p->id, p->value);
+		else
+			dbgarg(cmd, "id=0x%x\n", p->id);
+		break;
+	}
+	case VIDIOC_NOTI_CTRL:
+	{
+		struct v4l2_control *p = arg;
+
+		if (ops->vidioc_noti_ctrl) {
+			ret = ops->vidioc_noti_ctrl(file, fh, p);
 		} else
 			break;
 		if (!ret)

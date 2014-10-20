@@ -30,6 +30,9 @@
    descriptor */
 #define USB_QUIRK_DELAY_INIT		0x00000040
 
+/* device does not need GET_STATUS request after reset_resume */
+#define USB_QUIRK_NO_GET_STATUS		0x00000100
+
 /* device needs hsic specific tunning */
 #define USB_QUIRK_HSIC_TUNE             0x00000200
 

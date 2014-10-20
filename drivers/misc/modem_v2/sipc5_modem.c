@@ -19,6 +19,7 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
+#include <linux/if_arp.h>
 
 #include <linux/uaccess.h>
 #include <linux/fs.h>
@@ -62,6 +63,7 @@ static struct modem_shared *create_modem_shared_data(void)
 		(MAX_MIF_SEPA_SIZE * 2), GFP_KERNEL);
 	if (!msd->storage.addr) {
 		mif_err("IPC logger buff alloc failed!!\n");
+		kfree(msd);
 		return NULL;
 	}
 	memset(msd->storage.addr, 0, size + (MAX_MIF_SEPA_SIZE * 2));
@@ -131,11 +133,13 @@ static struct io_device *create_io_device(struct modem_io_t *io_t,
 	iod->net_typ = pdata->modem_net;
 	iod->use_handover = pdata->use_handover;
 	iod->ipc_version = pdata->ipc_version;
+	iod->rxq_max = io_t->rxq_max;
+	iod->attr = io_t->attr;
 	atomic_set(&iod->opened, 0);
 
 	/* link between io device and modem control */
 	iod->mc = modemctl;
-	if (iod->format == IPC_FMT)
+	if (iod->id == SIPC5_CH_ID_FMT_0)
 		modemctl->iod = iod;
 	if (iod->format == IPC_BOOT && iod->id == 0) {
 		modemctl->bootd = iod;

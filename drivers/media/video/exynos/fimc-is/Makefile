@@ -12,6 +12,7 @@ fimc-is-objs	:= fimc-is-core.o \
 		fimc-is-video-scp.o \
 		fimc-is-video-vdisc.o \
 		fimc-is-video-vdiso.o \
+		fimc-is-hw-csi.o \
 		fimc-is-subdev-ctrl.o \
 		fimc-is-device-csi.o \
 		fimc-is-device-flite.o \
@@ -34,9 +35,17 @@ fimc-is-objs	:= fimc-is-core.o \
 		sensor/fimc-is-device-4e5.o \
 		sensor/fimc-is-device-6a3.o \
 		sensor/fimc-is-device-imx175.o \
-		sensor/fimc-is-device-4h5.o \
-		   fimc-is-spi.o \
-		   fimc-is-sec-define.o \
-		   crc32.o \
+		sensor/fimc-is-device-4h5.o
+
+ifndef CONFIG_CAMERA_EXTERNAL
+fimc-is-objs	+= fimc-is-spi.o \
+		fimc-is-sec-define.o \
+		crc32.o
+endif
+
+ifeq ($(CONFIG_VIDEO_M7MU), y)
+fimc-is-objs	+= sensor/fimc-is-device-m7mu.o \
+		sensor/fimc-is-device-m7mu_spi.o
+endif
 
 obj-$(CONFIG_VIDEO_EXYNOS_FIMC_IS) += fimc-is.o

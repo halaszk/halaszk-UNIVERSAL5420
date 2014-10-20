@@ -76,7 +76,11 @@
 
 #define CTRL_ENABLE	0x5
 #define CTRL_BLOCK	0x7
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS5260)
+#define CTRL_DISABLE	0x3 /* block + interrupt disabled */
+#else
 #define CTRL_DISABLE	0x0
+#endif
 
 #define CFG_LRU		0x1
 #define CFG_QOS(n)	((n & 0xF) << 7)
@@ -448,6 +452,8 @@ static void __exynos_sysmmu_set_pbuf_ver31(struct sysmmu_drvdata *drvdata,
 
 	BUG_ON(num_bufs > 2);
 
+	__sysmmu_tlb_invalidate(drvdata->sfrbases[idx]);
+
 	if (num_bufs == 2) {
 		/* Separate PB mode */
 		cfg |= 2 << 28;
@@ -483,6 +489,8 @@ static void __exynos_sysmmu_set_pbuf_ver32(struct sysmmu_drvdata *drvdata,
 	num_bufs = __prepare_prefetch_buffers(drvdata, idx, prefbuf, 3);
 	if (num_bufs == 0)
 		return;
+
+	__sysmmu_tlb_invalidate(drvdata->sfrbases[idx]);
 
 	cfg |= 7 << 16; /* enabling PB0 ~ PB2 */
 
@@ -547,6 +555,19 @@ static unsigned int find_num_pb(unsigned int num_pb, unsigned int lmm)
 	BUG_ON(num_pb == 0);
 	return num_pb;
 }
+
+static void __sysmmu_init_pb(void __iomem *sfrbase, unsigned int num_pb)
+{
+	unsigned int i = 0;
+
+	for (i = 0; i < num_pb; i++) {
+		__raw_writel(i, sfrbase + REG_PB_INDICATE);
+		__raw_writel(0, sfrbase + REG_PB_CFG);
+	}
+
+	__raw_writel(0x1, sfrbase + REG_MMU_FLUSH);
+}
+
 static void __exynos_sysmmu_set_pbuf_ver33(struct sysmmu_drvdata *drvdata,
 					   int idx)
 {
@@ -561,6 +582,10 @@ static void __exynos_sysmmu_set_pbuf_ver33(struct sysmmu_drvdata *drvdata,
 			__func__, drvdata->dbgname);
 		return;
 	}
+
+	__sysmmu_init_pb(drvdata->sfrbases[idx],
+		find_num_pb(num_pb,
+			__raw_readl(drvdata->sfrbases[idx] + REG_PB_LMM)));
 
 	num_bufs = __prepare_prefetch_buffers(drvdata, idx, prefbuf, num_pb);
 	if ((num_bufs == 0) || (num_bufs > 6)) {
@@ -1106,11 +1131,7 @@ static void __sysmmu_enable_nocount(struct sysmmu_drvdata *drvdata)
 	clk_enable(drvdata->clk);
 
 	for (i = 0; i < drvdata->nsfrs; i++) {
-		if (soc_is_exynos5420() || soc_is_exynos5260())
-			__raw_writel(0, drvdata->sfrbases[i] + REG_MMU_CTRL);
-
-		BUG_ON(__raw_readl(drvdata->sfrbases[i] + REG_MMU_CTRL)
-								& CTRL_ENABLE);
+		__raw_writel(0, drvdata->sfrbases[i] + REG_MMU_CTRL);
 
 		__sysmmu_init_config(drvdata, i);
 

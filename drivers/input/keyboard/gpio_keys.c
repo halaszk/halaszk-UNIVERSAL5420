@@ -54,16 +54,6 @@ struct gpio_button_data {
 	bool key_pressed;
 	bool key_state;
 	bool wakeup;
-#ifdef KEY_BOOSTER
-	bool key_dvfs_lock_status;
-	bool dvfs_signal;
-	struct delayed_work key_work_dvfs_off;
-	struct delayed_work key_work_dvfs_chg;
-	struct mutex key_dvfs_lock;
-	struct pm_qos_request cpu_qos;
-	struct pm_qos_request mif_qos;
-	struct pm_qos_request int_qos;
-#endif
 };
 
 struct gpio_keys_drvdata {
@@ -426,6 +416,10 @@ static ssize_t wakeup_enable(struct device *dev,
 			button->button->wakeup = 1;
 		else
 			button->button->wakeup = 0;
+#if defined(CONFIG_MACH_M2ALTE) || defined(CONFIG_MACH_M2A3G)
+		if (button->button->code == KEY_VOLUMEUP)
+			button->button->wakeup = 1;
+#endif
 	}
 
 out:
@@ -467,102 +461,6 @@ static struct attribute *sec_key_attrs[] = {
 static struct attribute_group sec_key_attr_group = {
 	.attrs = sec_key_attrs,
 };
-
-#ifdef KEY_BOOSTER
-
-#define set_qos(req, pm_qos_class, value) { \
-	if (pm_qos_request_active(req)) \
-		pm_qos_update_request(req, value); \
-	else \
-		pm_qos_add_request(req, pm_qos_class, value); \
-}
-
-#define remove_qos(req) { \
-	if (pm_qos_request_active(req)) \
-		pm_qos_remove_request(req); \
-}
-
-static void gpio_key_change_dvfs_lock(struct work_struct *work)
-{
-	struct gpio_button_data *bdata =
-			container_of(work,
-				struct gpio_button_data, key_work_dvfs_chg.work);
-
-	mutex_lock(&bdata->key_dvfs_lock);
-
-	set_qos(&bdata->cpu_qos, PM_QOS_KFC_FREQ_MIN, KEY_BOOSTER_CPU_FREQ1);
-	set_qos(&bdata->mif_qos, PM_QOS_BUS_THROUGHPUT, KEY_BOOSTER_MIF_FREQ1);
-	set_qos(&bdata->int_qos, PM_QOS_DEVICE_THROUGHPUT, KEY_BOOSTER_INT_FREQ1);
-
-	bdata->key_dvfs_lock_status = true;
-	bdata->dvfs_signal = false;
-	printk(KERN_DEBUG"keys:DVFS On\n");
-
-	mutex_unlock(&bdata->key_dvfs_lock);
-}
-
-static void gpio_key_set_dvfs_off(struct work_struct *work)
-{
-	struct gpio_button_data *bdata =
-				container_of(work,
-					struct gpio_button_data, key_work_dvfs_off.work);
-
-	mutex_lock(&bdata->key_dvfs_lock);
-
-	remove_qos(&bdata->cpu_qos);
-	remove_qos(&bdata->mif_qos);
-	remove_qos(&bdata->int_qos);
-
-	bdata->key_dvfs_lock_status = false;
-	bdata->dvfs_signal = false;
-	mutex_unlock(&bdata->key_dvfs_lock);
-
-	printk(KERN_DEBUG "keys:DVFS Off\n");
-}
-
-static void gpio_key_set_dvfs_lock(struct gpio_button_data *bdata,
-					uint32_t on)
-{
-	mutex_lock(&bdata->key_dvfs_lock);
-	if (on == 0) {
-		if (bdata->dvfs_signal) {
-			cancel_delayed_work(&bdata->key_work_dvfs_chg);
-			schedule_delayed_work(&bdata->key_work_dvfs_chg, 0);
-			schedule_delayed_work(&bdata->key_work_dvfs_off,
-				msecs_to_jiffies(KEY_BOOSTER_OFF_TIME));
-		} else if (bdata->key_dvfs_lock_status) {
-			schedule_delayed_work(&bdata->key_work_dvfs_off,
-				msecs_to_jiffies(KEY_BOOSTER_OFF_TIME));
-		}
-	} else if (on == 1) {
-		cancel_delayed_work(&bdata->key_work_dvfs_off);
-		if (!bdata->key_dvfs_lock_status && !bdata->dvfs_signal) {
-			schedule_delayed_work(&bdata->key_work_dvfs_chg,
-							msecs_to_jiffies(KEY_BOOSTER_ON_TIME));
-			bdata->dvfs_signal = true;
-		}
-	} else if (on == 2) {
-		if (bdata->key_dvfs_lock_status) {
-			cancel_delayed_work(&bdata->key_work_dvfs_off);
-			cancel_delayed_work(&bdata->key_work_dvfs_chg);
-			schedule_work(&bdata->key_work_dvfs_off.work);
-		}
-	}
-	mutex_unlock(&bdata->key_dvfs_lock);
-}
-
-
-static int gpio_key_init_dvfs(struct gpio_button_data *bdata)
-{
-	mutex_init(&bdata->key_dvfs_lock);
-
-	INIT_DELAYED_WORK(&bdata->key_work_dvfs_off, gpio_key_set_dvfs_off);
-	INIT_DELAYED_WORK(&bdata->key_work_dvfs_chg, gpio_key_change_dvfs_lock);
-
-	bdata->key_dvfs_lock_status = false;
-	return 0;
-}
-#endif
 
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
@@ -613,10 +511,6 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 			printk(KERN_DEBUG "keys:PWR %d\n", report_state);
 			prev_state = report_state;
 		}
-#ifdef KEY_BOOSTER
-		if (button->code == KEY_HOMEPAGE)
-			gpio_key_set_dvfs_lock(bdata, !!state);
-#endif
 #ifdef CONFIG_INPUT_BOOSTER
 		if (button->code == KEY_HOMEPAGE)
 			INPUT_BOOSTER_SEND_EVENT(KEY_HOMEPAGE, !!state);
@@ -837,8 +731,8 @@ static void flip_cover_work(struct work_struct *work)
 	second = gpio_get_value(ddata->gpio_flip_cover);
 
 #ifdef CONFIG_W1_SLAVE_DS28EL15
-	printk(KERN_DEBUG "[keys] %s : %d, Verification(%d)\n",
-		__func__, ddata->flip_cover, verification);
+	printk(KERN_DEBUG "[keys] %s : %d\n",
+		__func__, ddata->flip_cover);
 #else
 	printk(KERN_DEBUG "keys:%s #2 : %d\n",
 		__func__, second);
@@ -933,7 +827,7 @@ static int gpio_keys_open(struct input_dev *input)
 static void gpio_keys_close(struct input_dev *input)
 {
 	struct gpio_keys_drvdata *ddata = input_get_drvdata(input);
-#if defined (KEY_BOOSTER) || defined (CONFIG_INPUT_BOOSTER)
+#ifdef CONFIG_INPUT_BOOSTER
 	int i = 0;
 #endif
 
@@ -943,17 +837,13 @@ static void gpio_keys_close(struct input_dev *input)
 #ifdef CONFIG_SENSORS_HALL
 //	cancel_delayed_work_sync(&ddata->flip_cover_dwork);
 #endif
-#if defined (KEY_BOOSTER) || defined (CONFIG_INPUT_BOOSTER)
+#ifdef CONFIG_INPUT_BOOSTER
 	for (i = 0; i < ddata->n_buttons; i++) {
 		struct gpio_button_data *bdata = &ddata->data[i];
 
 		if (bdata->button->code == KEY_HOMEPAGE) {
-#ifdef CONFIG_INPUT_BOOSTER
 			INPUT_BOOSTER_SEND_EVENT(KEY_HOMEPAGE,
 				BOOSTER_MODE_FORCE_OFF);
-#else
-			gpio_key_set_dvfs_lock(bdata, 2);
-#endif
 		}
 	}
 #endif
@@ -1166,16 +1056,6 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 
 		if (button->wakeup)
 			wakeup = 1;
-
-#ifdef KEY_BOOSTER
-		if (button->code == KEY_HOMEPAGE) {
-			error = gpio_key_init_dvfs(bdata);
-			if (error < 0) {
-				dev_err(dev, "Fail get dvfs level for touch booster\n");
-				goto fail2;
-			}
-		}
-#endif
 	}
 
 	error = sysfs_create_group(&pdev->dev.kobj, &gpio_keys_attr_group);

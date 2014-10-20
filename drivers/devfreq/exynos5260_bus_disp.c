@@ -29,6 +29,10 @@
 #include "devfreq_exynos.h"
 #include "governor.h"
 
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+#include <mach/sec_debug.h>
+#endif
+
 #define DEVFREQ_INITIAL_FREQ	(333000)
 #define DEVFREQ_POLLING_PERIOD	(100)
 
@@ -253,6 +257,12 @@ static int exynos5_devfreq_disp_set_freq(struct devfreq_data_disp *data,
 	int i, j;
 	struct devfreq_clk_info *clk_info;
 	struct devfreq_clk_states *clk_states;
+
+#ifdef CONFIG_SEC_DEBUG_AUXILIARY_LOG
+	sec_debug_aux_log(SEC_DEBUG_AUXLOG_CPU_BUS_CLOCK_CHANGE, 
+		"old:%7d new:%7d (DISP)", 
+	old_idx,target_idx );
+#endif
 
 	if (target_idx < old_idx) {
 		for (i = 0; i < ARRAY_SIZE(devfreq_clk_disp_info_list); ++i) {

@@ -16,6 +16,8 @@
 #include "board-xyref5260.h"
 #include <mach/setup-disp-clock.h>
 
+#include "display-exynos5260.h"
+
 #ifdef CONFIG_SOC_EXYNOS5260
 int s3c_fb_clock_init(void)
 {
@@ -84,7 +86,7 @@ int s3c_fb_clock_init(void)
 	clk_set_rate(sclk_disp_128_extclkpll, 267 * MHZ);
 #endif
 #ifdef CONFIG_FB_MIPI_DSIM
-	clk_set_rate(sclk_disp_128_extclkpll, 66500000);	/* should be fixed */
+	exynos_clk_recover_rate(sclk_disp_128_extclkpll);
 #endif
 	if (clk_set_parent(aclk_disp_333_nogate, aclk_disp_333)) {
 		clk_put(aclk_disp_333);

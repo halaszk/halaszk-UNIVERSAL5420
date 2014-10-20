@@ -89,6 +89,8 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 
 	if (timing == MMC_TIMING_MMC_HS200_DDR) {
 		clksel = (pdata->ddr200_timing & 0xfffffff8) | pdata->clk_smpl;
+		if (pdata->is_fine_tuned)
+			clksel |= BIT(6);
 
 		if (!tuning) {
 			rddqs |= DWMCI_RDDQS_EN;
@@ -116,9 +118,13 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 	if (soc_is_exynos4415() || soc_is_exynos5420() || soc_is_exynos5260()) {
 		__raw_writel(rddqs, host->regs + DWMCI_DDR200_RDDQS_EN + 0x70);
 		__raw_writel(dline, host->regs + DWMCI_DDR200_DLINE_CTRL + 0x70);
+		if (timing == MMC_TIMING_MMC_HS200_DDR)
+			__raw_writel(0x1, host->regs + DWMCI_DDR200_ASYNC_FIFO_CTRL + 0x70);
 	} else {
 		__raw_writel(rddqs, host->regs + DWMCI_DDR200_RDDQS_EN);
 		__raw_writel(dline, host->regs + DWMCI_DDR200_DLINE_CTRL);
+		if (timing == MMC_TIMING_MMC_HS200_DDR)
+			__raw_writel(0x1, host->regs + DWMCI_DDR200_ASYNC_FIFO_CTRL);
 	}
 }
 
@@ -238,6 +244,12 @@ static void exynos_sfr_restore(unsigned int i)
 
 	__raw_writel(0, host->regs + DWMCI_CMDARG);
 	wmb();
+
+#ifdef CONFIG_BCM4334
+	if (i == 1)
+		return;
+#endif
+
 	__raw_writel((DWMCI_CMD_START | DWMCI_CMD_UPD_CLK | DWMCI_CMD_PRV_DAT_WAIT),
 					host->regs + DWMCI_CMD);
 
