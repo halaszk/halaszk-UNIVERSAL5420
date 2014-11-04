@@ -498,10 +498,10 @@ static sec_bat_adc_region_t cable_adc_value_table[] = {
 };
 
 static int polling_time_table[] = {
-	10,	/* BASIC */
-	30,	/* CHARGING */
-	30,	/* DISCHARGING */
-	30,	/* NOT_CHARGING */
+	60,	/* BASIC */
+	60,	/* CHARGING */
+	60,	/* DISCHARGING */
+	60,	/* NOT_CHARGING */
 	3600,	/* SLEEP */
 };
 
