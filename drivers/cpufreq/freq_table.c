@@ -204,10 +204,17 @@ static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf)
 	table = per_cpu(cpufreq_show_table, cpu);
 
 	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
-		if (table[i].frequency == CPUFREQ_ENTRY_INVALID)
+	}
+	i--;
+
+	for (i = i; i != 0; i--) {
+		if (table[i].frequency == CPUFREQ_ENTRY_INVALID
+				|| table[i].frequency > policy->cpuinfo.max_freq
+				|| table[i].frequency < policy->cpuinfo.min_freq)
 			continue;
 		count += sprintf(&buf[count], "%d ", table[i].frequency);
 	}
+
 	count += sprintf(&buf[count], "\n");
 
 	return count;
