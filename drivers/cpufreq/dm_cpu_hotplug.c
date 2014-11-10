@@ -219,7 +219,7 @@ static int exynos_dm_hotplug_notifier(struct notifier_block *notifier,
 			for (i=1; i < NR_CPUS; i++) 
 				if (cpu_online(i)) 
 					cpu_down(i);
-			set_min_gpu_freq(100);
+//			set_min_gpu_freq(100);
 		}
 		exynos_dm_hotplug_disable = true;
 		mutex_unlock(&dm_hotplug_lock);
@@ -257,9 +257,9 @@ static enum hotplug_mode diagnose_condition(void)
 		low_stay++;
 	if (low_stay > 5) { // && !lcd_is_on)
 		ret = CHP_LOW_POWER;
-		set_min_gpu_freq(100);
+//		set_min_gpu_freq(100);
 	} else {
-		set_min_gpu_freq(266);
+//		set_min_gpu_freq(266);
 	}
 	
 	return ret;
