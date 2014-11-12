@@ -311,6 +311,7 @@ static int gov_table[11][11] = {
 
 void hlpr_set_min_max_G3D(unsigned int min, unsigned int max)
 {
+	int i;
 
 	for (i = 0; i < MALI_DVFS_STEP; i++)
 	{
