@@ -32,7 +32,7 @@
 #else
 #define MALI_DVFS_START_FREQ 177
 #endif
-#define MALI_DVFS_BL_CONFIG_FREQ 733
+#define MALI_DVFS_BL_CONFIG_FREQ 800
 #define IS_ASV_ENABLED
 #else
 #define MALI_DVFS_START_FREQ 450
