@@ -25,20 +25,17 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/device.h>
+#include <linux/ratelimit.h>
 
-#include <linux/platform_data/modem.h>
-#ifdef CONFIG_LINK_DEVICE_C2C
-#include <linux/platform_data/c2c.h>
-#endif
+#include <linux/platform_data/modem_v2.h>
 #include "modem_prj.h"
 #include "modem_utils.h"
-#define DM_LOGGING_CH		28
 
 enum iod_debug_flag_bit {
 	IOD_DEBUG_IPC_LOOPBACK,
 };
 
-static unsigned long dbg_flags = 0;
+static unsigned long dbg_flags;
 module_param(dbg_flags, ulong, S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(dbg_flags, "sipc iodevice debug flags\n");
 
@@ -121,6 +118,58 @@ static ssize_t store_loopback(struct device *dev,
 static struct device_attribute attr_loopback =
 	__ATTR(loopback, S_IRUGO | S_IWUSR, show_loopback, store_loopback);
 
+static struct sk_buff *sipc5_hdr_create_ipcloopback(struct io_device *iod,
+			struct sipc_hdr *hdr, struct sk_buff *skb);
+static int sipc5_recv_demux(struct io_device *iod,
+			struct link_device *ld, struct sk_buff *skb);
+static int sipc5_recv_demux_ipcloopback(struct io_device *iod,
+			struct link_device *ld, struct sk_buff *skb);
+
+static ssize_t show_ipcloopback(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct modem_shared *msd =
+		container_of(miscdev, struct io_device, miscdev)->msd;
+	char *p = buf;
+
+	p += sprintf(buf, "%d\n", msd->ipcloopback_enable);
+
+	return p - buf;
+}
+
+static ssize_t store_ipcloopback(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct modem_shared *msd =
+		container_of(miscdev, struct io_device, miscdev)->msd;
+	struct io_device *lb_iod = get_iod_with_channel(msd, SIPC5_CH_ID_FMT_9);
+	struct io_device *ipc_iod =
+				get_iod_with_channel(msd, SIPC5_CH_ID_FMT_0);
+
+	if (*buf == '0') {
+		msd->ipcloopback_enable = 0;
+
+		lb_iod->ops.header_create = sipc5_hdr_create_ipcloopback;
+		ipc_iod->ops.recv_demux = sipc5_recv_demux;
+
+		mif_info("ipc loobpack disable: %d\n", msd->ipcloopback_enable);
+	} else {
+		msd->ipcloopback_enable = 1;
+
+		lb_iod->ops.header_create = sipc5_hdr_create_ipcloopback;
+		ipc_iod->ops.recv_demux = sipc5_recv_demux_ipcloopback;
+
+		mif_info("ipc loobpack enable: %d\n", msd->ipcloopback_enable);
+	}
+
+	return count;
+}
+
+static struct device_attribute attr_ipcloopback =
+__ATTR(ipcloopback, S_IRUGO | S_IWUSR, show_ipcloopback, store_ipcloopback);
+
 static void iodev_showtxlink(struct io_device *iod, void *args)
 {
 	char **p = (char **)args;
@@ -156,196 +205,325 @@ static struct device_attribute attr_txlink =
 static ssize_t show_dm_state(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct miscdevice *miscdev = dev_get_drvdata(dev);
-	struct io_device *iod = to_io_device(miscdev);
-	struct link_device *ld = get_current_link(iod);
-	char *p = buf;
-
-	p += sprintf(buf, "%d\n", ld->dm_log_enable);
-	mif_info("dm logging enable:%d\n", ld->dm_log_enable);
-
-	return p - buf;
+	mif_info("We do not support this sysfs since SIPC5.0\n");
+	return 0;
 }
 
 static ssize_t store_dm_state(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct miscdevice *miscdev = dev_get_drvdata(dev);
-	struct io_device *iod = to_io_device(miscdev);
-	struct link_device *ld = get_current_link(iod);
-
-	ld->dm_log_enable = !!buf[0];
-	ld->enable_dm(ld, ld->dm_log_enable);
-	mif_info("dm logging enable:%d\n", ld->dm_log_enable);
-
+	mif_info("We do not support this sysfs since SIPC5.0\n");
 	return count;
 }
 
 static struct device_attribute attr_dm_state =
 	__ATTR(dm_state, S_IRUGO | S_IWUSR, show_dm_state, store_dm_state);
 
-
-#if 0
-static int rx_loopback(struct sk_buff *skb)
-{
-	struct io_device *iod = skbpriv(skb)->iod;
-	struct link_device *ld = get_current_link(iod);
-	struct sipc5_frame_data frm;
-	unsigned headroom;
-	unsigned tailroom = 0;
-	int ret;
-
-	headroom = tx_build_link_header(&frm, iod, ld, skb->len);
-
-	if (ld->aligned)
-		tailroom = sipc5_calc_padding_size(headroom + skb->len);
-
-	/* We need not to expand skb in here. dev_alloc_skb (in rx_alloc_skb)
-	 * already alloc 32bytes padding in headroom. 32bytes are enough.
-	 */
-
-	/* store IPC link header to start of skb
-	 * this is skb_push not skb_put. different with misc_write.
-	 */
-	memcpy(skb_push(skb, headroom), frm.hdr, headroom);
-
-	/* store padding */
-	if (tailroom)
-		skb_put(skb, tailroom);
-
-	/* forward */
-	ret = ld->send(ld, iod, skb);
-	if (ret < 0)
-		mif_err("%s->%s: ld->send fail: %d\n", iod->name,
-				ld->name, ret);
-	return ret;
-}
-#endif
-
-static int rx_multi_pdp(struct sk_buff *skb)
-{
-	struct io_device *iod = skbpriv(skb)->iod; /* same with real_iod */
-	struct net_device *ndev;
-	struct iphdr *iphdr;
-	struct ethhdr *ehdr;
-	int ret;
-	const char source[ETH_ALEN] = SOURCE_MAC_ADDR;
-
-	ndev = iod->ndev;
-	if (!ndev) {
-		mif_info("%s: ERR! no iod->ndev\n", iod->name);
-		return -ENODEV;
-	}
-#ifdef CONFIG_LINK_ETHERNET
-	skb->protocol = eth_type_trans(skb, ndev);
-#else
-	skb->dev = ndev;
-	/* check the version of IP */
-	iphdr = (struct iphdr *)skb->data;
-	if (iphdr->version == IP6VERSION)
-		skb->protocol = htons(ETH_P_IPV6);
-	else
-		skb->protocol = htons(ETH_P_IP);
-
-	if (iod->use_handover) {
-		skb_push(skb, sizeof(struct ethhdr));
-		ehdr = (void *)skb->data;
-		memcpy(ehdr->h_dest, ndev->dev_addr, ETH_ALEN);
-		memcpy(ehdr->h_source, source, ETH_ALEN);
-		ehdr->h_proto = skb->protocol;
-		skb->ip_summed = CHECKSUM_UNNECESSARY;
-		skb_reset_mac_header(skb);
-
-		skb_pull(skb, sizeof(struct ethhdr));
-	}
-#endif
-	ndev->stats.rx_packets++;
-	ndev->stats.rx_bytes += skb->len;
-
-	if (in_interrupt())
-		ret = netif_rx(skb);
-	else
-		ret = netif_rx_ni(skb);
-
-	if (ret != NET_RX_SUCCESS)
-		mif_info("%s: ERR! netif_rx fail (err %d)\n", iod->name, ret);
-
-	return ret;
-}
-
+/**
+ * SIPC functions
+ *
+ */
 #define MAX_RXDATA_SIZE		0x0E00	/* 4 * 1024 - 512 */
 static unsigned sipc5_get_packet_len(struct sipc5_link_hdr *hdr)
 {
-	return (hdr->cfg & SIPC5_EXT_FIELD_EXIST)
-				? *((u32 *)&hdr->len) : hdr->len;
+	return (hdr->cfg & SIPC5_HDR_EXT) ? *((u32 *)&hdr->len) : hdr->len;
 }
 
+#if 0
 static unsigned sipc5_get_pad_len(struct sipc5_link_hdr *hdr, unsigned len)
 {
-	return (hdr->cfg & SIPC5_PADDING_EXIST)
-					? sipc5_calc_padding_size(len) : 0;
+	return (hdr->cfg & SIPC5_HDR_PAD) ? sipc5_calc_padding_size(len) : 0;
+}
+#endif
+
+static u32 sipc5_get_header_size(struct sipc_hdr *hdr, unsigned len)
+{
+	if (hdr->multifmt)
+		return SIPC5_HDR_LEN_CTRL;
+	else if (len > 0xFFFF - SIPC5_HDR_LEN_MAX)
+		return SIPC5_HDR_LEN_EXT;
+	else
+		return SIPC5_HDR_LEN;
 }
 
-/*TODO: process multi-formated IPC packets */
-static int sipc5_hdr_unframe(struct io_device *iod, struct sk_buff *skb)
+/**
+ * SIPC header_create() family functions
+ *
+ * Create SIPC5 header
+ *
+ * sipc5_hdr_create_skb()
+ *	Create common SIPC5 header
+ *
+ * sipc5_hdr_create_legacy_rfs()
+ *	Create SIPC5 header with IPC4.1 RFS header
+ *	Because IMC modem used the 256KB rfs packet and RILD check the full
+ *	packet with RFS header len, kernel remove the SIPC5 header and add the
+ *	lagacy RFS header.
+ *
+ * sipc5_hdr_create_multifmt()
+ *	TBD
+ *
+ * sipc5_hdr_create_skb_handover()
+ *	Remove the ethernet frame When use `handover' with Network Bridge,
+ *	user -> bridge device(rmnet0) -> real rmnet(xxxx_rmnet0) -> here.
+ *	bridge device is ethernet device unlike xxxx_rmnet(net device).
+ *	We remove the an ethernet header of skb before using skb->len,
+ *	because bridge device added an ethernet header to skb.
+ *
+ * RETURN
+ *	Returns the socket buffer that added SIPC5 header.
+ *
+ **/
+static struct sk_buff *sipc5_hdr_create(struct io_device *iod,
+				struct sipc_hdr *hdr, struct sk_buff *skb)
 {
-	struct link_device *ld = skbpriv(skb)->ld;
-	struct header_data *hdr = &fragdata(iod, ld)->h_post;
-	struct sipc5_link_hdr *sipc_hdr;
-	unsigned len;
-	struct rfs_hdr rfs_head;
+	struct sipc5_link_hdr *sipc5h;
+	struct link_device *ld = get_current_link(iod);
 
-	if (iod->format == IPC_BOOT)
-		return 0;
+	if (hdr->hdr_size == SIPC5_HDR_LEN_EXT) {
+		sipc5h = (struct sipc5_link_hdr *)
+					skb_push(skb, SIPC5_HDR_LEN_EXT);
+		sipc5h->cfg = SIPC5_HDR_CFG_START | SIPC5_HDR_EXT;
+		*((u32 *)&sipc5h->len) = (u32)(skb->len);
+	} else {
+		sipc5h = (struct sipc5_link_hdr *)
+					skb_push(skb, SIPC5_HDR_LEN);
+		sipc5h->cfg = SIPC5_HDR_CFG_START;
+		sipc5h->len = (u16)(skb->len);
+	}
+	sipc5h->ch = iod->id;
 
-	if (!hdr->frag_len) {
-		/* First frame - remove SIPC5 header */
-		if (unlikely(
-			!sipc5_start_valid((struct sipc5_link_hdr *)skb->data)
-			)) {
-			mif_err("SIPC5 wrong CFG(0x%02x) %s\n",	skb->data[0],
-								iod->name);
-			return -EBADMSG;
+	/* Should check the alignment for dynamic switch link dev*/
+	if (ld->aligned) {
+		sipc5h->cfg |= SIPC5_HDR_PAD;
+		skb_set_tail_pointer(skb, SIPC_ALIGN(skb->len));
+		skb->len = SIPC_ALIGN(skb->len);
+	}
+	skbpriv(skb)->sipch = (void *)sipc5h;
+	return skb;
+}
+
+static struct sk_buff *sipc5_hdr_create_ipcloopback(struct io_device *iod,
+				struct sipc_hdr *hdr, struct sk_buff *skb)
+{
+	struct sipc5_link_hdr *sipc5h;
+	struct link_device *ld = get_current_link(iod);
+
+	sipc5h = (struct sipc5_link_hdr *)
+				skb_push(skb, SIPC5_HDR_LEN);
+	sipc5h->cfg = SIPC5_HDR_CFG_START;
+	sipc5h->len = (u16)(skb->len);
+
+	mif_info("send ipcloopback data: %d\n", skb->len);
+	sipc5h->ch = SIPC5_CH_ID_FMT_0;
+
+	/* Should check the alignment for dynamic switch link dev*/
+	if (ld->aligned) {
+		sipc5h->cfg |= SIPC5_HDR_PAD;
+		skb_set_tail_pointer(skb, SIPC_ALIGN(skb->len));
+		skb->len = SIPC_ALIGN(skb->len);
+	}
+	skbpriv(skb)->sipch = (void *)sipc5h;
+	return skb;
+}
+
+static struct sk_buff *sipc5_hdr_create_legacy_rfs(struct io_device *iod,
+				struct sipc_hdr *hdr, struct sk_buff *skb)
+{
+	if (*(u32 *)skb->data != skb->len) {
+		mif_err("rfs length fault: len=%u, skb->len=%u\n",
+			*(u32 *)skb->data, skb->len);
+	}
+	skb_pull(skb, sizeof(u32)); /* remove the RFS header from rild */
+	return sipc5_hdr_create(iod, hdr, skb);
+}
+
+/* TODO: not verified */
+static struct sk_buff *sipc5_hdr_create_multifmt(struct io_device *iod,
+				struct sipc_hdr *hdr, struct sk_buff *skb)
+{
+	struct sipc5_link_hdr *sipc5h;
+	struct link_device *ld = get_current_link(iod);
+
+	if (hdr->multifmt) {
+		sipc5h = (struct sipc5_link_hdr *)
+					skb_push(skb, SIPC5_HDR_LEN_CTRL);
+		sipc5h->cfg = SIPC5_HDR_CFG_START | SIPC5_HDR_CONTROL;
+		sipc5h->len = skb->len;
+		sipc5h->ext.ctl = hdr->multifmt;
+		sipc5h->ch = iod->id;
+
+		/* Should check the alignment for dynamic switch link dev*/
+		if (ld->aligned) {
+			sipc5h->cfg |= SIPC5_HDR_PAD;
+			skb_set_tail_pointer(skb, SIPC_ALIGN(skb->len));
+			skb->len = SIPC_ALIGN(skb->len);
 		}
-		sipc_hdr = (struct sipc5_link_hdr *)skb->data;
-		hdr->len = sipc5_get_packet_len(sipc_hdr);
-		len = sipc5_get_hdr_len(sipc_hdr); /* Header len*/
-		memcpy(hdr->hdr, skb->data, len);
-		skb_pull_inline(skb, len); /* remove sipc5 hdr */
-		hdr->frag_len = len;
+		skbpriv(skb)->sipch = (void *)sipc5h;
+		return skb;
+	}
+	return sipc5_hdr_create(iod, hdr, skb);
+}
 
-		if (iod->format == IPC_RFS) { /* Add the old RFS header */
-			memset(&rfs_head, 0x00, sizeof(struct rfs_hdr));
-			/* packet length - sipc5 hdr + rfs length*/
-			rfs_head.len = hdr->len - len + sizeof(u32);
-			memcpy(skb_push(skb, sizeof(u32)),
-						&rfs_head.len, sizeof(u32));
-			hdr->len += sizeof(u32);
-		}
+/* TODO: not verified */
+static struct sk_buff *sipc5_hdr_create_handover(struct io_device *iod,
+				struct sipc_hdr *hdr, struct sk_buff *skb)
+{
+	skb_pull(skb, sizeof(struct ethhdr));
+	return sipc5_hdr_create(iod, hdr, skb);
+}
+
+/**
+ * header_multifmt_length() family
+ *
+ * _sipc_multifmt_id
+ *	multifmt information id static variable
+ *
+ * _sipc_get_multifmt_id()
+ *	retrun the unique multifmt information id
+ *
+ * sipc_hdr_multifmt_length()
+ *	update the hdr->multifmt and return frame length
+ *
+ */
+/* TODO: not verified */
+static unsigned _sipc_multifmt_id;
+static inline int _sipc_get_multifmt_id(void)
+{
+	return (++_sipc_multifmt_id) % SIPC_MULTIFMT_ID_MAX;
+}
+
+/* TODO: not verified */
+static u32 sipc_hdr_multifmt_length(struct io_device *iod,
+					struct sipc_hdr *hdr, size_t len)
+{
+	u32 frame_len = len;
+
+	if (iod->format == IPC_FMT && len > SIPC_MULTIFMT_LEN) {
+		frame_len = min_t(unsigned, len, SIPC_MULTIFMT_LEN);
+		if (!hdr->multifmt)
+			hdr->multifmt = _sipc_get_multifmt_id();
+		if (len != frame_len) /* not last frame */
+			hdr->multifmt |= SIPC_MULTIFMT_MOREBIT;
+		return frame_len;
+	}
+	return frame_len;
+}
+
+/*
+ * sipc5_hdr_parse() family functions
+ *
+ * Parse ipc header config and remove header from rx packet
+ *
+ */
+static int sipc5_hdr_parse(struct io_device *iod, struct sk_buff *skb)
+{
+	struct sipc5_link_hdr *sipc5h = (struct sipc5_link_hdr *)skb->data;
+
+	/* First frame - remove SIPC5 header */
+	if (unlikely(!sipc5_start_valid(sipc5h))) {
+		mif_err("SIPC5 wrong CFG(0x%02x)%s\n", skb->data[0], iod->name);
+		return -EBADMSG;
+	}
+	skb_trim(skb, sipc5_get_packet_len(sipc5h)); /* remove pad */
+	skbpriv(skb)->sipch = (void *)skb->data;
+	skb_pull_inline(skb, sipc5_get_hdr_len(sipc5h));
+
+	return 0;
+}
+
+/* TODO: not verified */
+static int sipc5_hdr_parse_multifmt_continue(struct io_device *iod,
+					struct sk_buff *skb, unsigned size)
+{
+	struct sipc5_link_hdr *sipc5h =
+				(struct sipc5_link_hdr *)skbpriv(skb)->sipch;
+
+	if (sipc5h->cfg & SIPC5_HDR_CTRL && (sipc5h->ext.ctl & 0x80)) {
+		mif_info("multi-frame\n");
+		return 1;
 	}
 	return 0;
 }
 
-
-static int sipc5_hdr_data_done(struct io_device *iod, struct sk_buff *skb,
-								unsigned size)
+static int sipc5_hdr_parse_fragment(struct io_device *iod, struct sk_buff *skb)
 {
 	struct link_device *ld = skbpriv(skb)->ld;
 	struct header_data *hdr = &fragdata(iod, ld)->h_post;
-	struct sipc5_link_hdr *sipc_hdr;
-	int multiframe = 0;
+	struct sipc5_link_hdr *sipc5h;
+	unsigned header_len;
+	int ret;
 
-	if (iod->format == IPC_BOOT)
+	if (hdr->frag_len)
 		return 0;
 
+	ret = sipc5_hdr_parse(iod, skb);
+	if (ret < 0)
+		return ret;
+
+	sipc5h = (struct sipc5_link_hdr *)skbpriv(skb)->sipch;
+	hdr->len = sipc5_get_packet_len(sipc5h);
+	header_len = sipc5_get_hdr_len(sipc5h); /* Header len*/
+	memcpy(hdr->hdr, sipc5h, header_len);
+	hdr->frag_len = header_len;
+
+	return 0;
+}
+
+static int sipc5_hdr_parse_fragment_continue(struct io_device *iod,
+					struct sk_buff *skb, unsigned size)
+{
+	struct link_device *ld = skbpriv(skb)->ld;
+	struct header_data *hdr = &fragdata(iod, ld)->h_post;
+
 	hdr->frag_len += size;
-	if (hdr->len - hdr->frag_len) {
-		if (iod->format != IPC_RFS) {
-			mif_info("frag_len=%u, len=%u\n", hdr->frag_len,
-								hdr->len);
-			multiframe = 1;
-		}
-	} else {
+	if (hdr->len - hdr->frag_len == 0) {
+		mif_debug("done frag=%u\n", hdr->frag_len);
+		hdr->frag_len = 0;
+		return 0;
+	}
+
+	if (hdr->len < hdr->frag_len)
+		panic("HSIC - fail sip5.0 framming\n");
+
+	mif_info("frag_len=%u, len=%u\n", hdr->frag_len, hdr->len);
+
+	return 1;
+}
+
+static int sipc5_hdr_parse_legacy_rfs(struct io_device *iod,
+							struct sk_buff *skb)
+{
+	struct link_device *ld = skbpriv(skb)->ld;
+	struct header_data *hdr = &fragdata(iod, ld)->h_post;
+	struct rfs_hdr rfs_head;
+	int ret;
+
+	if (hdr->frag_len)
+		return 0;
+
+	ret = sipc5_hdr_parse_fragment(iod, skb);
+	if (unlikely(ret))
+		return ret;
+
+	memset(&rfs_head, 0x00, sizeof(struct rfs_hdr));
+	/* packet length + rfs length - sipc5 hdr */
+	rfs_head.len = hdr->len + sizeof(u32)
+		- sipc5_get_hdr_len((struct sipc5_link_hdr *)hdr->hdr);
+	memcpy(skb_push(skb, sizeof(u32)), &rfs_head.len, sizeof(u32));
+	hdr->len += sizeof(u32);
+
+	return 0;
+}
+
+static int sipc5_hdr_parse_legacy_rfs_continue(struct io_device *iod,
+					struct sk_buff *skb, unsigned size)
+{
+	struct link_device *ld = skbpriv(skb)->ld;
+	struct header_data *hdr = &fragdata(iod, ld)->h_post;
+
+	hdr->frag_len += size;
+	if (hdr->len - hdr->frag_len == 0) {
 		mif_debug("done frag=%u\n", hdr->frag_len);
 		hdr->frag_len = 0;
 	}
@@ -353,17 +531,11 @@ static int sipc5_hdr_data_done(struct io_device *iod, struct sk_buff *skb,
 	if (hdr->len < hdr->frag_len)
 		panic("HSIC - fail sip5.0 framming\n");
 
-	sipc_hdr = (struct sipc5_link_hdr *)hdr->hdr;
-	if (sipc_hdr->cfg & SIPC5_CTL_FIELD_EXIST
-						&& (sipc_hdr->ext.ctl & 0x80)) {
-		multiframe = 1;
-		mif_info("multi-frame\n");
-	}
-
-	return multiframe;
+	return 0;
 }
 
-#if 0 /*unused variable warning*/
+#if 0
+/* TODO: not verified */
 static void skb_queue_move(struct sk_buff_head *dst, struct sk_buff_head *src)
 {
 	/*TODO: need spinlock protection? */
@@ -372,32 +544,256 @@ static void skb_queue_move(struct sk_buff_head *dst, struct sk_buff_head *src)
 }
 #endif
 
-static int rx_skb_enqueue_iod(struct link_device *ld,
-			struct sipc5_link_hdr *sipc , struct sk_buff *skb)
+static struct io_device *get_frag_iod(struct io_device *iod,
+				struct link_device *ld, struct sk_buff *skb)
 {
-	struct io_device *iod; /* real iod */
-/*unused variable warning*/
-#if 0
-	int id;
-#endif
+	struct header_data *hdr = &fragdata(iod, ld)->h_data;
+	struct sipc5_link_hdr *sipc5h = (struct sipc5_link_hdr *)hdr->hdr;
 
-	iod = link_get_iod_with_channel(ld, sipc->ch);
-	if (unlikely(!iod)) {
-		mif_err("packet channel error(%d)\n", sipc->ch);
-		return -EINVAL;
+	return (link_get_iod_with_channel(ld, sipc5h->ch)) ?: NULL;
+}
+
+/* TODO: It will be simplify without padding ... */
+static int sipc5_recv_multipacket_to_each_skb(struct io_device *iod,
+				struct link_device *ld,	struct sk_buff *skb_in)
+{
+	int ret = 0;
+	struct sk_buff *skb;
+	unsigned pkt_len, hdr_len, rest_len, temp;
+	struct header_data *hdr = &fragdata(iod, ld)->h_data;
+	struct sipc5_link_hdr *sipc_hdr;
+
+	if (!hdr->frag_len)
+		goto next_frame;
+
+	/* Procss fragment packet */
+	sipc_hdr = (struct sipc5_link_hdr *)hdr->hdr;
+	hdr_len = sipc5_get_hdr_len(sipc_hdr);	/* Header length */
+	if (hdr->frag_len < hdr_len) {
+		/* Continue SIPC5 Header fragmentation */
+		temp = hdr_len - hdr->frag_len;
+		if (unlikely(skb_in->len < temp)) {
+			mif_err("skb_in too small len=%d\n", skb_in->len);
+			ret = -EINVAL;
+			goto exit;
+		}
+		memcpy(hdr->hdr + hdr->frag_len, skb_in->data, temp);
+		skb_pull_inline(skb_in, temp);
+		hdr->frag_len += temp;
+		hdr->len = sipc5_get_packet_len(sipc_hdr);
+
+		/* TODO: SIPC5 raw packet was send to network stack, we should
+		 * make a IP packet into a skb */
+
+		skb = alloc_skb(hdr_len, GFP_ATOMIC);
+		if (unlikely(!skb)) {
+			mif_err("fragHeader skb alloc fail\n");
+			ret = -ENOMEM;
+			goto exit;
+		}
+
+		memcpy(skb_put(skb, hdr_len), hdr->hdr, hdr_len);
+		skbpriv(skb)->ld = ld;
+		skbpriv(skb)->real_iod = NULL;
+
+		/* Send SIPC5 Header skb to next stage*/
+		ret = iod->ops.recv_demux(iod, ld, skb);
+		if (unlikely(ret < 0)) {
+			dev_kfree_skb_any(skb);
+			mif_err("skb enqueue fail\n");
+			goto exit;
+		}
 	}
 
-	skbpriv(skb)->iod = iod;
-	skbpriv(skb)->ld = ld;
+	/* rest fragment length */
+	rest_len = hdr->len - hdr->frag_len;
+	if (!rest_len) {
+		memset(hdr, 0x00, sizeof(struct header_data));
+		goto next_frame;
+	}
 
-	/* network device ?? */
-	if (iod->io_typ == IODEV_NET)
-		return rx_multi_pdp(skb);
+	skb = skb_clone(skb_in, GFP_ATOMIC);
+	if (unlikely(!skb)) {
+		mif_err("rx skb clone fail\n");
+		ret = -ENOMEM;
+		goto exit;
+	}
+	/*pr_skb("frag", skb);*/
+	mif_ipc_log(MIF_IPC_FLAG, iod->msd, skb->data, skb->len);
+	skbpriv(skb)->real_iod = hdr->frag_len ?
+				get_frag_iod(iod, ld, skb) : NULL;
+	if (skb->len < rest_len) {	/* continous fragment packet */
+		hdr->frag_len += skb->len;
+		skb_pull_inline(skb_in, skb->len);
+	} else {				/* last fragment packet */
+		skb_trim(skb, rest_len);
+		hdr->frag_len += skb->len;
+		skb_pull_inline(skb_in, rest_len);
+		hdr->frag_len = 0;		/* fragment done */
+		mif_debug("frag done\n");
+	}
+	goto send_next_stage;
 
-	if (sipc->cfg & SIPC5_CTL_FIELD_EXIST) {
+next_frame:
+	skb = skb_clone(skb_in, GFP_ATOMIC);
+	if (unlikely(!skb)) {
+		mif_err("rx skb clone fail\n");
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	/*pr_skb("new", skb);*/
+	mif_ipc_log(MIF_IPC_AP2RL, iod->msd, skb->data, skb->len);
+	sipc_hdr = (struct sipc5_link_hdr *)skb->data;
+	if (unlikely(!sipc5_start_valid(sipc_hdr))) {
+		mif_com_log(iod->msd, "SIPC5 wrong CFG(0x%02x) %s\n",
+			skb->data[0], ld->name);
+		mif_err("SIPC5 wrong CFG(0x%02x) %s\n", skb->data[0], ld->name);
+		dev_kfree_skb_any(skb);
+		ret = -EBADMSG;
+		goto exit;
+	}
+	pkt_len = sipc5_get_packet_len(sipc_hdr); /* Packet length */
+	if (skb->len < pkt_len) {
+		/* data fragment - fragment skb or large RFS packets.
+		 * Save the SIPC5 header to iod's fragdata buffer and send
+		 * data continuosly, then if frame was complete, clear the
+		 * fragdata buffer */
+		memset(hdr, 0x00, sizeof(struct header_data));
+		memcpy(hdr->hdr, skb->data, sipc5_get_hdr_len(sipc_hdr));
+		hdr->len = pkt_len;
+		hdr->frag_len = skb->len;
+
+		skb_trim(skb,  skb->len); /* ignore padding data */
+		skb->truesize = SKB_TRUESIZE(skb->len); /* tcp_rmem */
+		skb_pull_inline(skb_in, skb_in->len);
+	} else {
+		skb_trim(skb, pkt_len);
+		skb->truesize = SKB_TRUESIZE(pkt_len); /* tcp_rmem */
+		skb_pull_inline(skb_in, pkt_len);
+	}
+	skbpriv(skb)->real_iod = hdr->frag_len ?
+				get_frag_iod(iod, ld, skb) : NULL;
+send_next_stage:
+	ret =  iod->ops.recv_demux(iod, ld, skb);
+	if (unlikely(ret < 0)) {
+		dev_kfree_skb_any(skb);
+		mif_err("skb enqueue fail\n");
+		goto exit;
+	}
+
+	if (skb_in->len) {
+		sipc_hdr = (struct sipc5_link_hdr *)skb_in->data;
+		hdr_len = sipc5_get_hdr_len(sipc_hdr);	/* Header length */
+		if (unlikely(skb_in->len < hdr_len)) {
+			memcpy(hdr->hdr, skb_in->data, skb_in->len);
+			hdr->frag_len = skb_in->len;
+			/* exit and conitune next rx packet */
+		} else {
+			goto next_frame;
+		}
+	}
+	mif_debug("end of packets\n");
+exit:
+	/* free multipacket skb */
+	dev_kfree_skb_any(skb_in);
+	return ret;
+}
+
+/*
+ * sipcx_recv_mux() family function
+ *
+ * Find the io device with IPC header channel id
+ *
+ */
+
+static int sipc5_recv_demux(struct io_device *iod,
+				struct link_device *ld, struct sk_buff *skb)
+{
+	struct sipc5_link_hdr *sipc5h = (struct sipc5_link_hdr *)skb->data;
+	struct io_device *real_iod = skbpriv(skb)->real_iod ?
+		skbpriv(skb)->real_iod :
+		((link_get_iod_with_channel(ld, sipc5h->ch)) ?: iod);
+
+	return real_iod->ops.recv_skb_packet(real_iod, ld, skb);
+}
+
+static int sipc5_recv_demux_ipcloopback(struct io_device *iod,
+				struct link_device *ld, struct sk_buff *skb)
+{
+	struct sipc5_link_hdr *sipc5h = (struct sipc5_link_hdr *)skb->data;
+	struct sipc_main_hdr *ipc = (struct sipc_main_hdr *)(skb->data +
+			sipc5_get_hdr_len((struct sipc5_link_hdr *)skb->data));
+	struct header_data *hdr = &fragdata(iod, ld)->h_data;
+	struct sipc5_link_hdr *frag_hdr = (struct sipc5_link_hdr *)hdr->hdr;
+	struct io_device *real_iod = skbpriv(skb)->real_iod;
+
+	/* if sipc_hdr valid & main_cmd is 0x91, 0x90 */
+	if (sipc5_start_valid(sipc5h) && sipc5h->ch == SIPC5_CH_ID_FMT_0
+			&& (ipc->main_cmd == 0x90 || ipc->main_cmd == 0x91)) {
+		if (real_iod)
+			frag_hdr->ch = SIPC5_CH_ID_FMT_9;
+		real_iod = link_get_iod_with_channel(ld, SIPC5_CH_ID_FMT_9);
+		mif_info("%s(%d): IPC_LB first pkt\n",
+						real_iod->name, skb->len);
+	} else if (!real_iod) {
+		real_iod = link_get_iod_with_channel(ld, sipc5h->ch) ?: iod;
+	}
+
+	return real_iod->ops.recv_skb_packet(real_iod, ld, skb);
+}
+
+/*
+ * sipc_recv_skb() family functions
+ *
+ * Process single IPC packet.
+ *
+ */
+static int sipc_recv_skb_miscdev(struct io_device *iod,
+				struct link_device *ld,	struct sk_buff *skb)
+{
+	int ret;
+
+	/* If the client is NOT consuming the packets, don't accumulate
+	 * the packets infinitely. Instead, drop the packets to avoid OOM. */
+	if (!atomic_read(&iod->opened) || (iod->rxq_max &&
+		iod->rxq_max < skb_queue_len(&iod->sk_rx_q))) {
+		printk_ratelimited(
+			KERN_ERR "mif: pkt(iod=%s) dropped\n", iod->name);
+		ret = skb->len;
+		dev_kfree_skb_any(skb);
+		return ret;
+	}
+
+	if (iod->waketime)
+		wake_lock_timeout(&iod->wakelock, iod->waketime);
+
+	skb_queue_tail(&iod->sk_rx_q, skb);
+	wake_up(&iod->wq);
+
+	return skb->len;
+}
+
+static int sipc5_recv_skb_miscdev_multifmt(struct io_device *iod,
+				struct link_device *ld,	struct sk_buff *skb)
+{
+	int ret;
+	struct sipc5_link_hdr *sipc5h = (struct sipc5_link_hdr *)skb->data;
+
+	if (!atomic_read(&iod->opened)) {
+		ret = skb->len;
+		dev_kfree_skb_any(skb);
+		return ret;
+	}
+
+	if (iod->waketime)
+		wake_lock_timeout(&iod->wakelock, iod->waketime);
+
+	if (sipc5h->cfg & SIPC5_HDR_CTRL) {
 		mif_err("SIPC5_CTL_FILED not support\n");
 		return -EINVAL;
-/*
+
+/* TODO: verify the processing of multiframe packet
 		id = sipc->ext.ctl & 0x7F;
 		if (unlikely(id >= 128)) {
 			mif_err("multi-packet boundary over = %d\n", id);
@@ -413,215 +809,199 @@ static int rx_skb_enqueue_iod(struct link_device *ld,
 		skb_queue_tail(&iod->sk_rx_q, skb);
 		wake_up(&iod->wq);
 	}
-
-	return 0;
+	return skb->len;
 }
 
-static int rx_sipc5_pick_each_skb(struct io_device *iod, struct link_device *ld,
-							struct sk_buff *skb_in)
+#ifdef CONFIG_LINK_ETHERNET
+#define sipc_type_trans eth_type_trans
+#else
+static __be16 sipc_type_trans(struct sk_buff *skb, struct net_device *dev)
 {
-	int ret = 0;
-	struct sk_buff *skb;
-	unsigned len, temp, pad_len;
-	struct header_data *hdr = &fragdata(iod, ld)->h_data;
-	struct sipc5_link_hdr *sipc_hdr;
+	struct iphdr *iphdr = (struct iphdr *)skb->data;
+	skb->dev = dev;
+	/* to cover non-IP based loopback, set '0' when it's not an IP packet */
+	if (iphdr->version == IP6VERSION)
+		return htons(ETH_P_IPV6);
+	else if (iphdr->version == IP4VERSION)
+		return htons(ETH_P_IP);
+	else
+		return htons(0);
+}
+#endif
 
-	if (!hdr->frag_len)
-		goto next_frame;
+static int sipc_recv_skb_netdev(struct io_device *iod,
+				struct link_device *ld,	struct sk_buff *skb)
+{
+	int ret;
 
-	/* Procss fragment packet */
-	sipc_hdr = (struct sipc5_link_hdr *)hdr->hdr;
-	len = sipc5_get_hdr_len(sipc_hdr);	/* Header length */
-	if (hdr->frag_len < len) {
-		/* Continue SIPC5 Header fragmentation */
-		temp = len - hdr->frag_len;
-		if (unlikely(skb_in->len < temp)) {
-			mif_err("skb_in too small len=%d\n", skb_in->len);
-			ret = -EINVAL;
-			goto exit;
-		}
-		memcpy(hdr->hdr + hdr->frag_len, skb_in->data, temp);
-		skb_pull_inline(skb_in, temp);
-		hdr->frag_len += temp;
-		hdr->len = sipc5_get_packet_len(sipc_hdr);
+	if (fd_waketime)
+		wake_lock_timeout(&iod->wakelock, iod->waketime);
 
-		/* TODO: SIPC5 raw packet was send to network stack, we should
-		 * make a IP packet into a skb */
-
-		skb = alloc_skb(len, GFP_ATOMIC);
-		if (unlikely(!skb)) {
-			mif_err("fragHeader skb alloc fail\n");
-			ret = -ENOMEM;
-			goto exit;
-		}
-		memcpy(skb_put(skb, len), hdr->hdr, len);
-		/* Send SIPC5 Header skb to next stage*/
-		ret =  rx_skb_enqueue_iod(ld, sipc_hdr, skb);
-		if (unlikely(ret)) {
+	if (iod->ops.header_parse) {
+		ret = iod->ops.header_parse(iod, skb);
+		if (unlikely(ret < 0)) {
 			dev_kfree_skb_any(skb);
-			mif_err("skb enqueue fail\n");
-			goto exit;
+			return ret;
 		}
 	}
-	pad_len = sipc5_get_pad_len(sipc_hdr, hdr->len); /* padding len */
-	len = hdr->len - hdr->frag_len;		/* rest fragment length*/
-	if (len <= pad_len) {			/* trim pad, fragment done */
-		skb_pull_inline(skb_in, len);
-		memset(hdr, 0x00, sizeof(struct header_data));
-		goto next_frame;
-	}
 
-	skb = skb_clone(skb_in, GFP_ATOMIC);
-	if (unlikely(!skb)) {
-		mif_err("rx skb clone fail\n");
-		ret = -ENOMEM;
-		goto exit;
-	}
-	/*pr_skb("frag", skb);*/
-	mif_ipc_log(MIF_IPC_FLAG, iod->msd, skb->data, skb->len);
-	if (skb->len < len) {			/* continous fragment packet */
-		hdr->frag_len += skb->len;
-		skb_pull_inline(skb_in, skb->len);
-	} else {				/* last fragment packet */
-		skb_trim(skb, len);
-		if (skb_in->len < len + pad_len) { /* ignore rest padding */
-			hdr->frag_len += skb->len;
-			skb_pull_inline(skb_in, skb_in->len);
-		} else {
-			skb_pull_inline(skb_in, len + pad_len);
-			hdr->frag_len = 0;		/* fragment done */
-			mif_debug("frag done\n");
-		}
-	}
-	goto send_next_stage;
+	skb->protocol = sipc_type_trans(skb, iod->ndev);
+	iod->ndev->stats.rx_packets++;
+	iod->ndev->stats.rx_bytes += skb->len;
 
-next_frame:
-	skb = skb_clone(skb_in, GFP_ATOMIC);
-	if (unlikely(!skb)) {
-		mif_err("rx skb clone fail\n");
-		ret = -ENOMEM;
-		goto exit;
-	}
-	/*pr_skb("new", skb);*/
-	mif_ipc_log(MIF_IPC_AP2RL, iod->msd, skb->data, skb->len);
-	sipc_hdr = (struct sipc5_link_hdr *)skb->data;
-	if (unlikely(!sipc5_start_valid(sipc_hdr))) {
-		mif_com_log(iod->msd, "SIPC5 wrong CFG(0x%02x) %s\n",
-			skb->data[0], ld->name);
-		mif_err("SIPC5 wrong CFG(0x%02x) %s\n", skb->data[0], ld->name);
-		dev_kfree_skb_any(skb);
-		ret = -EBADMSG;
-		goto exit;
-	}
-	len = sipc5_get_packet_len(sipc_hdr); /* Packet length */
-	pad_len = sipc5_get_pad_len(sipc_hdr, len);
-	if (skb->len < len + pad_len) {
-		/* data fragment - fragment skb or large RFS packets.
-		 * Save the SIPC5 header to iod's fragdata buffer and send
-		 * data continuosly, then if frame was complete, clear the
-		 * fragdata buffer */
-		memset(hdr, 0x00, sizeof(struct header_data));
-		memcpy(hdr->hdr, skb->data, sipc5_get_hdr_len(sipc_hdr));
-		hdr->len = len;
-		hdr->frag_len = skb->len;
+	ret = (in_interrupt()) ? netif_rx(skb) : netif_rx_ni(skb);
+	if (ret != NET_RX_SUCCESS)
+		printk_ratelimited(KERN_ERR "%s: ERR! netif_rx fail (err %d)\n",
+			iod->name, ret);
 
-		skb_trim(skb,  min(skb->len, len)); /* ignore padding data */
-		skb_pull_inline(skb_in, skb_in->len);
-	} else {
-		skb_trim(skb, len);
-		skb_pull_inline(skb_in, len + pad_len);
-	}
-
-send_next_stage:
-	/* send skb to next stage */
-	ret =  rx_skb_enqueue_iod(ld, sipc_hdr, skb);
-	if (unlikely(ret)) {
-		dev_kfree_skb_any(skb);
-		mif_err("skb enqueue fail\n");
-		goto exit;
-	}
-
-	if (skb_in->len) {
-		sipc_hdr = (struct sipc5_link_hdr *)skb_in->data;
-		len = sipc5_get_hdr_len(sipc_hdr);	/* Header length */
-		if (unlikely(skb_in->len < len)) {
-			memcpy(hdr->hdr, skb_in->data, skb_in->len);
-			hdr->frag_len = skb_in->len;
-			/* exit and conitune next rx packet */
-		} else {
-			goto next_frame;
-		}
-	}
-	mif_debug("end of packets\n");
-exit:
 	return ret;
 }
 
-/* called from link device when a packet arrives for this io device */
-static int io_dev_recv_skb_from_link_dev(struct io_device *iod,
-		struct link_device *ld, struct sk_buff *skb_in)
+/* TODO: not verified */
+static int sipc_recv_skb_netdev_handover(struct io_device *iod,
+				struct link_device *ld,	struct sk_buff *skb)
 {
-	struct sk_buff *skb;
-	int err;
+	int ret;
+	struct ethhdr *ehdr;
+	const char source[ETH_ALEN] = SOURCE_MAC_ADDR;
 
-	if (!skb_in) {
-		mif_info("%s: ERR! !data\n", ld->name);
-		return -EINVAL;
-	}
+	if (fd_waketime)
+		wake_lock_timeout(&iod->wakelock, iod->waketime);
 
-	if (skb_in->len <= 0) {
-		mif_info("%s: ERR! len %d <= 0\n", ld->name, skb_in->len);
-		return -EINVAL;
-	}
-
-	switch (iod->format) {
-	case IPC_FMT:
-	case IPC_RAW:
-	case IPC_RFS:
-	case IPC_MULTI_RAW:
-		if (iod->waketime)
-			wake_lock_timeout(&iod->wakelock, iod->waketime);
-
-		err = rx_sipc5_pick_each_skb(iod, ld, skb_in);
-		if (err < 0) {
-			mif_com_log(iod->msd,
-				"%s: ERR! rx_frame_from_link fail (err %d)\n",
-				ld->name, err);
-			mif_info("%s: ERR! rx_frame_from_link fail (err %d)\n",
-				ld->name, err);
+	if (iod->ops.header_parse) {
+		ret = iod->ops.header_parse(iod, skb);
+		if (unlikely(ret < 0)) {
+			dev_kfree_skb_any(skb);
+			return ret;
 		}
+	}
 
-		return err;
+	skb->protocol = sipc_type_trans(skb, iod->ndev);
+	skb_push(skb, sizeof(struct ethhdr));
+	ehdr = (void *)skb->data;
+	memcpy(ehdr->h_dest, iod->ndev->dev_addr, ETH_ALEN);
+	memcpy(ehdr->h_source, source, ETH_ALEN);
+	ehdr->h_proto = skb->protocol;
+	skb->ip_summed = CHECKSUM_UNNECESSARY;
+	skb_reset_mac_header(skb);
+	skb_pull(skb, sizeof(struct ethhdr));
 
-	case IPC_RAW_NCM:
-		if (fd_waketime)
-			wake_lock_timeout(&iod->wakelock, fd_waketime);
+	iod->ndev->stats.rx_packets++;
+	iod->ndev->stats.rx_bytes += skb->len;
 
-		skbpriv(skb_in)->ld = ld;
-		skbpriv(skb_in)->iod = iod;
-		skbpriv(skb_in)->real_iod = iod;
-		return rx_multi_pdp(skb_in);
+	ret = (in_interrupt()) ? netif_rx(skb) : netif_rx_ni(skb);
+	if (ret != NET_RX_SUCCESS)
+		mif_info("%s: ERR! netif_rx fail (err %d)\n", iod->name, ret);
 
-	case IPC_CMD:
-	case IPC_BOOT:
-	case IPC_RAMDUMP:
-			/* save packet to sk_buff */
-		skb = skb_clone(skb_in, GFP_ATOMIC);
-		if (unlikely(!skb)) {
-			mif_err("boot skb clone fail\n");
-			return -ENOMEM;
-		}
-		mif_debug("boot len : %d\n", skb_in->len);
-		skbpriv(skb)->ld = ld;
-		skb_queue_tail(&iod->sk_rx_q, skb);
-		wake_up(&iod->wq);
+	return ret;
+}
 
-		return skb_in->len;
-
-	default:
-		mif_info("%s: ERR! unknown format %d\n", ld->name, iod->format);
+static int io_dev_recv_skb_from_link_dev(struct io_device *iod,
+		struct link_device *ld, struct sk_buff *skb)
+{
+	if (!skb || skb->len <= 0) {
+		mif_info("%s: invalid skb\n", ld->name);
 		return -EINVAL;
 	}
+
+	skbpriv(skb)->ld = ld;
+	skbpriv(skb)->iod = iod;
+
+	if (!iod->ops.recv_skb_packet) {
+		mif_err("ops->recv_skb_signle is mandatory!!\n");
+		return -EINVAL;
+	}
+
+	/* Call SIPC header deframming chain :
+	     recv_skb_fragment() -> recv_demux() -> recv_skb_packet()
+	   - recv_skb_fragment()
+		: Divide the linear multiframe packet to single skb then
+		call the recv_demux()
+		Ex) HSIC cdc-acm fmt/rfs serial SIPC muxed packets.
+	   - recv_demux()
+		: Find the real iodevice  frame SIPC muxed packet then
+		call the recv_skb_packet()
+		Ex) RFS over CDC-NCM or DPRAM, link device send with single
+		SIPC muxed packet.
+	   - recv_skb_packet()
+		: Process rx packet with iod device type and SIPC header.
+	*/
+	if (iod->ops.recv_skb_fragment)
+		return iod->ops.recv_skb_fragment(iod, ld, skb);
+	if (iod->ops.recv_demux)
+		return iod->ops.recv_demux(iod, ld, skb);
+
+	return iod->ops.recv_skb_packet(iod, ld, skb);
+}
+
+static inline void sipc_print_ops(struct io_device *iod)
+{
+	/* Print SIPC mandatory ops */
+	mif_info("%s: %pf(), %pf(), %pf(), %pf()\n", iod->name,
+		iod->ops.header_create,	iod->ops.header_parse,
+		iod->ops.recv_demux, iod->ops.recv_skb_packet);
+	/* Print SIPC optional ops */
+	if (iod->ops.multifmt_length)
+		mif_info("multifmt_length = %pf()\n",
+			iod->ops.multifmt_length);
+	if (iod->ops.header_parse_continue)
+		mif_info("header_parse_continue = %pf()\n",
+			iod->ops.header_parse_continue);
+	if (iod->ops.recv_skb_fragment)
+		mif_info("recv_skb_fragment = %pf()\n",
+			iod->ops.recv_skb_fragment);
+}
+
+static void sipc5_get_ops(struct io_device *iod)
+{
+	iod->headroom += SIPC_HDR_LEN_MAX;
+	iod->ops.recv_demux = sipc5_recv_demux;
+	iod->ops.header_create = sipc5_hdr_create;
+	iod->ops.header_parse = sipc5_hdr_parse;
+
+	if (iod->attr & IODEV_ATTR(ATTR_MULTIFMT)) {
+		iod->ops.header_create = sipc5_hdr_create_multifmt;
+		iod->ops.multifmt_length = sipc_hdr_multifmt_length;
+		iod->ops.recv_skb_packet = sipc5_recv_skb_miscdev_multifmt;
+		iod->ops.header_parse_continue =
+			sipc5_hdr_parse_multifmt_continue;
+	}
+	if (iod->attr & IODEV_ATTR(ATTR_RX_FRAGMENT)) {
+		iod->ops.header_parse = sipc5_hdr_parse_fragment;
+		iod->ops.header_parse_continue =
+					sipc5_hdr_parse_fragment_continue;
+		iod->ops.recv_skb_fragment =
+					sipc5_recv_multipacket_to_each_skb;
+	}
+	if (iod->attr & IODEV_ATTR(ATTR_LEGACY_RFS)) {
+		iod->ops.header_create = sipc5_hdr_create_legacy_rfs;
+		iod->ops.header_parse = sipc5_hdr_parse_legacy_rfs;
+		iod->ops.header_parse_continue =
+					sipc5_hdr_parse_legacy_rfs_continue;
+	}
+	if (iod->attr & IODEV_ATTR(ATTR_HANDOVER) && iod->io_typ == IODEV_NET
+		&& iod->id >= PS_DATA_CH_0 && iod->id <= PS_DATA_CH_LAST) {
+		iod->ops.header_create = sipc5_hdr_create_handover;
+		iod->ops.recv_skb_packet = sipc_recv_skb_netdev_handover;
+	}
+	sipc_print_ops(iod);
+}
+
+/*TODO: not verified */
+static void sipc4_get_ops(struct io_device *iod)
+{
+	/* TODO:*/
+}
+
+static void sipc_get_ops(struct io_device *iod)
+{
+	iod->ops.recv_skb_packet = (iod->io_typ == IODEV_NET)
+		? sipc_recv_skb_netdev : sipc_recv_skb_miscdev;
+
+	if (iod->attr & IODEV_ATTR(ATTR_SIPC4))
+		return sipc4_get_ops(iod);
+	if (iod->attr & IODEV_ATTR(ATTR_SIPC5))
+		return sipc5_get_ops(iod);
 }
 
 /* inform the IO device that the modem is now online or offline or
@@ -687,6 +1067,7 @@ static int misc_open(struct inode *inode, struct file *filp)
 			if (ret < 0) {
 				mif_info("%s: init_comm fail(%d)\n",
 					ld->name, ret);
+				atomic_dec(&iod->opened);
 				return ret;
 			}
 		}
@@ -710,8 +1091,10 @@ static int misc_release(struct inode *inode, struct file *filp)
 		if (IS_CONNECTED(iod, ld)) {
 			struct header_data *hdr = &fragdata(iod, ld)->h_post;
 			if (hdr->frag_len > 0) {
-				mif_err("fragdata should be cleared.(%d)\n", hdr->frag_len);
-				memset(fragdata(iod, ld), 0x00, sizeof(struct fragmented_data));
+				mif_err("fragdata should be cleared.(%d)\n",
+								hdr->frag_len);
+				memset(fragdata(iod, ld),
+					0x00, sizeof(struct fragmented_data));
 			}
 			if (ld->terminate_comm)
 				ld->terminate_comm(ld, iod);
@@ -727,24 +1110,42 @@ static unsigned int misc_poll(struct file *filp, struct poll_table_struct *wait)
 {
 	struct io_device *iod = (struct io_device *)filp->private_data;
 
+	if (!iod)
+		return POLLERR;
+
 	if (skb_queue_empty(&iod->sk_rx_q))
 		poll_wait(filp, &iod->wq, wait);
 
-	if (!skb_queue_empty(&iod->sk_rx_q) &&
-	    iod->mc->phone_state != STATE_OFFLINE) {
-		return POLLIN | POLLRDNORM;
-	} else if ((iod->mc->phone_state == STATE_CRASH_RESET) ||
-		   (iod->mc->phone_state == STATE_CRASH_EXIT) ||
-		   (iod->mc->phone_state == STATE_NV_REBUILDING) ||
-		   (iod->mc->sim_state.changed)) {
-		if (iod->format == IPC_RAW || iod->id == 0x1C) {
-			msleep(20);
-			return 0;
+	switch (iod->mc->phone_state) {
+	case STATE_BOOTING:
+	case STATE_ONLINE:
+		if (!iod->mc->sim_state.changed) {
+			if (!skb_queue_empty(&iod->sk_rx_q))
+				return POLLIN | POLLRDNORM;
+			else /* wq is waken up without rx, return for wait */
+				return 0;
 		}
-		return POLLHUP;
-	} else {
-		return 0;
+		/* fall through, when sim state has been changed */
+	case STATE_CRASH_EXIT:
+	case STATE_CRASH_RESET:
+	case STATE_NV_REBUILDING:
+		/* report crash only if iod is fmt/boot device */
+		if (iod->format == IPC_FMT || iod->format == IPC_BOOT)
+			return POLLHUP;
+		/* otherwise,
+		 * give delay to prevent infinite sys_poll call from select()
+		 * without 'sleep' user call takes almost 100% cpu usage when
+		 * it is looked up by 'top' command.
+		 */
+		msleep(20);
+		break;
+	case STATE_OFFLINE:
+		/* fall through */
+	default:
+		break;
 	}
+
+	return 0;
 }
 
 static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -858,22 +1259,7 @@ static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (ret < 0)
 			return -EFAULT;
 
-		mif_dump_log(iod->mc->msd, iod);
-		return 0;
-
-	case IOCTL_MIF_DPRAM_DUMP:
-#ifdef CONFIG_LINK_DEVICE_DPRAM
-		if (iod->mc->mdm_data->link_types & LINKTYPE(LINKDEV_DPRAM)) {
-			size = iod->mc->mdm_data->dpram_ctl->dp_size;
-			ret = copy_to_user((void __user *)arg, &size,
-				sizeof(unsigned long));
-			if (ret < 0)
-				return -EFAULT;
-			mif_dump_dpram(iod);
-			return 0;
-		}
-#endif
-		return -EINVAL;
+		return mif_dump_log(iod->mc->msd, iod);
 
 	default:
 		 /* If you need to handle the ioctl for specific link device,
@@ -888,62 +1274,9 @@ static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return 0;
 }
 
-static unsigned get_fmt_multiframe_id(void)
-{
-	/*TODO: get unique fmt multiframe id*/
-	return 0;
-}
-
-/* return copied count size
- */
-static unsigned sipc5_hdr_build_frame(struct sipc5_link_hdr *hdr,
-	struct io_device *iod, struct link_device *ld, unsigned count,
-							unsigned *mfrm)
-{
-	unsigned hdr_len, len = count;
-	unsigned frm_id = (mfrm) ? *mfrm : 0; /*vnet_xmit mfrm not required*/
-	unsigned rfs_length_hdr = (iod->format == IPC_RFS) ? sizeof(u32) : 0;
-
-	if (iod->ipc_version == NO_SIPC_VER || iod->format == IPC_BOOT)
-		return 0;
-
-	hdr->cfg = SIPC5_START_MASK;
-	hdr->ch = iod->id;
-
-	if ((ld->fmt_multiframe && iod->format == IPC_FMT && len > 2048)
-								|| frm_id) {
-		len = min_t(unsigned, len, 2048);
-		hdr_len = SIPC5_HDR_CTRL_LEN;
-		hdr->cfg |= (SIPC5_EXT_FIELD_EXIST | SIPC5_CTL_FIELD_EXIST);
-		hdr->len = hdr_len + len;
-		if (mfrm && !frm_id) {/* first of multiframe */
-			*mfrm = get_fmt_multiframe_id();
-			frm_id = *mfrm;
-		}
-		hdr->ext.ctl = frm_id & 0x7F;
-		if (len != count) /* not last frame */
-			hdr->ext.ctl |= 0x80;
-/*	} else if (iod->format == IPC_RFS) {
-		hdr->cfg |= SIPC5_EXT_FIELD_EXIST;
-		hdr_len = SIPC5_HDR_EXT_LEN;
-		*((u32 *)&hdr->len) = (u32)(len + hdr_len - rfs_length_hdr); */
-	} else if (len > 0xFFFF - SIPC5_HDR_LEN_MAX) {
-		hdr->cfg |= SIPC5_EXT_FIELD_EXIST;
-		hdr_len = SIPC5_HDR_EXT_LEN;
-		*((u32 *)&hdr->len) = (u32)(len + hdr_len - rfs_length_hdr);
-	} else {
-		hdr_len = SIPC5_HDR_LEN;
-		hdr->len = (u16)(len + hdr_len - rfs_length_hdr);
-	}
-	if (ld->aligned)
-		hdr->cfg |= SIPC5_PADDING_EXIST;
-	return hdr_len;
-}
-
 static void check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
 {
-
-	struct sipc_fmt_hdr *ipc;
+	struct sipc_main_hdr *ipc;
 	struct sk_buff *skb_bk;
 	struct link_device *ld = skbpriv(skb)->ld;
 	int ret;
@@ -953,18 +1286,23 @@ static void check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
 						|| iod->format != IPC_FMT)
 		return;
 
-	ipc = (struct sipc_fmt_hdr *)(skb->data + sipc5_get_hdr_len(
+	ipc = (struct sipc_main_hdr *)(skb->data + sipc5_get_hdr_len(
 					(struct sipc5_link_hdr *)skb->data));
 	if (ipc->main_cmd == 0x90) { /* loop-back */
+		int timeout;
 		skb_bk = skb_clone(skb, GFP_KERNEL);
 		if (!skb_bk) {
 			mif_err("SKB clone fail\n");
 			return;
 		}
 		ret = ld->send(ld, iod,	skb_bk);
-		if (ret < 0) {
+		if (ret < 0)
 			mif_err("ld->send fail (%s, err %d)\n", iod->name, ret);
-		}
+		/* Because CP IPC loop period is 5 second, we can try variery
+		 * timmging with wakelock 2000 ~ 4555ms */
+		timeout = (jiffies & 0x1ff) + HZ * 2;
+		wake_lock_timeout(&iod->wakelock, timeout);
+		mif_debug("lb wakelock = %d\n", jiffies_to_msecs(timeout));
 	}
 	return;
 }
@@ -998,9 +1336,6 @@ static size_t _boot_write(struct io_device *iod, const char __user *buf,
 		rest_len -= frame_len;
 		cur += frame_len;
 
-		skbpriv(skb)->iod = iod;
-		skbpriv(skb)->ld = ld;
-
 		/* non-zerolength packet*/
 		if (rest_len)
 			skbpriv(skb)->nzlp = true;
@@ -1016,61 +1351,42 @@ static size_t _boot_write(struct io_device *iod, const char __user *buf,
 	return count;
 }
 
-#define ALIGN_BYTE 4
-#define SIPC_ALIGN(x) ALIGN(x, ALIGN_BYTE)
-#define SIPC_PADLEN(x) (ALIGN(x, ALIGN_BYTE) - x)
 static ssize_t misc_write(struct file *filp, const char __user *data,
 			size_t count, loff_t *fpos)
 {
 	struct io_device *iod = (struct io_device *)filp->private_data;
 	struct link_device *ld = get_current_link(iod);
 	struct sk_buff *skb;
+	struct sipc_hdr hdr = {.multifmt = 0};
 	int ret;
-	struct sipc5_link_hdr hdr;
-	unsigned len, headroom = 0, copied = 0, fmt_mfrm_id = 0, tx_size;
+	unsigned len = count, copied = 0, tx_size;
 
-	if (iod->format <= IPC_RFS && iod->id == 0)
-		return -EINVAL;
+multifmt:
+	len = (iod->ops.multifmt_length) ?
+		iod->ops.multifmt_length(iod, &hdr, count) : count;
 
-fmt_multiframe:
-	headroom = sipc5_hdr_build_frame(&hdr, iod, ld, count - copied,
-								&fmt_mfrm_id);
-	len = headroom ? sipc5_get_packet_len(&hdr) - headroom : count;
-	skb = alloc_skb(SIPC_ALIGN(len + headroom), GFP_KERNEL);
+	skb = alloc_skb(len + iod->headroom + 3, GFP_KERNEL);
 	if (!skb) {
-		if (len > MAX_BOOTDATA_SIZE && iod->format == IPC_BOOT) {
-			mif_info("large alloc fail\n");
-			return _boot_write(iod, data, count);
-		}
-		mif_err("alloc_skb fail (%s, size:%d)\n", iod->name,
-							SIPC_ALIGN(len));
+		if (len > MAX_BOOTDATA_SIZE && iod->format == IPC_BOOT)
+			return _boot_write(iod, data, len);
+
+		mif_err("alloc_skb fail(%s, %d+)\n", iod->name, len);
 		return -ENOMEM;
 	}
-
-	if (headroom) {					/*Copy SIPC header*/
-		if (iod->format == IPC_RFS) {
-			copied += sizeof(u32);
-			if (len + sizeof(u32) != *((u32 *)data))
-				mif_err("WARN!! rfs len(%u), write len(%u)\n",
-					len, *((u32 *)data));
-			mif_debug("rfs: count:%u, hdr:%u, pkt:%u, write:%u",
-				count, headroom, len, *((u32 *)data));
-		}
-		memcpy(skb_put(skb, headroom), &hdr, headroom);
+	if (iod->headroom) {
+		hdr.hdr_size = sipc5_get_header_size(&hdr, len);
+		skb_reserve(skb, hdr.hdr_size);
 	}
+
 	if (copy_from_user(skb_put(skb, len), data + copied, len) != 0) {
 		if (skb)
 			dev_kfree_skb_any(skb);
 		return -EFAULT;
 	}
 	copied += len;
-	if (ld->aligned) {				/*Add 4byte pad*/
-		skb_set_tail_pointer(skb, SIPC_ALIGN(skb->len));
-		skb->len = SIPC_ALIGN(skb->len);
-	}
 
-	skbpriv(skb)->iod = iod;
-	skbpriv(skb)->ld = ld;
+	if (iod->ops.header_create)
+		iod->ops.header_create(iod, &hdr, skb);
 
 	tx_size = skb->len;
 	ret = ld->send(ld, iod, skb);
@@ -1079,14 +1395,14 @@ fmt_multiframe:
 		return ret;
 	}
 
-	if (ld->fmt_multiframe && iod->format == IPC_FMT && copied < count) {
-		mif_info("continoue fmt multiframe(%u/%u)\n", copied, count);
-		goto fmt_multiframe;
-	}
-
 	if (ret != tx_size)
 		mif_info("wrong tx size (%s, count:%d copied:%d ret:%d)\n",
 			iod->name, count, tx_size, ret);
+
+	if (iod->format == IPC_FMT && copied < count) {
+		mif_info("continoue fmt multiframe(%u/%u)\n", copied, count);
+		goto multifmt;
+	}
 
 	return count;
 }
@@ -1098,34 +1414,34 @@ static ssize_t misc_read(struct file *filp, char *buf, size_t count,
 	struct sk_buff_head *rxq = &iod->sk_rx_q;
 	struct sk_buff *skb;
 	unsigned copied = 0, len;
-	int status;
+	int status = 0;
 
 continue_multiframe:
 	skb = skb_dequeue(rxq);
 	if (!skb) {
-		mif_info("%s: ERR! no data in rxq\n", iod->name);
+		printk_ratelimited("%s: ERR! no data in rxq\n", iod->name);
 		goto exit;
 	}
 
 	check_ipc_loopback(iod, skb);
 
-	/* unframe the SIPC5 header */
-	status = sipc5_hdr_unframe(iod, skb);
-	if (unlikely(status < 0)) {
-		dev_kfree_skb_any(skb);
-		return status;
+	if (iod->ops.header_parse) {
+		status = iod->ops.header_parse(iod, skb);
+		if (unlikely(status < 0)) {
+			dev_kfree_skb_any(skb);
+			return status;
+		}
 	}
-
 	len = min(skb->len, count - copied);
 	if (copy_to_user(buf + copied, skb->data, len)) {
 		mif_info("%s: ERR! copy_to_user fail\n", iod->name);
 		skb_queue_head(rxq, skb);
 		return -EFAULT;
 	}
-
-	skb_pull_inline(skb, len);
-	status = sipc5_hdr_data_done(iod, skb, len);
 	copied += len;
+	skb_pull_inline(skb, len);
+	if (iod->ops.header_parse_continue)
+		status = iod->ops.header_parse_continue(iod, skb, len);
 
 	mif_debug("%s: data:%d count:%d copied:%d qlen:%d\n",
 				iod->name, len, count, copied, rxq->qlen);
@@ -1143,43 +1459,6 @@ exit:
 	return copied;
 }
 
-#ifdef CONFIG_LINK_DEVICE_C2C
-static int misc_mmap(struct file *filp, struct vm_area_struct *vma)
-{
-	int r = 0;
-	unsigned long size = 0;
-	unsigned long pfn = 0;
-	unsigned long offset = 0;
-	struct io_device *iod = (struct io_device *)filp->private_data;
-
-	if (!vma)
-		return -EFAULT;
-
-	size = vma->vm_end - vma->vm_start;
-	offset = vma->vm_pgoff << PAGE_SHIFT;
-	if (offset + size > (C2C_CP_RGN_SIZE + C2C_SH_RGN_SIZE)) {
-		mif_info("ERR: offset + size > C2C_CP_RGN_SIZE\n");
-		return -EINVAL;
-	}
-
-	/* Set the noncacheable property to the region */
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	vma->vm_flags |= VM_RESERVED | VM_IO;
-
-	pfn = __phys_to_pfn(C2C_CP_RGN_ADDR + offset);
-	r = remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot);
-	if (r) {
-		mif_info("ERR: Failed in remap_pfn_range()!!!\n");
-		return -EAGAIN;
-	}
-
-	mif_info("%s: VA = 0x%08lx, offset = 0x%lx, size = %lu\n",
-		iod->name, vma->vm_start, offset, size);
-
-	return 0;
-}
-#endif
-
 static const struct file_operations misc_io_fops = {
 	.owner = THIS_MODULE,
 	.open = misc_open,
@@ -1188,9 +1467,6 @@ static const struct file_operations misc_io_fops = {
 	.unlocked_ioctl = misc_ioctl,
 	.write = misc_write,
 	.read = misc_read,
-#ifdef CONFIG_LINK_DEVICE_C2C
-	.mmap = misc_mmap,
-#endif
 };
 
 static int vnet_open(struct net_device *ndev)
@@ -1221,64 +1497,29 @@ static int vnet_xmit(struct sk_buff *skb, struct net_device *ndev)
 	struct vnet *vnet = netdev_priv(ndev);
 	struct io_device *iod = vnet->iod;
 	struct link_device *ld = get_current_link(iod);
-	struct sk_buff *skb_new;
-	int ret;
-	unsigned headroom = 0, tailroom = 0;
+	struct sk_buff *skb_new = skb;
 	unsigned long tx_bytes = skb->len;
-/*	struct iphdr *ip_header = NULL;*/
-	struct sipc5_link_hdr hdr;
+	int tailroom = (ld->aligned > 0) ? SIPC_ALIGN_PAD_MAX : 0;
+	int ret;
 
-	/* When use `handover' with Network Bridge,
-	 * user -> bridge device(rmnet0) -> real rmnet(xxxx_rmnet0) -> here.
-	 * bridge device is ethernet device unlike xxxx_rmnet(net device).
-	 * We remove the an ethernet header of skb before using skb->len,
-	 * because bridge device added an ethernet header to skb.
-	 */
-	if (iod->use_handover) {
-		if (iod->id >= PS_DATA_CH_0 && iod->id <= PS_DATA_CH_LAST)
-			skb_pull(skb, sizeof(struct ethhdr));
-	}
-
-	headroom = sipc5_hdr_build_frame(&hdr, iod, ld, skb->len, NULL);
-	if (!headroom) {
-		skb_new = skb;
-		goto sipc_done;
-	}
-#if 0
-	/* ip loop-back */
-	ip_header = (struct iphdr *)skb->data;
-	if (iod->msd->loopback_ipaddr &&
-		ip_header->daddr == iod->msd->loopback_ipaddr) {
-		swap(ip_header->saddr, ip_header->daddr);
-		frm.ch_id = DATA_LOOPBACK_CHANNEL;
-		frm.hdr[SIPC5_CH_ID_OFFSET] = DATA_LOOPBACK_CHANNEL;
-	}
-#endif
-	tailroom = (ld->aligned) ? SIPC_PADLEN(skb->len) : 0;
-	/* We assume that skb */
-	if (skb_headroom(skb) < headroom && skb_tailroom(skb) < tailroom) {
-		mif_debug("%s: skb_copy_expand needed\n", iod->name);
-		skb_new = skb_copy_expand(skb, headroom, SIPC_PADLEN(skb->len),
-								GFP_ATOMIC);
-		/* skb_copy_expand success or not, free old skb from caller */
-		dev_kfree_skb_any(skb);
+	if (skb_headroom(skb) < iod->headroom || skb_tailroom(skb) < tailroom) {
+		mif_err("%s: skb needs copy_expand hr=%d tr=%d, iod hr=%d\n",
+			iod->name,
+			skb_headroom(skb), skb_tailroom(skb),
+			iod->headroom);
+		skb_new = skb_copy_expand(skb, iod->headroom, 3, GFP_ATOMIC);
 		if (!skb_new) {
-			mif_info("%s: ERR! skb_copy_expand fail\n", iod->name);
+			mif_err("%s: skb_copy_expand fail\n", iod->name);
 			return NETDEV_TX_BUSY;
 		}
-	} else {
-		skb_new = skb;
-	}
-	memcpy(skb_push(skb_new, headroom), &hdr, headroom);
-
-	if (ld->aligned) {				/*Add 4byte pad*/
-		skb_set_tail_pointer(skb, SIPC_ALIGN(skb->len));
-		skb->len = SIPC_ALIGN(skb->len);
+		tx_bytes = skb_new->len;
+		dev_kfree_skb_any(skb);
 	}
 
-sipc_done:
-	skbpriv(skb_new)->iod = iod;
-	skbpriv(skb_new)->ld = ld;
+	if (iod->ops.header_create) {
+		struct sipc_hdr hdr = {.multifmt = 0};
+		iod->ops.header_create(iod, &hdr, skb_new);
+	}
 
 	ret = ld->send(ld, iod, skb_new);
 	if (ret < 0) {
@@ -1286,7 +1527,6 @@ sipc_done:
 		mif_info("%s: ERR! ld->send fail (err %d)\n", iod->name, ret);
 		return NETDEV_TX_BUSY;
 	}
-
 	ndev->stats.tx_packets++;
 	ndev->stats.tx_bytes += tx_bytes;
 
@@ -1319,19 +1559,17 @@ static void vnet_setup(struct net_device *ndev)
 	ndev->tx_queue_len = 1000;
 	ndev->mtu = ETH_DATA_LEN;
 	ndev->watchdog_timeo = 5 * HZ;
+	ndev->needed_headroom = SIPC_HDR_LEN_MAX;
+	ndev->needed_tailroom = SIPC_ALIGN_PAD_MAX;
 }
 
 static void vnet_setup_ether(struct net_device *ndev)
 {
-	ndev->netdev_ops = &vnet_ops;
+	vnet_setup(ndev);
 	ndev->type = ARPHRD_ETHER;
-	ndev->flags = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST | IFF_SLAVE;
+	ndev->flags |= IFF_SLAVE;
 	ndev->addr_len = ETH_ALEN;
 	random_ether_addr(ndev->dev_addr);
-	ndev->hard_header_len = 0;
-	ndev->tx_queue_len = 1000;
-	ndev->mtu = ETH_DATA_LEN;
-	ndev->watchdog_timeo = 5 * HZ;
 }
 
 int sipc5_init_io_device(struct io_device *iod)
@@ -1348,6 +1586,9 @@ int sipc5_init_io_device(struct io_device *iod)
 	mif_debug("%s: SIPC version = %d\n", iod->name, iod->ipc_version);
 	iod->recv_skb = io_dev_recv_skb_from_link_dev;
 
+	if (iod->attr & IODEV_ATTR(ATTR_CDC_NCM))
+		iod->headroom += sizeof(struct ethhdr);
+
 	/* Register misc or net device */
 	switch (iod->io_typ) {
 	case IODEV_MISC:
@@ -1362,16 +1603,19 @@ int sipc5_init_io_device(struct io_device *iod)
 		if (ret)
 			mif_info("%s: ERR! misc_register failed\n", iod->name);
 
-		/*DM logging for XMM6360*/
-		if (iod->id == DM_LOGGING_CH) {
+		/* TODO: to be delete after discuss with RIL-Team
+		  Below SYSFS can switch between XMM6360 silent logging channel
+		  and CSVT raw channel over SIPC4.x, but JA and later projects
+		  use the SIPC5.0 and dose not needed it.
+		  Before remove that, link device should map CH28 and ACM2 */
+		if (iod->id == SIPC_CH_ID_CPLOG1) {
 			ret = device_create_file(iod->miscdev.this_device,
 							&attr_dm_state);
 			if (ret)
 				mif_err("failed to create `dm_state' : %s\n",
 					iod->name);
 			else
-				mif_err("dm_state : %s, sucess\n",
-					iod->name);
+				mif_err("dm_state : %s, sucess\n", iod->name);
 		}
 		break;
 
@@ -1400,6 +1644,9 @@ int sipc5_init_io_device(struct io_device *iod)
 		/*register_netdev parsing % */
 		strcpy(iod->ndev->name, "rmnet%d");
 
+		if (iod->attr & IODEV_ATTR(ATTR_CDC_NCM))
+			iod->ndev->needed_headroom += sizeof(struct ethhdr);
+
 		ret = register_netdev(iod->ndev);
 		if (ret) {
 			mif_info("%s: ERR! register_netdev fail\n", iod->name);
@@ -1410,7 +1657,6 @@ int sipc5_init_io_device(struct io_device *iod)
 		vnet = netdev_priv(iod->ndev);
 		mif_debug("vnet 0x%p\n", vnet);
 		vnet->iod = iod;
-
 		break;
 
 	case IODEV_DUMMY:
@@ -1438,12 +1684,18 @@ int sipc5_init_io_device(struct io_device *iod)
 		if (ret)
 			mif_err("failed to create `txlink file' : %s\n",
 					iod->name);
+		ret = device_create_file(iod->miscdev.this_device,
+				&attr_ipcloopback);
+		if (ret)
+			mif_err("failed to create `ipcloopback file' : %s\n",
+					iod->name);
 		break;
 
 	default:
 		mif_info("%s: ERR! wrong io_type %d\n", iod->name, iod->io_typ);
 		return -EINVAL;
 	}
+	sipc_get_ops(iod);
 
 	return ret;
 }

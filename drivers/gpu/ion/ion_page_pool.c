@@ -29,11 +29,6 @@
 static struct plist_head pools = PLIST_HEAD_INIT(pools);
 static struct shrinker shrinker;
 
-struct ion_page_pool_item {
-	struct page *page;
-	struct list_head list;
-};
-
 static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 {
 	struct page *page = alloc_pages(pool->gfp_mask, pool->order);
@@ -43,8 +38,10 @@ static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 	/* this is only being used to flush the page for dma,
 	   this api is not really suitable for calling from a driver
 	   but no better way to flush a page for dma exist at this time */
+#ifndef CONFIG_ION_EXYNOS
 	__dma_page_cpu_to_dev(page, 0, PAGE_SIZE << pool->order,
 			      DMA_BIDIRECTIONAL);
+#endif
 	return page;
 }
 
@@ -56,19 +53,15 @@ static void ion_page_pool_free_pages(struct ion_page_pool *pool,
 
 static int ion_page_pool_add(struct ion_page_pool *pool, struct page *page)
 {
-	struct ion_page_pool_item *item;
-
-	item = kmalloc(sizeof(struct ion_page_pool_item), GFP_KERNEL);
-	if (!item)
-		return -ENOMEM;
+	BUG_ON(page->lru.next != LIST_POISON1 ||
+			page->lru.prev != LIST_POISON2);
 
 	mutex_lock(&pool->mutex);
-	item->page = page;
 	if (PageHighMem(page)) {
-		list_add_tail(&item->list, &pool->high_items);
+		list_add_tail(&page->lru, &pool->high_items);
 		pool->high_count++;
 	} else {
-		list_add_tail(&item->list, &pool->low_items);
+		list_add_tail(&page->lru, &pool->low_items);
 		pool->low_count++;
 	}
 	mutex_unlock(&pool->mutex);
@@ -77,24 +70,19 @@ static int ion_page_pool_add(struct ion_page_pool *pool, struct page *page)
 
 static struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high)
 {
-	struct ion_page_pool_item *item;
 	struct page *page;
 
 	if (high) {
 		BUG_ON(!pool->high_count);
-		item = list_first_entry(&pool->high_items,
-					struct ion_page_pool_item, list);
+		page = list_first_entry(&pool->high_items, struct page, lru);
 		pool->high_count--;
 	} else {
 		BUG_ON(!pool->low_count);
-		item = list_first_entry(&pool->low_items,
-					struct ion_page_pool_item, list);
+		page = list_first_entry(&pool->low_items, struct page, lru);
 		pool->low_count--;
 	}
 
-	list_del(&item->list);
-	page = item->page;
-	kfree(item);
+	list_del(&page->lru);
 	return page;
 }
 
@@ -200,20 +188,17 @@ static int ion_page_pool_shrink(struct shrinker *shrinker,
 	struct ion_page_pool *pool;
 	int nr_freed = 0;
 	int i;
-	bool high;
 	int nr_to_scan = sc->nr_to_scan;
 
-	high = sc->gfp_mask & __GFP_HIGHMEM;
-
 	if (nr_to_scan == 0)
-		return ion_page_pool_total(high);
+		return ion_page_pool_total(true);
 
 	plist_for_each_entry(pool, &pools, list) {
 		for (i = 0; i < nr_to_scan; i++) {
 			struct page *page;
 
 			mutex_lock(&pool->mutex);
-			if (high && pool->high_count) {
+			if (pool->high_count) {
 				page = ion_page_pool_remove(pool, true);
 			} else if (pool->low_count) {
 				page = ion_page_pool_remove(pool, false);
@@ -228,7 +213,7 @@ static int ion_page_pool_shrink(struct shrinker *shrinker,
 		nr_to_scan -= i;
 	}
 
-	return ion_page_pool_total(high);
+	return ion_page_pool_total(true);
 }
 
 struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)

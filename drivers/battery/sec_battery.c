@@ -65,9 +65,12 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(lcd),
 	SEC_BATTERY_ATTR(gps),
 	SEC_BATTERY_ATTR(event),
+	SEC_BATTERY_ATTR(batt_temp_table),
 #if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
 	SEC_BATTERY_ATTR(test_charge_current),
 #endif
+	SEC_BATTERY_ATTR(batt_inbat_voltage),
+	SEC_BATTERY_ATTR(batt_high_current_usb),
 };
 
 static enum power_supply_property sec_battery_props[] = {
@@ -151,6 +154,8 @@ static int sec_bat_set_charge(
 		val.intval = battery->cable_type;
 		/*Reset charging start time only in initial charging start */
 		if (battery->charging_start_time == 0) {
+			if (ts.tv_sec < 1)
+				ts.tv_sec = 1;
 			battery->charging_start_time = ts.tv_sec;
 			battery->charging_next_time =
 				battery->pdata->charging_reset_time;
@@ -561,6 +566,9 @@ static bool sec_bat_ovp_uvlo_result(
 				POWER_SUPPLY_STATUS_NOT_CHARGING;
 			break;
 		}
+#ifdef CONFIG_FAST_BOOT
+		if (!fake_shut_down)
+#endif
 		power_supply_changed(&battery->psy_bat);
 		return true;
 	}
@@ -940,6 +948,66 @@ static bool sec_bat_temperature_check(
 	}
 	return true;
 };
+
+static int sec_bat_get_inbat_vol_by_adc(struct sec_battery_info *battery)
+{
+	int inbat = 0;
+	int inbat_adc;
+	int low = 0;
+	int high = 0;
+	int mid = 0;
+	const sec_bat_adc_table_data_t *inbat_adc_table;
+	unsigned int inbat_adc_table_size;
+
+	if (!battery->pdata->inbat_adc_table) {
+		dev_err(battery->dev, "%s: not designed to read in-bat voltage\n", __func__);
+		return -1;
+	}
+
+	inbat_adc_table = battery->pdata->inbat_adc_table;
+	inbat_adc_table_size =
+		battery->pdata->inbat_adc_table_size;
+
+	inbat_adc = sec_bat_get_adc_value(battery, SEC_BAT_ADC_CHANNEL_INBAT_VOLTAGE);
+	if (inbat_adc <= 0)
+		return inbat_adc;
+
+	if (inbat_adc_table[0].adc <= inbat_adc) {
+		inbat = inbat_adc_table[0].temperature;
+		goto inbat_by_adc_goto;
+	} else if (inbat_adc_table[inbat_adc_table_size-1].adc >= inbat_adc) {
+		inbat = inbat_adc_table[inbat_adc_table_size-1].temperature;
+		goto inbat_by_adc_goto;
+	}
+
+	high = inbat_adc_table_size - 1;
+
+	while (low <= high) {
+		mid = (low + high) / 2;
+		if (inbat_adc_table[mid].adc < inbat_adc)
+			high = mid - 1;
+		else if (inbat_adc_table[mid].adc > inbat_adc)
+			low = mid + 1;
+		else {
+			inbat = inbat_adc_table[mid].temperature;
+			goto inbat_by_adc_goto;
+		}
+	}
+
+	inbat = inbat_adc_table[high].temperature;
+	inbat +=
+		((inbat_adc_table[low].temperature -
+		inbat_adc_table[high].temperature) *
+		(inbat_adc - inbat_adc_table[high].adc)) /
+		(inbat_adc_table[low].adc - inbat_adc_table[high].adc);
+
+inbat_by_adc_goto:
+	dev_info(battery->dev,
+		"%s: inbat(%d), inbat-ADC(%d)\n",
+		__func__, inbat, inbat_adc);
+
+	return inbat;
+}
 
 static void  sec_bat_event_program_alarm(
 	struct sec_battery_info *battery, int seconds)
@@ -1531,7 +1599,7 @@ static void sec_bat_get_battery_info(
 		else
 			battery->capacity = value.intval;
 	}
-#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 	/* if the battery status was full, and SOC wasn't 100% yet,
 		then ignore FG SOC, and report (previous SOC +1)% */
 	if (battery->status != POWER_SUPPLY_STATUS_FULL)
@@ -1583,10 +1651,11 @@ static void sec_bat_get_battery_info(
 	}
 
 	dev_info(battery->dev,
-		"%s:Vnow(%dmV),Inow(%dmA),Imax(%dmA),SOC(%d%%),Tbat(%d)\n",
+		"%s:Vnow(%dmV),Inow(%dmA),Imax(%dmA),SOC(%d%%),Tbat(%d),is_hc_usb(%d)\n",
 		__func__,
 		battery->voltage_now, battery->current_now,
-		battery->current_max, battery->capacity, battery->temperature);
+		battery->current_max, battery->capacity,
+		battery->temperature, battery->pdata->is_hc_usb);
 	dev_dbg(battery->dev,
 		"%s,Vavg(%dmV),Vocv(%dmV),Tamb(%d),"
 		"Iavg(%dmA),Iadc(%d)\n",
@@ -1783,7 +1852,6 @@ static void sec_bat_monitor_work(
 	struct sec_battery_info *battery =
 		container_of(work, struct sec_battery_info,
 		monitor_work.work);
-
 #ifdef CONFIG_FAST_BOOT
 	bool low_batt_power_off = false;
 #endif
@@ -1834,7 +1902,7 @@ static void sec_bat_monitor_work(
 
 continue_monitor:
 	dev_info(battery->dev,
-		"%s: Status(%s), mode(%s), Health(%s), Cable(%d), Vendor(%s), siop_level(%d)\n",
+		"%s: Status(%s), mode(%s), Health(%s), Cable(%d), Vendor(%s), level(%d%%)\n",
 		__func__,
 		sec_bat_status_str[battery->status],
 		sec_bat_charging_mode_str[battery->charging_mode],
@@ -1851,7 +1919,6 @@ continue_monitor:
 			&& (battery->capacity == 0))
 			low_batt_power_off = true;
 
-			dev_info(battery->dev, "%s: fake_shut_down mode, skip updating status\n", __func__);
 		goto skip_updating_status;
 	}
 #endif
@@ -1860,29 +1927,21 @@ continue_monitor:
 
 	sec_bat_set_polling(battery);
 
+#ifdef CONFIG_FAST_BOOT
+skip_updating_status:
+	if (low_batt_power_off == true) {
+		dev_info(battery->dev, "%s: Power off the device in fake shutdown mode"\
+			"(soc==0, discharging !!!)\n", __func__);
+
+		low_batt_power_off = false;
+		kernel_power_off();
+	}
+#endif
+
 	if (battery->capacity <= 0)
 		wake_lock_timeout(&battery->monitor_wake_lock, HZ * 5);
 	else
 		wake_unlock(&battery->monitor_wake_lock);
-
-#ifdef CONFIG_FAST_BOOT
-skip_updating_status:
-	if (((battery->cable_type == POWER_SUPPLY_TYPE_MAINS)
-		|| (battery->cable_type == POWER_SUPPLY_TYPE_USB)
-		|| (battery->cable_type == POWER_SUPPLY_TYPE_USB_CDP))
-		&& (fake_shut_down) && (!battery->dup_power_off)
-		&& (!battery->suspend_check)) {
-		dev_info(battery->dev, "%s: Resetting the device in fake shutdown mode"\
-			"(TA/USB inserted !!!)\n", __func__);
-		battery->dup_power_off = true;
-		kernel_power_off();
-	} else if (low_batt_power_off == true) {
-		dev_info(battery->dev, "%s: Power off the device in fake shutdown mode"\
-			"(soc==0, discharging !!!)\n", __func__);
-
-		kernel_power_off();
-	}
-#endif
 
 	dev_dbg(battery->dev, "%s: End\n", __func__);
 
@@ -2019,6 +2078,7 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 		container_of(psy, struct sec_battery_info, psy_bat);
 	const ptrdiff_t offset = attr - sec_battery_attrs;
 	int i = 0;
+	int ret = 0;
 
 	switch (offset) {
 	case BATT_RESET_SOC:
@@ -2239,6 +2299,22 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			battery->event);
 		break;
+	case BATT_TEMP_TABLE:
+		i += scnprintf(buf + i, PAGE_SIZE - i,
+			"%d %d %d %d %d %d %d %d %d %d %d %d\n",
+			battery->pdata->temp_high_threshold_event,
+			battery->pdata->temp_high_recovery_event,
+			battery->pdata->temp_low_threshold_event,
+			battery->pdata->temp_low_recovery_event,
+			battery->pdata->temp_high_threshold_normal,
+			battery->pdata->temp_high_recovery_normal,
+			battery->pdata->temp_low_threshold_normal,
+			battery->pdata->temp_low_recovery_normal,
+			battery->pdata->temp_high_threshold_lpm,
+			battery->pdata->temp_high_recovery_lpm,
+			battery->pdata->temp_low_threshold_lpm,
+			battery->pdata->temp_low_recovery_lpm);
+		break;
 #if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
 	case BATT_TEST_CHARGE_CURRENT:
 		{
@@ -2251,11 +2327,39 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 		}
 		break;
 #endif
+	case BATT_INBAT_VOLTAGE:
+		ret = sec_bat_get_inbat_vol_by_adc(battery);
+		dev_info(battery->dev, "in-battery voltage(%d)\n", ret);
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", ret);
+		break;
+	case BATT_HIGH_CURRENT_USB:
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+			battery->pdata->is_hc_usb);
+		break;
 	default:
 		i = -EINVAL;
 	}
 
 	return i;
+}
+void update_external_temp_table(struct sec_battery_info *battery, int temp[])
+{
+	battery->pdata->temp_high_threshold_event = temp[0];
+	battery->pdata->temp_high_recovery_event = temp[1];
+	battery->pdata->temp_low_threshold_event = temp[2];
+	battery->pdata->temp_low_recovery_event = temp[3];
+	battery->pdata->temp_high_threshold_normal = temp[4];
+	battery->pdata->temp_high_recovery_normal = temp[5];
+	battery->pdata->temp_low_threshold_normal = temp[6];
+	battery->pdata->temp_low_recovery_normal = temp[7];
+	battery->pdata->temp_high_threshold_lpm = temp[8];
+	battery->pdata->temp_high_recovery_lpm = temp[9];
+	battery->pdata->temp_low_threshold_lpm = temp[10];
+	battery->pdata->temp_low_recovery_lpm = temp[11];
+
+	if (battery->pdata->temp_high_threshold_event !=
+		battery->pdata->temp_high_threshold_normal)
+		battery->pdata->event_check = 1;
 }
 
 ssize_t sec_bat_store_attrs(
@@ -2269,7 +2373,7 @@ ssize_t sec_bat_store_attrs(
 	const ptrdiff_t offset = attr - sec_battery_attrs;
 	int ret = -EINVAL;
 	int x = 0;
-
+	int t[12];
 	switch (offset) {
 	case BATT_RESET_SOC:
 		/* Do NOT reset fuel gauge in charging mode */
@@ -2278,6 +2382,9 @@ ssize_t sec_bat_store_attrs(
 			union power_supply_propval value;
 			battery->voltage_now = 1234;
 			battery->voltage_avg = 1234;
+#ifdef CONFIG_FAST_BOOT
+			if (!fake_shut_down)
+#endif
 			power_supply_changed(&battery->psy_bat);
 
 			value.intval =
@@ -2529,6 +2636,30 @@ ssize_t sec_bat_store_attrs(
 			ret = count;
 		}
 		break;
+	case BATT_TEMP_TABLE:
+		if (sscanf(buf, "%d %d %d %d %d %d %d %d %d %d %d %d\n",
+			&t[0], &t[1], &t[2], &t[3], &t[4], &t[5], &t[6], &t[7], &t[8], &t[9], &t[10], &t[11]) == 12) {
+			pr_info("%s: (new) %d %d %d %d %d %d %d %d %d %d %d %d\n",
+				__func__, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8], t[9], t[10], t[11]);
+			pr_info("%s: (default) %d %d %d %d %d %d %d %d %d %d %d %d\n",
+				__func__,
+				battery->pdata->temp_high_threshold_event,
+				battery->pdata->temp_high_recovery_event,
+				battery->pdata->temp_low_threshold_event,
+				battery->pdata->temp_low_recovery_event,
+				battery->pdata->temp_high_threshold_normal,
+				battery->pdata->temp_high_recovery_normal,
+				battery->pdata->temp_low_threshold_normal,
+				battery->pdata->temp_low_recovery_normal,
+				battery->pdata->temp_high_threshold_lpm,
+				battery->pdata->temp_high_recovery_lpm,
+				battery->pdata->temp_low_threshold_lpm,
+				battery->pdata->temp_low_recovery_lpm);
+			update_external_temp_table(battery, t);
+			ret = count;
+		}
+		break;
+
 #if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
 	case BATT_TEST_CHARGE_CURRENT:
 		if (sscanf(buf, "%d\n", &x) == 1) {
@@ -2556,6 +2687,13 @@ ssize_t sec_bat_store_attrs(
 		}
 		break;
 #endif
+	case BATT_HIGH_CURRENT_USB:
+		if (sscanf(buf, "%d\n", &x) == 1) {
+			battery->pdata->is_hc_usb = x ? true : false;
+			pr_info("%s: is_hc_usb (%d)\n", __func__, battery->pdata->is_hc_usb);
+			ret = count;
+		}
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -2692,6 +2830,9 @@ static int sec_bat_set_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		battery->capacity = val->intval;
+#ifdef CONFIG_FAST_BOOT
+		if (!fake_shut_down)
+#endif
 		power_supply_changed(&battery->psy_bat);
 		break;
 	default:
@@ -2728,7 +2869,7 @@ static int sec_bat_get_property(struct power_supply *psy,
 						return 0;
 					}
 			}
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
 			if (battery->status == POWER_SUPPLY_STATUS_FULL &&
 				battery->capacity != 100) {
 				val->intval = POWER_SUPPLY_STATUS_CHARGING;
@@ -2794,7 +2935,7 @@ static int sec_bat_get_property(struct power_supply *psy,
 		val->intval = battery->charging_mode;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
 		val->intval = battery->capacity;
 #else
 		/* In full-charged status, SOC is always 100% */
@@ -3063,7 +3204,7 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 	mutex_init(&battery->adclock);
 
 	dev_dbg(battery->dev, "%s: ADC init\n", __func__);
-	for (i = 0; i < SEC_BAT_ADC_CHANNEL_FULL_CHECK; i++)
+	for (i = 0; i < SEC_BAT_ADC_CHANNEL_NUM; i++)
 		adc_init(pdev, pdata, i);
 
 	wake_lock_init(&battery->monitor_wake_lock, WAKE_LOCK_SUSPEND,
@@ -3097,11 +3238,6 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 	battery->ps_status = 0;
 	battery->ps_changed = 0;
 
-#ifdef CONFIG_FAST_BOOT
-	battery->dup_power_off = false;
-	battery->suspend_check = false;
-#endif
-
 	if (battery->pdata->check_batt_id)
 		battery->pdata->check_batt_id();
 
@@ -3123,6 +3259,8 @@ static int __devinit sec_battery_probe(struct platform_device *pdev)
 		pdata->temp_low_recovery_normal;
 	battery->temp_low_threshold =
 		pdata->temp_low_threshold_normal;
+
+	battery->pdata->is_hc_usb = false;
 
 	battery->charging_mode = SEC_BATTERY_CHARGING_NONE;
 	battery->is_recharging = false;
@@ -3384,14 +3522,6 @@ static int sec_battery_prepare(struct device *dev)
 
 static int sec_battery_suspend(struct device *dev)
 {
-#ifdef CONFIG_FAST_BOOT
-	struct sec_battery_info *battery = dev_get_drvdata(dev);
-	dev_info(battery->dev, "%s\n", __func__);
-
-	if (fake_shut_down)
-		battery->suspend_check = true;
-#endif
-
 	return 0;
 }
 
@@ -3410,20 +3540,6 @@ static void sec_battery_complete(struct device *dev)
 	wake_lock(&battery->monitor_wake_lock);
 	queue_delayed_work(battery->monitor_wqueue,
 		&battery->monitor_work, 500);
-
-#ifdef CONFIG_FAST_BOOT
-		if (((battery->cable_type == POWER_SUPPLY_TYPE_MAINS)
-			|| (battery->cable_type == POWER_SUPPLY_TYPE_USB)
-			|| (battery->cable_type == POWER_SUPPLY_TYPE_USB_CDP))
-			&& (fake_shut_down) && (!battery->dup_power_off)) {
-			dev_info(battery->dev,"%s: Resetting the device in fake shutdown mode"\
-				"(TA/USB inserted !!!)\n", __func__);
-			battery->dup_power_off = true;
-			kernel_power_off();
-		}
-
-		battery->suspend_check = false;
-#endif
 
 	dev_dbg(battery->dev, "%s: End\n", __func__);
 

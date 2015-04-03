@@ -23,6 +23,8 @@ extern void board_v1_gpio_init(void);
 extern void board_n1_gpio_init(void);
 #elif defined(CONFIG_CHAGALL)
 extern void board_chagall_gpio_init(void);
+#elif defined(CONFIG_KLIMT)
+extern void board_klimt_gpio_init(void);
 #endif
 
 void __init exynos5_universal5420_gpio_init(void)
@@ -35,6 +37,8 @@ void __init exynos5_universal5420_gpio_init(void)
 	board_n1_gpio_init();
 #elif defined(CONFIG_CHAGALL)
 	board_chagall_gpio_init();
+#elif defined(CONFIG_KLIMT)
+	board_klimt_gpio_init();
 #endif
 }
 

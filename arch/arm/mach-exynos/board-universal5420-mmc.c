@@ -178,12 +178,8 @@ static struct dw_mci_board universal5420_dwmci0_pdata __initdata = {
 	.ch_num			= 0,
 	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION |
 				  DW_MCI_QUIRK_HIGHSPEED |
-#if defined(CONFIG_N2A)
 				  DW_MCI_QUIRK_NO_DETECT_EBIT |
 				  DW_MMC_QUIRK_USE_FINE_TUNING,
-#else
-				  DW_MCI_QUIRK_NO_DETECT_EBIT,
-#endif
 	.bus_hz			= 666 * 1000 * 1000 / 4,
 	.caps			= MMC_CAP_CMD23 | MMC_CAP_8_BIT_DATA |
 				  MMC_CAP_UHS_DDR50 | MMC_CAP_1_8V_DDR |
@@ -212,12 +208,16 @@ static struct dw_mci_board universal5420_dwmci0_pdata __initdata = {
 		.pin			= EXYNOS5420_GPC0(0),
 		.val			= S5P_GPIO_DRVSTR_LV3,
 	},
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	.qos_int_level		= 111 * 1000,
 #else
 	.qos_int_level		= 222 * 1000,
 #endif
 	.extra_tuning           = exynos_dwmci0_extra_tuning,
+#if defined(CONFIG_MMC_DW_CMD_LOGGING)
+	.dw_mci_cmd_logging	= true,
+	.log_count		= ATOMIC_INIT(-1),
+#endif
 };
 
 static int exynos_dwmci1_get_bus_wd(u32 slot_id)
@@ -230,7 +230,7 @@ static void exynos_dwmci1_cfg_gpio(int width)
 	unsigned int gpio;
 
 	for (gpio = EXYNOS5420_GPC1(0); gpio < EXYNOS5420_GPC1(3); gpio++) {
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 		if (gpio == EXYNOS5420_GPC1(2)) {
 			/* GPS_EN */
 			continue;
@@ -261,13 +261,14 @@ static void exynos_dwmci1_cfg_gpio(int width)
 			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV3);
 		}
 
+#if !(defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT))
 		for (gpio = EXYNOS5420_GPD1(4);
 				gpio <= EXYNOS5420_GPD1(7); gpio++) {
 			s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
 			s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
 			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV3);
 		}
-
+#endif
 		break;
 	case 1:
 		gpio = EXYNOS5420_GPC1(3);
@@ -330,8 +331,8 @@ EXPORT_SYMBOL_GPL(mmc_force_presence_change);
 #if defined(CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ)
 static struct dw_mci_mon_table exynos_dwmci_tp_mon1_tbl[] = {
 	/* Byte/s, MIF clk, CPU clk */
-	{  26000000, 733000, 1500000},
-	{  12000000, 400000,       0},
+	{  15360000, 733000, 1500000},
+	{  10240000, 400000,       0},
 	{         0,      0,       0},
 };
 #endif
@@ -359,7 +360,7 @@ static struct dw_mci_board universal5420_dwmci1_pdata __initdata = {
 	.ddr_timing		= 0x01020000,
 	.clk_drv		= 0x2,
 	.clk_tbl		= exynos_dwmci_clk_rates_for_spll,
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	.qos_int_level		= 111 * 1000,
 #else
 	.qos_int_level		= 222 * 1000,
@@ -586,7 +587,7 @@ static struct dw_mci_board universal5420_dwmci2_pdata __initdata = {
 				  MMC_CAP_4_BIT_DATA |
 				  MMC_CAP_SD_HIGHSPEED |
 				  MMC_CAP_MMC_HIGHSPEED |
-#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
 				  MMC_CAP_UHS_SDR50,
 #else
 				  MMC_CAP_UHS_SDR50 |
@@ -599,7 +600,7 @@ static struct dw_mci_board universal5420_dwmci2_pdata __initdata = {
 	.cfg_gpio		= exynos_dwmci2_cfg_gpio,
 	.get_bus_wd		= exynos_dwmci2_get_bus_wd,
 	.save_drv_st	= exynos_dwmci_save_drv_st,
-	.restore_drv_st	= exynos_dwmci_restore_drv_st_with_compensation,
+	.restore_drv_st	= exynos_dwmci_restore_drv_st,
 	.tuning_drv_st	= exynos_dwmci_tuning_drv_st,
 	.sdr_timing		= 0x03040000,
 	.ddr_timing		= 0x03020000,
@@ -616,10 +617,14 @@ static struct dw_mci_board universal5420_dwmci2_pdata __initdata = {
 		.val			= S5P_GPIO_DRVSTR_LV3,
 	},
 	.tuning_map_mask	= 0x80,
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	.qos_int_level		= 111 * 1000,
 #else
 	.qos_int_level		= 222 * 1000,
+#endif
+#if defined(CONFIG_MMC_DW_CMD_LOGGING)
+	.dw_mci_cmd_logging	= true,
+	.log_count		= ATOMIC_INIT(-1),
 #endif
 };
 

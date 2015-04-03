@@ -609,6 +609,13 @@ static void __init exynos4_map_io(void)
 	s5p_hdmi_setname("exynos4-hdmi");
 }
 
+static int exynos_finish_map_io = 0;
+
+int exynos_is_finish_map_io(void)
+{
+	return exynos_finish_map_io;
+}
+
 static void __init exynos5_map_io(void)
 {
 	iotable_init(exynos5_iodesc, ARRAY_SIZE(exynos5_iodesc));
@@ -648,6 +655,8 @@ static void __init exynos5_map_io(void)
 #ifdef CONFIG_S5P_DEV_ACE
 	s5p_ace_setname("exynos-ace");
 #endif
+
+	exynos_finish_map_io = 1;
 }
 
 static void __init exynos4_init_clocks(int xtal)
@@ -1136,7 +1145,7 @@ static void exynos_irq_eint_unmask(struct irq_data *data)
 	 * an interrupt if the level is not _currently_ active, even if it was
 	 * active while the interrupt was masked.
 	 */
-	offs = data->irq;
+	offs = EINT_OFFSET(data->irq);
 	shift = (offs & 0x7) * 4;
 	mask = 0x7 << shift;
 	ctrl = __raw_readl(EINT_CON(exynos_eint_base, data->irq));

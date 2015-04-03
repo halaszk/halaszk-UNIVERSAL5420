@@ -93,8 +93,8 @@ struct bma255_p {
 	int irq1;
 	int irq_state;
 	int acc_int1;
-	int acc_int2;
 	int time_count;
+	u64 timestamp;
 };
 
 static int bma255_open_calibration(struct bma255_p *);
@@ -102,7 +102,7 @@ static int bma255_open_calibration(struct bma255_p *);
 static int bma255_i2c_read(struct bma255_p *data,
 		unsigned char reg_addr, unsigned char *buf)
 {
-	int ret, retries = 0;
+	int ret;
 	struct i2c_msg msg[2];
 
 	msg[0].addr = data->client->addr;
@@ -115,12 +115,7 @@ static int bma255_i2c_read(struct bma255_p *data,
 	msg[1].len = 1;
 	msg[1].buf = buf;
 
-	do {
-		ret = i2c_transfer(data->client->adapter, msg, 2);
-		if (ret >= 0)
-			break;
-	} while (retries++ < 2);
-
+	ret = i2c_transfer(data->client->adapter, msg, 2);
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - i2c read error %d\n", __func__, ret);
 		return ret;
@@ -132,7 +127,7 @@ static int bma255_i2c_read(struct bma255_p *data,
 static int bma255_i2c_write(struct bma255_p *data,
 		unsigned char reg_addr, unsigned char buf)
 {
-	int ret, retries = 0;
+	int ret;
 	struct i2c_msg msg;
 	unsigned char w_buf[2];
 
@@ -144,12 +139,7 @@ static int bma255_i2c_write(struct bma255_p *data,
 	msg.len = 2;
 	msg.buf = (char *)w_buf;
 
-	do {
-		ret = i2c_transfer(data->client->adapter, &msg, 1);
-		if (ret >= 0)
-			break;
-	} while (retries++ < 2);
-
+	ret = i2c_transfer(data->client->adapter, &msg, 1);
 	if (ret < 0) {
 		pr_err("[SENSOR]: %s - i2c write error %d\n", __func__, ret);
 		return ret;
@@ -317,7 +307,9 @@ static enum hrtimer_restart bma255_timer_func(struct hrtimer *timer)
 	struct bma255_p *data = container_of(timer,
 					struct bma255_p, accel_timer);
 
-	queue_work(data->accel_wq, &data->work);
+	if (!work_pending(&data->work))
+		queue_work(data->accel_wq, &data->work);
+
 	hrtimer_forward_now(&data->accel_timer, data->poll_delay);
 
 	return HRTIMER_RESTART;
@@ -328,6 +320,13 @@ static void bma255_work_func(struct work_struct *work)
 	int ret;
 	struct bma255_v acc;
 	struct bma255_p *data = container_of(work, struct bma255_p, work);
+	struct timespec ts;
+	int time_hi, time_lo;
+
+	ts = ktime_to_timespec(ktime_get_boottime());
+	data->timestamp = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+	time_lo = (int)(data->timestamp & TIME_LO_MASK);
+	time_hi = (int)((data->timestamp & TIME_HI_MASK) >> TIME_HI_SHIFT);
 
 	ret = bma255_read_accel_xyz(data, &acc);
 	if (ret < 0)
@@ -340,6 +339,8 @@ static void bma255_work_func(struct work_struct *work)
 	input_report_rel(data->input, REL_X, data->accdata.x);
 	input_report_rel(data->input, REL_Y, data->accdata.y);
 	input_report_rel(data->input, REL_Z, data->accdata.z);
+	input_report_rel(data->input, REL_DIAL, time_hi);
+	input_report_rel(data->input, REL_MISC, time_lo);
 	input_sync(data->input);
 
 exit:
@@ -429,7 +430,9 @@ static ssize_t bma255_delay_store(struct device *dev,
 	ret = kstrtoll(buf, 10, &delay);
 	if (ret) {
 		pr_err("[SENSOR]: %s - Invalid Argument\n", __func__);
-		return ret;
+		goto exit;
+	} else if (ktime_to_ns(data->poll_delay) == delay) {
+		goto exit;
 	}
 
 	if (delay <= 3000000LL)
@@ -452,7 +455,7 @@ static ssize_t bma255_delay_store(struct device *dev,
 		bma255_set_mode(data, BMA255_MODE_NORMAL);
 		bma255_set_enable(data, ON);
 	}
-
+exit:
 	return size;
 }
 
@@ -856,34 +859,8 @@ static int bma255_setup_pin(struct bma255_p *data)
 		goto exit_acc_int1;
 	}
 
-	ret = gpio_request(data->acc_int2, "ACC_INT2");
-	if (ret < 0) {
-		pr_err("[SENSOR]: %s - gpio %d request failed (%d)\n",
-			__func__, data->acc_int2, ret);
-	} else {
-		ret = gpio_direction_input(data->acc_int2);
-		if (ret < 0)
-			pr_err("[SENSOR]: %s - failed to set gpio %d as input"
-				" (%d)\n", __func__, data->acc_int2, ret);
-		gpio_free(data->acc_int2);
-	}
-
-	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND,
-		       "reactive_wake_lock");
-
-	data->irq1 = gpio_to_irq(data->acc_int1);
-	ret = request_threaded_irq(data->irq1, NULL, bma255_irq_thread,
-		IRQF_TRIGGER_RISING | IRQF_ONESHOT, "bma255_accel", data);
-	if (ret < 0) {
-		pr_err("[SENSOR]: %s - can't allocate irq.\n", __func__);
-		goto exit_reactive_irq;
-	}
-
-	disable_irq(data->irq1);
 	goto exit;
 
-exit_reactive_irq:
-	wake_lock_destroy(&data->reactive_wake_lock);
 exit_acc_int1:
 	gpio_free(data->acc_int1);
 exit:
@@ -905,6 +882,9 @@ static int bma255_input_init(struct bma255_p *data)
 	input_set_capability(dev, EV_REL, REL_X);
 	input_set_capability(dev, EV_REL, REL_Y);
 	input_set_capability(dev, EV_REL, REL_Z);
+	input_set_capability(dev, EV_REL, REL_DIAL); /* time_hi */
+	input_set_capability(dev, EV_REL, REL_MISC); /* time_lo */
+
 	input_set_drvdata(dev, data);
 
 	ret = input_register_device(dev);
@@ -922,8 +902,7 @@ static int bma255_input_init(struct bma255_p *data)
 	/* sysfs node creation */
 	ret = sysfs_create_group(&dev->dev.kobj, &bma255_attribute_group);
 	if (ret < 0) {
-		sensors_remove_symlink(&data->input->dev.kobj,
-			data->input->name);
+		sensors_remove_symlink(&dev->dev.kobj, dev->name);
 		input_unregister_device(dev);
 		return ret;
 	}
@@ -948,10 +927,6 @@ static int bma255_parse_dt(struct bma255_p *data,
 		pr_err("[SENSOR]: %s - get acc_int1 error\n", __func__);
 		return -ENODEV;
 	}
-
-	data->acc_int2 = pdata->acc_int2;
-	if (data->acc_int2 < 0)
-		pr_err("[SENSOR]: %s - acc_int2 error\n", __func__);
 
 	return 0;
 }
@@ -993,9 +968,10 @@ static int bma255_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, data);
 	data->client = client;
 	mutex_init(&data->mode_mutex);
+	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND,
+		       "reactive_wake_lock");
 
 	/* read chip id */
-	bma255_set_mode(data, BMA255_MODE_NORMAL);
 	for (i = 0; i < CHIP_ID_RETRIES; i++) {
 		ret = i2c_smbus_read_word_data(client, BMA255_CHIP_ID_REG);
 		if ((ret & 0x00ff) != BMA255_CHIP_ID) {
@@ -1039,6 +1015,17 @@ static int bma255_probe(struct i2c_client *client,
 	INIT_WORK(&data->work, bma255_work_func);
 	INIT_DELAYED_WORK(&data->irq_work, bma255_irq_work_func);
 
+	data->irq1 = gpio_to_irq(data->acc_int1);
+
+	ret = request_threaded_irq(data->irq1, NULL, bma255_irq_thread,
+		IRQF_TRIGGER_RISING | IRQF_ONESHOT, "bma255_accel", data);
+	if (ret < 0) {
+		pr_err("[SENSOR]: %s - can't allocate irq.\n", __func__);
+		goto exit_request_threaded_irq;
+	}
+
+	disable_irq(data->irq1);
+
 	atomic_set(&data->enable, OFF);
 	data->time_count = 0;
 	data->irq_state = 0;
@@ -1053,6 +1040,7 @@ static int bma255_probe(struct i2c_client *client,
 
 	return 0;
 
+exit_request_threaded_irq:
 exit_create_workqueue:
 	sensors_unregister(data->factory_device, sensor_attrs);
 	sensors_remove_symlink(&data->input->dev.kobj, data->input->name);
@@ -1061,7 +1049,6 @@ exit_create_workqueue:
 exit_input_init:
 exit_read_chipid:
 	mutex_destroy(&data->mode_mutex);
-	free_irq(data->irq1, data);
 	wake_lock_destroy(&data->reactive_wake_lock);
 	gpio_free(data->acc_int1);
 exit_setup_pin:

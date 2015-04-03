@@ -23,6 +23,11 @@ struct vfs61xx_platform_data {
 	int (*vfs61xx_sovcc_on) (int);
 	unsigned int ldocontrol;
 	unsigned int orient;
+	unsigned int ldo_pin_33v;
+	unsigned int ldo_pin_18v;
+	unsigned int ocpflag;
+	unsigned int ocp_en;
+	unsigned int irqpincon;
 };
 
 #endif

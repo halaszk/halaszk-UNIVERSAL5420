@@ -22,12 +22,14 @@
 #include <linux/workqueue.h>
 #include <linux/videodev2.h>
 #include <linux/videodev2_exynos_media.h>
+#include <linux/videodev2_exynos_media_ext.h>
 #include <linux/proc_fs.h>
 #include <mach/videonode.h>
 #include <mach/sysmmu.h>
 #include <plat/sysmmu.h>
 #include <plat/iovmm.h>
 #include <media/videobuf2-core.h>
+#include <mach/smc.h>
 
 #include "s5p_mfc_common.h"
 
@@ -50,6 +52,14 @@
 int debug;
 module_param(debug, int, S_IRUGO | S_IWUSR);
 
+int debug_ts;
+module_param(debug_ts, int, S_IRUGO | S_IWUSR);
+
+int no_order;
+module_param(no_order, int, S_IRUGO | S_IWUSR);
+
+struct s5p_mfc_dev *g_mfc_dev;
+
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 static struct proc_dir_entry *mfc_proc_entry;
 
@@ -64,25 +74,31 @@ static struct proc_dir_entry *mfc_proc_entry;
 #define MFC_DRM_MAGIC_CHUNK2	0x5e87f4f5
 #define MFC_DRM_MAGIC_CHUNK3	0x3bd05317
 
-#define MFC_SFR_AREA_COUNT	11
+#define MFC_SFR_AREA_COUNT	14
 static void s5p_mfc_dump_regs(struct s5p_mfc_dev *dev)
 {
 	int i;
 	int addr[MFC_SFR_AREA_COUNT][2] = {
-		{ 0x0, 0x50 },
-		{ 0x1000, 0x138 },
-		{ 0x2000, 0x604 },
-		{ 0x6000, 0xA0 },
-		{ 0x7000, 0x220 },
-		{ 0x8000, 0x764 },
-		{ 0x9000, 0xA04 },
-		{ 0xA000, 0x200 },
-		{ 0xB000, 0x40 },
-		{ 0xD000, 0x70 },
-		{ 0xF000, 0x5FF },
+		{ 0x0, 0x80 },
+		{ 0x1000, 0xCD0 },
+		{ 0xF000, 0xFF8 },
+		{ 0x2000, 0xA00 },
+		{ 0x3000, 0x40 },
+		{ 0x5000, 0x9C4 },
+		{ 0x6000, 0xC4 },
+		{ 0x7000, 0x21C },
+		{ 0x8000, 0x20C },
+		{ 0x9000, 0x10C },
+		{ 0xA000, 0x20C },
+		{ 0xB000, 0x444 },
+		{ 0xC000, 0x84 },
+		{ 0xD000, 0x74 },
 	};
 
 	pr_err("dumping registers (SFR base = %p)\n", dev->regs_base);
+
+	/* Enable all FW clock gating */
+	writel(0xFFFFFFFF, dev->regs_base + 0x1060);
 
 	for (i = 0; i < MFC_SFR_AREA_COUNT; i++) {
 		printk("[%04X .. %04X]\n", addr[i][0], addr[i][0] + addr[i][1]);
@@ -90,6 +106,19 @@ static void s5p_mfc_dump_regs(struct s5p_mfc_dev *dev)
 				addr[i][1], false);
 		printk("...\n");
 	}
+}
+
+int s5p_mfc_dump_fw(struct s5p_mfc_dev *dev)
+{
+	pr_err("FW dump (dva = 0x%x, vaddr = 0x%x, size = %d)\n",
+			dev->fw.dva, (unsigned int)dev->fw.kva, dev->fw.size);
+
+	s5p_mfc_mem_clean_priv(dev->fw.ctx, dev->fw.kva, 0, dev->fw.size);
+
+	print_hex_dump(KERN_ERR, "", DUMP_PREFIX_ADDRESS, 32, 4,
+			dev->fw.kva, dev->fw.size, false);
+
+	return 0;
 }
 
 static int s5p_mfc_sysmmu_fault_handler(struct device *dev, const char *mmuname,
@@ -117,6 +146,7 @@ static int s5p_mfc_sysmmu_fault_handler(struct device *dev, const char *mmuname,
 	pr_err("curr_rate: %d\n\n", m_dev->curr_rate);
 #endif
 
+	s5p_mfc_dump_fw(m_dev);
 	pr_err("Generating Kernel OOPS... because it is unrecoverable.\n");
 	BUG();
 
@@ -150,17 +180,17 @@ static inline void clear_magic(unsigned char *addr)
 /*
  * A framerate table determines framerate by the interval(us) of each frame.
  * Framerate is not accurate, just rough value to seperate overload section.
- * Base line of each section are selected from 25fps(40000us), 48fps(20833us)
+ * Base line of each section are selected from 25fps(40000us), 45fps(22222us)
  * and 100fps(10000us).
  *
- * interval(us) | 0           10000         20833         40000           |
+ * interval(us) | 0           10000         22222         40000           |
  * framerate    |     120fps    |    60fps    |    30fps    |    25fps    |
  */
 
 #define COL_FRAME_RATE		0
 #define COL_FRAME_INTERVAL	1
 static unsigned long framerate_table[][2] = {
-	{ 30000, 20833 },
+	{ 30000, 22222 },
 	{ 60000, 10000 },
 	{ 120000, 0 },
 };
@@ -172,18 +202,12 @@ static inline unsigned long timeval_diff(struct timeval *to,
 		- (from->tv_sec * USEC_PER_SEC + from->tv_usec);
 }
 
-int get_framerate(struct timeval *to, struct timeval *from)
+int get_framerate_by_interval(int interval)
 {
 	int i;
-	unsigned long interval;
-
-	if (timeval_compare(to, from) <= 0)
-		return 0;
-
-	interval = timeval_diff(to, from);
 
 	/* if the interval is too big (2sec), framerate set to 0 */
-	if (interval > (2 * USEC_PER_SEC))
+	if (interval > MFC_MAX_INTERVAL)
 		return 0;
 
 	for (i = 0; i < ARRAY_SIZE(framerate_table); i++) {
@@ -192,6 +216,134 @@ int get_framerate(struct timeval *to, struct timeval *from)
 	}
 
 	return 0;
+}
+
+int get_framerate(struct timeval *to, struct timeval *from)
+{
+	unsigned long interval;
+
+	if (timeval_compare(to, from) <= 0)
+		return 0;
+
+	interval = timeval_diff(to, from);
+
+	return get_framerate_by_interval(interval);
+}
+
+/* Return the minimum interval between previous and next entry */
+int get_interval(struct list_head *head, struct list_head *entry)
+{
+	int prev_interval = MFC_MAX_INTERVAL, next_interval = MFC_MAX_INTERVAL;
+	struct mfc_timestamp *prev_ts, *next_ts, *curr_ts;
+
+	curr_ts = list_entry(entry, struct mfc_timestamp, list);
+
+	if (entry->prev != head) {
+		prev_ts = list_entry(entry->prev, struct mfc_timestamp, list);
+		prev_interval = timeval_diff(&curr_ts->timestamp, &prev_ts->timestamp);
+	}
+
+	if (entry->next != head) {
+		next_ts = list_entry(entry->next, struct mfc_timestamp, list);
+		next_interval = timeval_diff(&next_ts->timestamp, &curr_ts->timestamp);
+	}
+
+	return (prev_interval < next_interval ? prev_interval : next_interval);
+}
+
+static inline int dec_add_timestamp(struct s5p_mfc_ctx *ctx,
+			struct v4l2_buffer *buf, struct list_head *entry)
+{
+	int replace_entry = 0;
+	struct mfc_timestamp *curr_ts = &ctx->ts_array[ctx->ts_count];
+
+	if (ctx->ts_is_full) {
+		/* Replace the entry if list of array[ts_count] is same as entry */
+		if (&curr_ts->list == entry)
+			replace_entry = 1;
+		else
+			list_del(&curr_ts->list);
+	}
+
+	memcpy(&curr_ts->timestamp, &buf->timestamp, sizeof(struct timeval));
+	if (!replace_entry)
+		list_add(&curr_ts->list, entry);
+	curr_ts->interval =
+		get_interval(&ctx->ts_list, &curr_ts->list);
+	curr_ts->index = ctx->ts_count;
+	ctx->ts_count++;
+
+	if (ctx->ts_count == MFC_TIME_INDEX) {
+		ctx->ts_is_full = 1;
+		ctx->ts_count %= MFC_TIME_INDEX;
+	}
+
+	return 0;
+}
+
+int get_framerate_by_timestamp(struct s5p_mfc_ctx *ctx, struct v4l2_buffer *buf)
+{
+	struct mfc_timestamp *temp_ts;
+	int found;
+	int index = 0;
+	int min_interval = MFC_MAX_INTERVAL;
+	int max_framerate;
+	int timeval_diff;
+
+	if (debug_ts == 1) {
+		/* Debug info */
+		mfc_info("======================================\n");
+		mfc_info("New timestamp = %ld.%06ld, count = %d \n",
+			buf->timestamp.tv_sec, buf->timestamp.tv_usec, ctx->ts_count);
+	}
+
+	if (list_empty(&ctx->ts_list)) {
+		dec_add_timestamp(ctx, buf, &ctx->ts_list);
+	} else {
+		found = 0;
+		list_for_each_entry_reverse(temp_ts, &ctx->ts_list, list) {
+			timeval_diff = timeval_compare(&buf->timestamp, &temp_ts->timestamp);
+			if (timeval_diff == 0) {
+				/* Do not add if same timestamp already exists */
+				found = 1;
+				break;
+			} else if (timeval_diff > 0) {
+				/* Add this after temp_ts */
+				dec_add_timestamp(ctx, buf, &temp_ts->list);
+				found = 1;
+				break;
+			}
+		}
+
+		if (!found)	/* Add this at first entry */
+			dec_add_timestamp(ctx, buf, &ctx->ts_list);
+	}
+
+	list_for_each_entry(temp_ts, &ctx->ts_list, list) {
+		if (temp_ts->interval < min_interval)
+			min_interval = temp_ts->interval;
+	}
+
+	max_framerate = get_framerate_by_interval(min_interval);
+
+	if (debug_ts == 1) {
+		/* Debug info */
+		index = 0;
+		list_for_each_entry(temp_ts, &ctx->ts_list, list) {
+			mfc_info("[%d] timestamp [i:%d]: %ld.%06ld\n",
+					index, temp_ts->index,
+					temp_ts->timestamp.tv_sec,
+					temp_ts->timestamp.tv_usec);
+			index++;
+		}
+		mfc_info("Min interval = %d, It is %d fps\n",
+				min_interval, max_framerate);
+	} else if (debug_ts == 2) {
+		mfc_info("Min interval = %d, It is %d fps\n",
+				min_interval, max_framerate);
+	}
+
+	return max_framerate;
 }
 
 void mfc_sched_worker(struct work_struct *work)
@@ -220,9 +372,11 @@ inline void clear_work_bit(struct s5p_mfc_ctx *ctx)
 		return;
 	}
 
-	spin_lock(&dev->condlock);
-	clear_bit(ctx->num, &dev->ctx_work_bits);
-	spin_unlock(&dev->condlock);
+	if (s5p_mfc_ctx_ready(ctx) == 0) {
+		spin_lock_irq(&dev->condlock);
+		clear_bit(ctx->num, &dev->ctx_work_bits);
+		spin_unlock_irq(&dev->condlock);
+	}
 }
 
 /* Wake up context wait_queue */
@@ -536,7 +690,8 @@ static void s5p_mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_buf *dst_buf, *src_buf;
 	dma_addr_t dec_y_addr;
-
+	struct list_head *dst_queue_addr;
+	
 	if (!ctx) {
 		mfc_err("no mfc context to run\n");
 		return;
@@ -544,6 +699,11 @@ static void s5p_mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
 
 	dec = ctx->dec_priv;
 	dev = ctx->dev;
+ 
+	if (dec->is_dynamic_dpb)
+		dst_queue_addr = &dec->ref_queue;
+	else
+		dst_queue_addr = &ctx->dst_queue;
 
 	if (IS_MFCv7X(dev) && dec->is_dual_dpb)
 		dec_y_addr = mfc_get_dec_first_addr();
@@ -552,7 +712,7 @@ static void s5p_mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
 
 	/* Copy timestamp from consumed src buffer to decoded dst buffer */
 	src_buf = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
-	list_for_each_entry(dst_buf, &ctx->dst_queue, list) {
+	list_for_each_entry(dst_buf, dst_queue_addr, list) {
 		if (s5p_mfc_mem_plane_addr(ctx, &dst_buf->vb, 0) ==
 								dec_y_addr) {
 			memcpy(&dst_buf->vb.v4l2_buf.timestamp,
@@ -730,7 +890,7 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 				dec->y_addr_for_pb = 0;
 			}
 
-			if (!dec->is_dts_mode) {
+			if (no_order && !dec->is_dts_mode) {
 				mfc_debug(7, "timestamp: %ld %ld\n",
 					dst_buf->vb.v4l2_buf.timestamp.tv_sec,
 					dst_buf->vb.v4l2_buf.timestamp.tv_usec);
@@ -744,6 +904,11 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 					&dst_buf->vb.v4l2_buf.timestamp,
 					sizeof(struct timeval));
 			}
+
+			if (!no_order)
+				ctx->last_framerate =
+					get_framerate_by_timestamp(
+						ctx, &dst_buf->vb.v4l2_buf);
 
 			vb2_buffer_done(&dst_buf->vb,
 				s5p_mfc_err_dspl(err) ?
@@ -839,7 +1004,7 @@ static void s5p_mfc_handle_frame_error(struct s5p_mfc_ctx *ctx,
 
 	mfc_debug(2, "Assesing whether this context should be run again.\n");
 	/* This context state is always RUNNING */
-	if (ctx->src_queue_cnt == 0 || ctx->dst_queue_cnt < ctx->dpb_count) {
+	if (!s5p_mfc_dec_ctx_ready(ctx)) {
 		mfc_debug(2, "No need to run again.\n");
 		clear_work_bit(ctx);
 	}
@@ -848,7 +1013,11 @@ static void s5p_mfc_handle_frame_error(struct s5p_mfc_ctx *ctx,
 	s5p_mfc_clear_int_flags();
 	if (clear_hw_bit(ctx) == 0)
 		BUG();
-	wake_up_ctx(ctx, reason, err);
+	/* Sleeping thread is waiting for FRAME_DONE in stop_streaming  */
+	if (ctx->state == MFCINST_ABORT)
+		wake_up_ctx(ctx, S5P_FIMV_R2H_CMD_FRAME_DONE_RET, err);
+	else
+		wake_up_ctx(ctx, reason, err);
 
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
@@ -863,6 +1032,7 @@ static void s5p_mfc_handle_ref_frame(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct s5p_mfc_buf *dec_buf;
 	dma_addr_t dec_addr, buf_addr;
+	int found = 0;
 
 	dec_buf = list_entry(ctx->dst_queue.next, struct s5p_mfc_buf, list);
 
@@ -880,10 +1050,41 @@ static void s5p_mfc_handle_ref_frame(struct s5p_mfc_ctx *ctx)
 
 		list_add_tail(&dec_buf->list, &dec->ref_queue);
 		dec->ref_queue_cnt++;
-	} else {
-		mfc_debug(2, "Can't find buffer for addr = 0x%x\n", dec_addr);
-		mfc_debug(2, "Expected addr = 0x%x, used = %d\n",
-						buf_addr, dec_buf->used);
+
+		found = 1;
+	} else if (is_h264(ctx)) {
+
+		/* Try to search decoded address in whole dst queue */
+		list_for_each_entry(dec_buf, &ctx->dst_queue, list) {
+			buf_addr = s5p_mfc_mem_plane_addr(ctx, &dec_buf->vb, 0);
+			if ((buf_addr == dec_addr) && (dec_buf->used == 1)) {
+				found = 1;
+				break;
+			}
+		}
+
+		if (found) {
+			buf_addr = s5p_mfc_mem_plane_addr(ctx, &dec_buf->vb, 0);
+			mfc_debug(2, "Found in dst queue = 0x%x, buf = 0x%x\n",
+							dec_addr, buf_addr);
+
+			list_del(&dec_buf->list);
+			ctx->dst_queue_cnt--;
+
+			list_add_tail(&dec_buf->list, &dec->ref_queue);
+			dec->ref_queue_cnt++;
+		} else {
+			mfc_debug(2, "Can't find buffer for addr = 0x%x\n", dec_addr);
+			mfc_debug(2, "Expected addr = 0x%x, used = %d\n",
+					buf_addr, dec_buf->used);
+		}
+	}
+
+	/* If decoded frame is not referenced, set it as referenced. */
+	if (found) {
+		if (!(dec->dynamic_set & mfc_get_dec_used_flag())) {
+			dec->dynamic_used |= dec->dynamic_set;
+		}
 	}
 }
 
@@ -907,6 +1108,19 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 	dev = ctx->dev;
 	if (!dev) {
 		mfc_err("no mfc device to run\n");
+		return;
+	}
+
+	if (ctx->type == MFCINST_ENCODER) {
+		mfc_err("Encoder Interrupt Error: %d\n", err);
+
+		s5p_mfc_clear_int_flags();
+		if (clear_hw_bit(ctx) == 0)
+			BUG();
+		wake_up_ctx(ctx, reason, err);
+		s5p_mfc_clock_off();
+
+		queue_work(dev->sched_wq, &dev->sched_work);
 		return;
 	}
 
@@ -957,6 +1171,12 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 		dec->remained = 0;
 
 	spin_lock_irqsave(&dev->irqlock, flags);
+
+	if (!ctx->src_queue_cnt && !ctx->dst_queue_cnt) {
+		mfc_err("Queue count is zero for src/dst\n");
+		goto leave_handle_frame;
+	}
+
 	if (ctx->codec_mode == S5P_FIMV_CODEC_H264_DEC &&
 		dst_frame_status == S5P_FIMV_DEC_STATUS_DECODING_ONLY &&
 		FW_HAS_SEI_S3D_REALLOC(dev) && sei_avail_status) {
@@ -1225,7 +1445,7 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 	switch (reason) {
 	case S5P_FIMV_R2H_CMD_ERR_RET:
 		/* An error has occured */
-		if (ctx->state == MFCINST_RUNNING) {
+		if (ctx->state == MFCINST_RUNNING || ctx->state == MFCINST_ABORT) {
 			if ((s5p_mfc_err_dec(err) >= S5P_FIMV_ERR_WARNINGS_START) &&
 				(s5p_mfc_err_dec(err) <= S5P_FIMV_ERR_WARNINGS_END))
 				s5p_mfc_handle_frame(ctx, reason, err);
@@ -1304,8 +1524,10 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 						s5p_mfc_get_consumed_stream(),
 						src_buf->vb.v4l2_planes[0].bytesused);
 				if (s5p_mfc_get_consumed_stream() <
-						src_buf->vb.v4l2_planes[0].bytesused)
+						src_buf->vb.v4l2_planes[0].bytesused) {
 					dec->remained = 1;
+					src_buf->consumed += s5p_mfc_get_consumed_stream();
+				}
 			}
 		}
 
@@ -1357,9 +1579,9 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 		ctx->int_type = reason;
 		ctx->int_err = err;
 		ctx->int_cond = 1;
-		spin_lock(&dev->condlock);
+		spin_lock_irq(&dev->condlock);
 		clear_bit(ctx->num, &dev->ctx_work_bits);
-		spin_unlock(&dev->condlock);
+		spin_unlock_irq(&dev->condlock);
 		if (err != 0) {
 			if (clear_hw_bit(ctx) == 0)
 				BUG();
@@ -1395,15 +1617,15 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 			if (ctx->is_dpb_realloc)
 				ctx->is_dpb_realloc = 0;
 			if (s5p_mfc_dec_ctx_ready(ctx)) {
-				spin_lock(&dev->condlock);
+				spin_lock_irq(&dev->condlock);
 				set_bit(ctx->num, &dev->ctx_work_bits);
-				spin_unlock(&dev->condlock);
+				spin_unlock_irq(&dev->condlock);
 			}
 		} else if (ctx->type == MFCINST_ENCODER) {
 			if (s5p_mfc_enc_ctx_ready(ctx)) {
-				spin_lock(&dev->condlock);
+				spin_lock_irq(&dev->condlock);
 				set_bit(ctx->num, &dev->ctx_work_bits);
-				spin_unlock(&dev->condlock);
+				spin_unlock_irq(&dev->condlock);
 			}
 		}
 
@@ -1436,6 +1658,83 @@ irq_cleanup_hw:
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+static int s5p_mfc_protection_set(struct s5p_mfc_dev *dev, int enable)
+{
+	int ret = 0;
+
+	ret = exynos_smc(SMC_MEM_PROT_SET, 0, 0, enable);
+	if (ret < 0) {
+		mfc_err("Memory protection failed. ret = %d, enable = %d\n",
+								ret, enable);
+		goto err_mem_prot_set;
+	}
+
+	s5p_mfc_clock_on();
+	ret = exynos_smc(SMC_PROTECTION_SET, 0, 0, enable);
+	if (!ret) {
+		mfc_err("MFC protection failed! ret = %d, enable = %d\n",
+								ret, enable);
+		s5p_mfc_clock_off();
+		goto err_hw_prot_set;
+	}
+	dev->skip_bus_waiting = 1;
+	s5p_mfc_clock_off();
+	dev->skip_bus_waiting = 0;
+
+	return ret;
+
+err_hw_prot_set:
+	if (enable)
+		exynos_smc(SMC_MEM_PROT_SET, 0, 0, !enable);
+
+err_mem_prot_set:
+	return ret;
+}
+
+static int s5p_mfc_request_sec_pgtable(struct s5p_mfc_dev *dev)
+{
+	int ret;
+	phys_addr_t base;
+	size_t size;
+
+	ion_exynos_contig_heap_info(ION_EXYNOS_ID_MFC_FW, &base, &size);
+	ret = exynos_smc(SMC_DRM_MAKE_PGTABLE, FC_MFC_EXYNOS_ID_MFC_FW, base, size);
+	if (ret) {
+		mfc_err("Failed to make pgtable for MFC FW\n");
+		return -1;
+	}
+
+	ion_exynos_contig_heap_info(ION_EXYNOS_ID_MFC_INPUT, &base, &size);
+	ret = exynos_smc(SMC_DRM_MAKE_PGTABLE, FC_MFC_EXYNOS_ID_MFC_INPUT, base, size);
+	if (ret) {
+		mfc_err("Failed to make pgtable for MFC input\n");
+		return -1;
+	}
+
+	ion_exynos_contig_heap_info(ION_EXYNOS_ID_VIDEO, &base, &size);
+	ret = exynos_smc(SMC_DRM_MAKE_PGTABLE, FC_MFC_EXYNOS_ID_VIDEO, base, size);
+	if (ret) {
+		mfc_err("Failed to make pgtable for MFC input\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int s5p_mfc_release_sec_pgtable(struct s5p_mfc_dev *dev)
+{
+	int ret;
+
+	ret = exynos_smc(SMC_DRM_CLEAR_PGTABLE, 0, 0, 0);
+	if (ret)
+		mfc_err("Failed to clear secure sysmmu page table.\n");
+
+	return -1;
+}
+
+#endif
+
 /* Open an MFC node */
 static int s5p_mfc_open(struct file *file)
 {
@@ -1447,8 +1746,9 @@ static int s5p_mfc_open(struct file *file)
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 	int magic_offset = -1;
 	enum s5p_mfc_inst_drm_type is_drm = MFCDRM_NONE;
+	phys_addr_t fw_base, sectbl_base;
+	size_t fw_size, sectbl_size;
 #endif
-
 	mfc_info("mfc driver open called\n");
 
 	if (!dev) {
@@ -1582,9 +1882,38 @@ static int s5p_mfc_open(struct file *file)
 				ret = s5p_mfc_alloc_firmware(dev);
 				if (ret)
 					goto err_fw_alloc;
+
+				ret = s5p_mfc_load_firmware(dev);
+				if (ret)
+					goto err_fw_load;
+			}
+			/* Check for supporting smc */
+			ret = exynos_smc(SMC_SUPPORT, 0, 0, 0);
+			if (ret)
+				dev->is_support_smc = 0;
+			else
+				dev->is_support_smc = 1;
+			dev->fw_status = 1;
+
+			ion_exynos_contig_heap_info(ION_EXYNOS_ID_SECTBL,
+						&sectbl_base, &sectbl_size);
+			ion_exynos_contig_heap_info(ION_EXYNOS_ID_MFC_FW, &fw_base, &fw_size);
+
+			ret = exynos_smc(SMC_DRM_SECMEM_INFO, sectbl_base, fw_base,
+						dev->variant->buf_size->firmware_code);
+
+			ret = exynos_smc(SMC_DRM_FW_LOADING, fw_base, fw_base,
+						dev->variant->buf_size->firmware_code);
+			if (ret) {
+				mfc_info("MFC DRM F/W(%x) is skipped\n", ret);
+			} else{
+				mfc_info("MFC DRM F/W(%x) is ok\n", ret);
+			}
+			ret = s5p_mfc_request_sec_pgtable(dev);
+			if (ret < 0) {
+				mfc_err("Fail to make MFC secure sysmmu page tables. ret = %d\n", ret);
 			}
 
-			dev->fw_status = 1;
 		} else {
 			if (!dev->fw_status) {
 				ret = s5p_mfc_alloc_firmware(dev);
@@ -1627,6 +1956,14 @@ static int s5p_mfc_open(struct file *file)
 		dev->preempt_ctx = MFC_NO_INSTANCE_SET;
 		dev->curr_ctx_drm = ctx->is_drm;
 
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+		if (dev->is_support_smc) {
+			ret = s5p_mfc_protection_set(dev, 1);
+			if (ret < 0)
+				goto err_prot_enable;
+		}
+#endif
+
 		/* Init the FW */
 		ret = s5p_mfc_init_hw(dev);
 		if (ret) {
@@ -1635,17 +1972,29 @@ static int s5p_mfc_open(struct file *file)
 		}
 	}
 
-	mfc_info("MFC instance open completed\n");
+	mfc_info("MFC open completed [%d:%d] dev = %p, ctx = %p\n",
+			dev->num_drm_inst, dev->num_inst, dev, ctx);
 	return ret;
 
 	/* Deinit when failure occured */
 err_hw_init:
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+	if (dev->is_support_smc)
+		s5p_mfc_protection_set(dev, 0);
+err_prot_enable:
+#endif
 	s5p_mfc_power_off();
 
 err_pwr_enable:
 	s5p_mfc_release_dev_context_buffer(dev);
 
 err_fw_load:
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+		if (dev->is_support_smc) {
+			s5p_mfc_release_sec_pgtable(dev);
+			dev->is_support_smc = 0;
+		}
+#endif
 	s5p_mfc_release_firmware(dev);
 	dev->fw_status = 0;
 
@@ -1684,8 +2033,9 @@ err_ctx_alloc:
 /* err_drm_playback: // unused label */
 #endif
 err_node_type:
+	mfc_info("MFC driver open is failed [%d:%d]\n",
+			dev->num_drm_inst, dev->num_inst);
 err_no_device:
-	mfc_info("mfc driver open finished\n");
 
 	return ret;
 }
@@ -1698,13 +2048,14 @@ static int s5p_mfc_release(struct file *file)
 	struct s5p_mfc_enc *enc = NULL;
 	int aborted = 0;
 
-	mfc_info("mfc driver release called\n");
-
 	dev = ctx->dev;
 	if (!dev) {
 		mfc_err("no mfc device to run\n");
 		return -EINVAL;
 	}
+
+	mfc_info("MFC driver release is called [%d:%d], is_drm(%d)\n",
+			dev->num_drm_inst, dev->num_inst, ctx->is_drm);
 
 	if (!aborted && mfc_need_wait_got_inst(ctx)) {
 		ctx->state = MFCINST_ABORT;
@@ -1794,6 +2145,27 @@ static int s5p_mfc_release(struct file *file)
 					dev->num_drm_inst--;
 				dev->num_inst--;
 
+				if (dev->num_inst == 0) {
+					s5p_mfc_deinit_hw(dev);
+					del_timer_sync(&dev->watchdog_timer);
+					flush_workqueue(dev->sched_wq);
+
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+					if (ctx->is_drm && dev->is_support_smc) {
+						s5p_mfc_protection_set(dev, 0);
+						s5p_mfc_release_sec_pgtable(dev);
+						dev->is_support_smc = 0;
+					}
+#endif
+
+					mfc_info("power off\n");
+					s5p_mfc_power_off();
+
+					/* reset <-> F/W release */
+					s5p_mfc_release_firmware(dev);
+					s5p_mfc_release_dev_context_buffer(dev);
+					dev->fw_status = 0;
+				}
 				return -EIO;
 			}
 		}
@@ -1814,6 +2186,14 @@ static int s5p_mfc_release(struct file *file)
 		del_timer_sync(&dev->watchdog_timer);
 
 		flush_workqueue(dev->sched_wq);
+
+#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+		if (ctx->is_drm && dev->is_support_smc) {
+			s5p_mfc_protection_set(dev, 0);
+			s5p_mfc_release_sec_pgtable(dev);
+			dev->is_support_smc = 0;
+		}
+#endif
 
 		mfc_info("power off\n");
 		s5p_mfc_power_off();
@@ -1838,12 +2218,14 @@ static int s5p_mfc_release(struct file *file)
 		kfree(ctx->dec_priv->ref_info);
 		kfree(ctx->dec_priv);
 	} else if (ctx->type == MFCINST_ENCODER) {
+		enc_cleanup_user_shared_handle(ctx);
 		kfree(ctx->enc_priv);
 	}
 	dev->ctx[ctx->num] = 0;
 	kfree(ctx);
 
-	mfc_info("mfc driver release finished\n");
+	mfc_info("mfc driver release finished [%d:%d], dev = %p\n",
+			dev->num_drm_inst, dev->num_inst, dev);
 
 	return 0;
 }
@@ -1999,6 +2381,7 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 
 	spin_lock_init(&dev->irqlock);
 	spin_lock_init(&dev->condlock);
+	mutex_init(&dev->curr_rate_lock);
 
 	dev->device = &pdev->dev;
 	dev->pdata = pdev->dev.platform_data;
@@ -2042,6 +2425,15 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 		ret = -ENOENT;
 		goto err_res_irq;
 	}
+
+	dev->sched_wq = alloc_workqueue("s5p_mfc/sched", WQ_UNBOUND
+					| WQ_MEM_RECLAIM | WQ_HIGHPRI, 1);
+	if (dev->sched_wq == NULL) {
+		dev_err(&pdev->dev, "failed to create workqueue for scheduler\n");
+		goto err_wq_sched;
+	}
+	INIT_WORK(&dev->sched_work, mfc_sched_worker);
+
 	dev->irq = res->start;
 	ret = request_threaded_irq(dev->irq, NULL, s5p_mfc_irq, IRQF_ONESHOT, pdev->name,
 									dev);
@@ -2118,7 +2510,7 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 	if (!vfd) {
 		v4l2_err(&dev->v4l2_dev, "Failed to allocate video device\n");
 		ret = -ENOMEM;
-		goto alloc_vdev_dec;
+		goto alloc_vdev_dec_drm;
 	}
 	*vfd = s5p_mfc_dec_drm_videodev;
 
@@ -2135,7 +2527,7 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev, "Failed to register video device\n");
 		video_device_release(vfd);
-		goto reg_vdev_dec;
+		goto reg_vdev_dec_drm;
 	}
 	v4l2_info(&dev->v4l2_dev, "secure decoder registered as /dev/video%d\n",
 								vfd->num);
@@ -2148,7 +2540,7 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 	if (!vfd) {
 		v4l2_err(&dev->v4l2_dev, "Failed to allocate video device\n");
 		ret = -ENOMEM;
-		goto alloc_vdev_enc;
+		goto alloc_vdev_enc_drm;
 	}
 	*vfd = s5p_mfc_enc_drm_videodev;
 
@@ -2164,7 +2556,7 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev, "Failed to register video device\n");
 		video_device_release(vfd);
-		goto reg_vdev_enc;
+		goto reg_vdev_enc_drm;
 	}
 	v4l2_info(&dev->v4l2_dev, "secure encoder registered as /dev/video%d\n",
 								vfd->num);
@@ -2213,14 +2605,6 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 	}
 
 	exynos_create_iovmm(&pdev->dev, 3, 3);
-	dev->sched_wq = alloc_workqueue("s5p_mfc/sched", WQ_UNBOUND
-					| WQ_MEM_RECLAIM | WQ_HIGHPRI, 1);
-	if (dev->sched_wq == NULL) {
-		dev_err(&pdev->dev, "failed to create workqueue for scheduler\n");
-		goto err_wq_sched;
-	}
-	INIT_WORK(&dev->sched_work, mfc_sched_worker);
-
 #ifdef CONFIG_ION_EXYNOS
 	dev->mfc_ion_client = ion_client_create(ion_exynos, "mfc");
 	if (IS_ERR(dev->mfc_ion_client)) {
@@ -2333,6 +2717,8 @@ static int __devinit s5p_mfc_probe(struct platform_device *pdev)
 		atomic_set(&dev->qos_req_cnt[i], 0);
 #endif
 
+	g_mfc_dev = dev;
+
 	pr_debug("%s--\n", __func__);
 	return 0;
 
@@ -2363,12 +2749,19 @@ alloc_ctx_fw_fail:
 	ion_client_destroy(dev->mfc_ion_client);
 err_ion_client:
 #endif
-err_wq_sched:
 	s5p_mfc_mem_cleanup_multi((void **)dev->alloc_ctx,
 			alloc_ctx_num);
 alloc_ctx_fail:
 	destroy_workqueue(dev->watchdog_wq);
 err_wq_watchdog:
+#ifdef CONFIG_MFC_USE_SECURE_NODE
+	video_unregister_device(dev->vfd_enc_drm);
+reg_vdev_enc_drm:
+alloc_vdev_enc_drm:
+	video_unregister_device(dev->vfd_dec_drm);
+reg_vdev_dec_drm:
+alloc_vdev_dec_drm:
+#endif
 	video_unregister_device(dev->vfd_enc);
 reg_vdev_enc:
 alloc_vdev_enc:
@@ -2379,6 +2772,7 @@ alloc_vdev_dec:
 err_v4l2_dev:
 	free_irq(dev->irq, dev);
 err_req_irq:
+err_wq_sched:
 err_res_irq:
 	iounmap(dev->regs_base);
 err_ioremap:

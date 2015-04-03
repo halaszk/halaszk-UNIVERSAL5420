@@ -106,6 +106,7 @@ struct sec_pmic_platform_data {
 	bool buck6_ramp_enable;
 
 	bool wtsr_smpl;
+	bool jig_smpl_disable;
 };
 
 int sec_irq_init(struct sec_pmic_dev *sec_pmic);

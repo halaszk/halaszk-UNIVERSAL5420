@@ -14,7 +14,6 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/notifier.h>
 #include <linux/platform_device.h>
 #include <plat/fb.h>
 #include "s5p_mic.h"
@@ -38,10 +37,10 @@ struct s5p_mic {
 	void __iomem *reg_base;
 	struct fb_videomode *lcd;
 	bool s5p_mic_on;
-	/* The framebuffer notifier block */
-	struct notifier_block fb_notif;
 	struct mutex ops_lock;
 };
+struct s5p_mic *g_mic;
+EXPORT_SYMBOL(g_mic);
 
 static void s5p_mic_set_image_size(struct s5p_mic *mic)
 {
@@ -225,47 +224,6 @@ int s5p_mic_disable(struct s5p_mic *mic)
 	return 0;
 }
 
-static int s5p_mic_fb_notifier_callback(struct notifier_block *self,
-				 unsigned long event, void *data)
-{
-	struct s5p_mic *mic;
-	struct fb_event *evdata = data;
-	int fb_blank;
-
-	/* If we aren't interested in this event, skip it immediately ... */
-	switch (event) {
-	case FB_EVENT_BLANK:
-		break;
-	default:
-		return 0;
-	}
-
-	mic = container_of(self, struct s5p_mic, fb_notif);
-
-	mutex_lock(&mic->ops_lock);
-
-	fb_blank = *(int *)evdata->data;
-	if (fb_blank == FB_BLANK_UNBLANK)
-		s5p_mic_enable(mic);
-	else
-		s5p_mic_disable(mic);
-
-	mutex_unlock(&mic->ops_lock);
-	return 0;
-}
-
-static int s5p_mic_register_fb_noti(struct s5p_mic *mic)
-{
-	memset(&mic->fb_notif, 0, sizeof(mic->fb_notif));
-	mic->fb_notif.notifier_call = s5p_mic_fb_notifier_callback;
-	return fb_register_client(&mic->fb_notif);
-}
-
-static void s5p_mic_unregister_fb_noti(struct s5p_mic *mic)
-{
-	fb_unregister_client(&mic->fb_notif);
-}
-
 static int s5p_mic_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -283,11 +241,10 @@ static int s5p_mic_probe(struct platform_device *pdev)
 
 	mic->dev = dev;
 	mic->lcd = &pd_win->win_mode;
-	mic->s5p_mic_on = false;
 	mutex_init(&mic->ops_lock);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
+	if (IS_ERR_OR_NULL(res)) {
 		dev_err(dev, "failed to find resource\n");
 		ret = -ENOENT;
 	}
@@ -300,8 +257,9 @@ static int s5p_mic_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, mic);
 
-	s5p_mic_register_fb_noti(mic);
-	s5p_mic_enable(mic);
+
+	g_mic = mic;
+	mic->s5p_mic_on = true;
 
 	dev_dbg(dev, "MIC driver has been probed\n");
 	return 0;

@@ -1625,9 +1625,9 @@ static int sensor_probe(struct i2c_client *client,
 
 	return 0;
 
-out_reg:
 out_gpio:
-	gpio_free(info->pdata->gpio_rst);
+out_reg:
+	free_irq(info->pdata->irq, &info->sd);
 	kfree(info);
 
 	return ret;

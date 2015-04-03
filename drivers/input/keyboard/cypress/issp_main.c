@@ -456,7 +456,7 @@ static int EXT_I2C_ACK(u32 delay)
 	EXT_I2C_SCL_LOW;
 	/*udelay(delay); */
 	if (ack)
-		printk(KERN_DEBUG"EXT_I2C No ACK\n");
+		printk(KERN_DEBUG"touchkey:EXT_I2C No ACK\n");
 
 	return ack;
 }
@@ -591,7 +591,7 @@ int get_touchkey_firmware(char *version)
 	}
 	return -1;
 	/*printk(KERN_DEBUG
-			"%s F/W version: 0x%x, Module version:0x%x\n",
+			"touchkey:%s F/W version: 0x%x, Module version:0x%x\n",
 			__FUNCTION__, version[1],version[2]); */
 }
 
@@ -603,6 +603,7 @@ int get_touchkey_firmware(char *version)
  function -- such as reporting over a communcations port.*/
 void ErrorTrap(unsigned char bErrorNumber)
 {
+	char *str_err[] = { 0, "INIT", "SiID", "ERASE", "BLOCK", "VERIFY", "SECURITY", "STATUS", "GENERIC", };
 #ifndef RESET_MODE
 	/* Set all pins to highZ to avoid back
 	powering the PSoC through the GPIO
@@ -612,8 +613,12 @@ void ErrorTrap(unsigned char bErrorNumber)
 	/* If Power Cycle programming, turn off the target */
 	RemoveTargetVDD();
 #endif
-	printk(KERN_DEBUG"touchkey:ErrorTrap: errorNumber: %d\n",
-		bErrorNumber);
+	if (bErrorNumber >= 0 && bErrorNumber <= MAX_ERROR)
+		printk(KERN_DEBUG"touchkey:ErrorTrap: %s Error(%d)\n",
+			str_err[bErrorNumber], bErrorNumber);
+	else
+		printk(KERN_DEBUG"touchkey:ErrorTrap: Error(%d)\n",
+			bErrorNumber);
 
 	return;
 }
@@ -626,7 +631,7 @@ void ErrorTrap(unsigned char bErrorNumber)
 int ISSP_main(struct touchkey_i2c *tkey_i2c)
 {
 #ifdef RESET_MODE
-	unsigned long flags;
+	//unsigned long flags;
 #endif
 	issp_tkey_i2c = tkey_i2c;
 
@@ -640,10 +645,9 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	   Acquire the device through reset or power cycle */
 	s3c_gpio_setpull(issp_tkey_i2c->pdata->gpio_scl, S3C_GPIO_PULL_NONE);
 	s3c_gpio_setpull(issp_tkey_i2c->pdata->gpio_sda, S3C_GPIO_PULL_NONE);
-	issp_tkey_i2c->pdata->suspend();
-	/*msleep(1);*/
-	usleep_range(1000, 1000);
+
 #ifdef RESET_MODE
+#if 0
 	gpio_tlmm_config(LED_26V_EN);
 	gpio_tlmm_config(EXT_TSP_SCL);
 	gpio_tlmm_config(EXT_TSP_SDA);
@@ -657,13 +661,13 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 		clk_busy_wait(1000);
 		dog_kick();
 	}
-
+#endif
 	/* Initialize the Host & Target for ISSP operations */
-	printk(KERN_DEBUG"fXRESInitializeTargetForISSP Start\n");
+	printk(KERN_DEBUG"touchkey:fXRESInitializeTargetForISSP Start\n");
 
 	/*INTLOCK(); */
-	local_save_flags(flags);
-	local_irq_disable();
+	/*local_save_flags(flags);
+	local_irq_disable();*/
 	fIsError = fXRESInitializeTargetForISSP();
 	if (fIsError) {
 		ErrorTrap(fIsError);
@@ -671,6 +675,9 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 	}
 	/*INTFREE(); */
 #else
+	issp_tkey_i2c->pdata->suspend();
+	/*msleep(1);*/
+	usleep_range(1000, 1000);
 	/*INTLOCK(); */
 	/*local_irq_save(flags);*/
 	/* Initialize the Host & Target for ISSP operations */
@@ -683,10 +690,10 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 #endif				/* RESET_MODE */
 
 #if 0				/* issp_test_2010 block */
-	printk(KERN_DEBUG"fXRESInitializeTargetForISSP END\n");
+	printk(KERN_DEBUG"touchkey:fXRESInitializeTargetForISSP END\n");
 
 	/* Run the SiliconID Verification, and proceed according to result. */
-	printk(KERN_DEBUG"fVerifySiliconID START\n");
+	printk(KERN_DEBUG"touchkey:fVerifySiliconID START\n");
 #endif
 
 	/*INTLOCK(); */
@@ -699,13 +706,55 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 		return -fIsError;
 	}
 #endif
+	if (tkey_i2c->do_checksum) {
+		printk(KERN_DEBUG"touchkey:checksum start\n");
+		tkey_i2c->do_checksum = false;
+		/* pass data checksum calculating */
+#if 0
+		iChecksumData = 0;
+		/*PTJ: NUM_BANKS should be 1 for Krypton*/
+		for (bBankCounter = 0; bBankCounter < NUM_BANKS; bBankCounter++) {
+			/*local_irq_save(flags);*/
+			for (iBlockCounter = 0; iBlockCounter < BLOCKS_PER_BANK;
+				 iBlockCounter++) {
+ 				LoadProgramData((unsigned char)iBlockCounter,
+						bBankCounter);
+				iChecksumData += iLoadTarget();
+			}
+		}
+#endif
+		/* data checksum */
+		iChecksumData = tkey_i2c->fw_img->checksum;
 
+		iChecksumTarget = 0;
+		for (bBankCounter = 0; bBankCounter < NUM_BANKS; bBankCounter++) {
+			fIsError = fAccTargetBankChecksum(&iChecksumTarget);
+			if (fIsError) {
+				ErrorTrap(fIsError);
+				return fIsError;
+			}
+		}
+
+		printk(KERN_DEBUG"touchkey:chk, file %#x, ic %#x\n",
+				iChecksumData, iChecksumTarget);
+
+		if ((unsigned short)(iChecksumTarget & 0xffff) ==
+			(unsigned short)(iChecksumData & 0xffff)) {
+			printk(KERN_ERR"touchkey:chk is same. pass fw update.\n");
+	//		ErrorTrap(VERIFY_ERROR);
+			goto out_issp_main;
+		}
+
+		printk(KERN_DEBUG"touchkey:chk is not matching. continue update\n");
+	}
 	/*INTFREE(); */
 	/*local_irq_restore(flags);*/
-	/*printk(KERN_DEBUG"fVerifySiliconID END\n"); */
+	/*printk(KERN_DEBUG"touchkey:fVerifySiliconID END\n"); */
 
 	/* Bulk-Erase the Device. */
-	/*printk(KERN_DEBUG"fEraseTarget START\n"); */
+#ifdef CYPRESS_ISSP_DEBUG
+	printk(KERN_DEBUG"touchkey:start fEraseTarget\n"); 
+#endif
 	/*INTLOCK(); */
 	fIsError = fEraseTarget();
 	/*local_irq_save(flags);*/
@@ -721,7 +770,9 @@ RAM Load, FLASHBlock Program, and Target Checksum Verification.*/
 Program Flash blocks with predetermined data.
 In the final application
 this data should come from the HEX output of PSoC Designer.*/
-	/*printk(KERN_DEBUG"Program Flash Blocks Start\n");*/
+#ifdef CYPRESS_ISSP_DEBUG
+	printk(KERN_DEBUG"touchkey:Program Flash Blocks Start\n");
+#endif
 
 	/* Calculte the device checksum as you go*/
 	iChecksumData = 0;
@@ -780,10 +831,10 @@ this data should come from the HEX output of PSoC Designer.*/
 		/*local_irq_restore(flags);*/
 	}
 
-	/*printk(KERN_DEBUG"\r\n Program Flash Blocks End\n"); */
+	/*printk(KERN_DEBUG"touchkey:Program Flash Blocks End\n"); */
 
 #if 0				/* verify check pass or check. */
-	printk(KERN_DEBUG"\r\n Verify Start", 0, 0, 0);
+	printk(KERN_DEBUG"touchkey:Verify Start", 0, 0, 0);
 	/*=======================================================
 	PTJ: Doing Verify
 	PTJ: this code isnt needed in the program flow
@@ -794,7 +845,7 @@ this data should come from the HEX output of PSoC Designer.*/
 	for (bBankCounter = 0; bBankCounter < NUM_BANKS; bBankCounter++) {
 		for (iBlockCounter = 0; iBlockCounter < BLOCKS_PER_BANK;
 		     iBlockCounter++) {
-			printk(KERN_DEBUG"Verify Loop: iBlockCounter %d",
+			printk(KERN_DEBUG"touchkey:Verify Loop: iBlockCounter %d",
 				iBlockCounter, 0, 0);
 			INTLOCK();
 			LoadProgramData(bBankCounter,
@@ -836,14 +887,16 @@ this data should come from the HEX output of PSoC Designer.*/
 			INTFREE();
 		}
 	}
-	printk(KERN_DEBUG"Verify End", 0, 0, 0);
+	printk(KERN_DEBUG"touchkey:Verify End", 0, 0, 0);
 #endif				/* #if 1 */
 #if 1				/* security start */
 	/*=======================================================
 	 program security data into target psoc.
 	 in the final application this data should
-	 come from the hex output of psoc designer.
-	printk(KERN_DEBUG"program security data start\n");*/
+	 come from the hex output of psoc designer.*/
+#ifdef CYPRESS_ISSP_DEBUG
+	printk(KERN_DEBUG"touchkey:program security data start\n");
+#endif
 	/*INTLOCK(); */
 	/*local_irq_save(flags);*/
 	for (bBankCounter = 0; bBankCounter < NUM_BANKS; bBankCounter++) {
@@ -874,16 +927,20 @@ this data should come from the HEX output of PSoC Designer.*/
 			return -fIsError;
 		}
 	}
+
 	/*INTFREE(); */
 	/*local_irq_restore(flags);*/
 
-	/*printk(KERN_DEBUG"Program security data END\n"); */
+	/*printk(KERN_DEBUG"touchkey:Program security data END\n"); */
 
 	/*==============================================================
 	PTJ: Do READ-SECURITY after SECURE
 	Load one bank of security data from hex file into buffer
 	loads abTargetDataOUT[] with security data
 	that was used in secure bit stream*/
+#ifdef CYPRESS_ISSP_DEBUG
+	printk(KERN_DEBUG"touchkey:Load security data start\n");
+#endif
 	/*INTLOCK(); */
 	/*local_irq_save(flags);*/
 	fIsError = fLoadSecurityData(bBankCounter);
@@ -900,7 +957,7 @@ this data should come from the HEX output of PSoC Designer.*/
 #endif
 	/*INTFREE(); */
 	/*local_irq_restore(flags);*/
-	/*printk(KERN_DEBUG"Load security data END\n"); */
+	/*printk(KERN_DEBUG"touchkey:Load security data END\n"); */
 #endif				/* security end */
 
 	/*=======================================================
@@ -919,9 +976,9 @@ this data should come from the HEX output of PSoC Designer.*/
 	/*INTFREE(); */
 	/*local_irq_restore(flags);*/
 
-	/*printk(KERN_DEBUG"Checksum : iChecksumTarget (0x%X)\n",
+	/*printk(KERN_DEBUG"touchkey:Checksum : iChecksumTarget (0x%X)\n",
 	(unsigned char)iChecksumTarget);
-	   printk  ("Checksum : iChecksumData (0x%X)\n",
+	   printk  (KERN_DEBUG"touchkey:Checksum : iChecksumData (0x%X)\n",
 	   (unsigned char)iChecksumData); */
 
 	if ((unsigned short)(iChecksumTarget & 0xffff) !=
@@ -929,6 +986,8 @@ this data should come from the HEX output of PSoC Designer.*/
 		ErrorTrap(VERIFY_ERROR);
 		return -VERIFY_ERROR;
 	}
+	printk(KERN_DEBUG"touchkey:chk data %#x, ic %#x\n",
+			iChecksumData, iChecksumTarget);
 	/*printk(KERN_DEBUG"Doing Checksum END\n");*/
 
 	 /**** SUCCESS ***
@@ -936,7 +995,7 @@ this data should come from the HEX output of PSoC Designer.*/
 	 ID-Checked,	 Bulk-Erased, Block-Loaded,
 	 Block-Programmed, Block-Verified,
 	 and Device- Checksum Verified.*/
-
+ out_issp_main:
 	/* You may want to restart Your Target PSoC Here. */
 	ReStartTarget();
 

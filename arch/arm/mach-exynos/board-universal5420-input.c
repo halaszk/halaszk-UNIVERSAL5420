@@ -680,6 +680,12 @@ void __init synaptics_tsp_init(void)
 	synaptics_i2c_devs0[0].irq = gpio_to_irq(GPIO_TSP_INT);
 
 	synaptics_verify_panel_revision();
+
+	if (lpcharge) {
+		printk(KERN_ERR "%s: disable TSP for lpm\n", __func__);
+		return;
+	}
+
 	s3c_i2c0_set_platdata(&touch_i2c0_platdata);
 	i2c_register_board_info(0, synaptics_i2c_devs0,
 		 ARRAY_SIZE(synaptics_i2c_devs0));
@@ -999,6 +1005,11 @@ static void wacom_compulsory_flash_mode(bool en)
 	gpio_direction_output(GPIO_PEN_FWE1_18V, en);
 }
 
+static int wacom_get_irq_state(void)
+{
+	return gpio_get_value(GPIO_PEN_IRQ_18V);
+}
+
 static struct wacom_g5_platform_data wacom_platform_data = {
 	.x_invert = WACOM_X_INVERT,
 	.y_invert = WACOM_Y_INVERT,
@@ -1022,6 +1033,7 @@ static struct wacom_g5_platform_data wacom_platform_data = {
 	.register_cb = wacom_register_callbacks,
 	.compulsory_flash_mode = wacom_compulsory_flash_mode,
 	.gpio_pen_insert = GPIO_WACOM_SENSE,
+	.get_irq_state = wacom_get_irq_state,
 };
 
 /* I2C */

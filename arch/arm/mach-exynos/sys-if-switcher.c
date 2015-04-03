@@ -21,12 +21,14 @@
 #include <linux/uaccess.h>
 
 #include <asm/bL_switcher.h>
+#include <asm/mach/map.h>
 
 #include <mach/regs-pmu.h>
 #ifdef CONFIG_EXYNOS5_CCI
 #include <mach/map.h>
 #endif
 
+#include "common.h"
 
 struct bus_type bL_subsys = {
 	.name = "b.L",
@@ -251,3 +253,51 @@ static int __init exynos_bL_sys_if_init(void)
 }
 
 late_initcall(exynos_bL_sys_if_init);
+
+static int get_core_power_status(int cluster, int cpu)
+{
+	unsigned int val;
+
+	val = __raw_readl(EXYNOS_ARM_CORE_STATUS(cluster * 4 + cpu));
+	return val & 3 ? 1 : 0;
+}
+
+static int get_cluster_power_status(int cluster)
+{
+	unsigned int val;
+
+	val = __raw_readl(EXYNOS_COMMON_STATUS(cluster));
+	return val & 3 ? 1 : 0;
+}
+
+void print_bL_state(char buf[], const unsigned int max_len)
+{
+	unsigned int cluster, cpu, len = 0;
+
+	len += snprintf(buf, max_len - len, "BL Core Status:\n");
+	len += snprintf(buf + len, max_len - len, "      0 1 2 3 L2\n");
+	for (cluster = 0; cluster < 2; cluster++) {
+		for_each_present_cpu(cpu) {
+			if (cpu == 0)
+				len += snprintf(buf + len, max_len - len,
+					"%s :", cluster ? " A7" : "A15");
+			len += snprintf(buf + len, max_len - len, " %d",
+					get_core_power_status(cluster, cpu));
+		}
+		len += snprintf(buf + len, max_len - len, "  %d\n",
+				get_cluster_power_status(cluster));
+	}
+}
+
+void print_bL_current_core(char buf[], const unsigned int max_len)
+{
+	int cpu = smp_processor_id();
+	int big;
+
+	if (exynos_is_finish_map_io()) {
+		big = get_core_power_status(0, cpu);
+		snprintf(buf, max_len, "%c%d", big ? 'B' : 'L', cpu);
+	} else {
+		snprintf(buf, max_len, "%d", cpu);
+	}
+}

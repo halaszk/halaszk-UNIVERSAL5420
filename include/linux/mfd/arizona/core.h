@@ -95,6 +95,7 @@ struct arizona {
 
 	struct arizona_pdata pdata;
 
+	unsigned int irq_sem;
 	int irq;
 	int virq[2];
 	struct regmap_irq_chip_data *aod_irq_chip;
@@ -107,6 +108,11 @@ struct arizona {
 	int clk32k_ref;
 
 	struct snd_soc_dapm_context *dapm;
+
+	struct mutex reg_setting_lock;
+
+	uint16_t out_comp_coeff;
+	uint8_t out_comp_enabled;
 };
 
 int arizona_clk32k_enable(struct arizona *arizona);

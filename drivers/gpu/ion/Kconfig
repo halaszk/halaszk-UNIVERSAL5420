@@ -72,3 +72,8 @@ config ION_EXYNOS_DRM_MEMSIZE_G2D_WFD
 	int "Reserved memsize in kilobytes for G2D WFD"
 	depends on EXYNOS_CONTENT_PATH_PROTECTION
 	default 8192
+
+config ION_EXYNOS_MEMSIZE_SECDMA
+	int "Reserved memsize in kilobytes for Secure DMA"
+	depends on EXYNOS_CONTENT_PATH_PROTECTION
+	default 0

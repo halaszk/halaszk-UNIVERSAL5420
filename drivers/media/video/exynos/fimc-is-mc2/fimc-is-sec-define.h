@@ -89,11 +89,14 @@
 #define FIMC_IS_FW				"fimc_is_fw2.bin"
 #define FIMC_IS_FW_3L2				"fimc_is_fw2_3L2.bin"
 #define FIMC_IS_FW_IMX134			"fimc_is_fw2_IMX134.bin"
+#define FIMC_IS_FW_IMX134_EEPROM		"fimc_is_fw2_IMX134_EEPROM.bin"
 #define FIMC_IS_FW_SDCARD			"/data/media/0/fimc_is_fw2.bin"
 #define FIMC_IS_IMX135_SETF			"setfile_imx135.bin"
 #define FIMC_IS_IMX134_SETF			"setfile_imx134.bin"
+#define FIMC_IS_IMX134_EEPROM_SETF		"setfile_imx134_eeprom.bin"
 #define FIMC_IS_3L2_SETF			"setfile_3L2.bin"
 #define FIMC_IS_6B2_SETF			"setfile_6b2.bin"
+#define FIMC_IS_6B2_EEPROM_SETF			"setfile_6b2_eeprom.bin"
 #define FIMC_IS_FW_PATH				"/system/vendor/firmware/"
 #define FIMC_IS_FW_DUMP_PATH			"/data/"
 
@@ -103,16 +106,24 @@
 #define FIMC_IS_SETFILE_VER_SIZE		52
 
 #define FIMC_IS_CAL_SDCARD			"/data/cal_data.bin"
-/*#define FIMC_IS_MAX_CAL_SIZE			(20 * 1024)*/
+
+#ifdef CONFIG_CAMERA_EEPROM
+#define FIMC_IS_MAX_FW_SIZE			(8 * 1024)
+#define HEADER_CRC32_LEN			(80 / 2)
+#define OEM_CRC32_LEN				(64 / 2)
+#define AWB_CRC32_LEN				(32 / 2)
+#define SHADING_CRC32_LEN			(6623 / 2)
+#else
 #define FIMC_IS_MAX_FW_SIZE			(2048 * 1024)
+#define HEADER_CRC32_LEN			(128 / 2)
+#define OEM_CRC32_LEN				(192 / 2)
+#define AWB_CRC32_LEN				(32 / 2)
+#define SHADING_CRC32_LEN			(2336 / 2)
+#endif
+
 #define FIMC_IS_CAL_START_ADDR			(0x013D0000)
 #define FIMC_IS_CAL_RETRY_CNT			(2)
 #define FIMC_IS_FW_RETRY_CNT			(2)
-
-#define HEADER_CRC32_LEN (128 / 2)
-#define OEM_CRC32_LEN (192 / 2)
-#define AWB_CRC32_LEN (32 / 2)
-#define SHADING_CRC32_LEN (2336 / 2)
 
 struct fimc_is_from_info {
 	u32		bin_start_addr;
@@ -158,16 +169,19 @@ bool fimc_is_sec_is_fw_exist(char *fw_name);
 int fimc_is_sec_readfw(void);
 int fimc_is_sec_readcal(int isSysfsRead);
 
+int fimc_is_sec_read_phone_ver(void);
 int fimc_is_sec_fw_sel(struct device *dev, struct exynos5_platform_fimc_is *pdata, char *fw_name, char *setf_name, int isSysfsRead);
 int fimc_is_sec_fw_revision(char *fw_ver);
 bool fimc_is_sec_fw_module_compare(char *fw_ver1, char *fw_ver2);
 
+bool fimc_is_sec_get_crc_result(void);
 bool fimc_is_sec_check_fw_crc32(char *buf);
 bool fimc_is_sec_check_cal_crc32(char *buf);
 void fimc_is_sec_make_crc32_table(u32 *table, u32 id);
 
 int fimc_is_sec_gpio_enable(struct exynos5_platform_fimc_is *pdata, char *name, bool on);
 int fimc_is_sec_core_voltage_select(struct device *dev, char *header_ver);
+int fimc_is_sec_core_voltage(char *header_ver);
 int fimc_is_sec_ldo_enable(struct device *dev, char *name, bool on);
 
 int fimc_is_spi_reset(void *buf, u32 rx_addr, size_t size);

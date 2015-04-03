@@ -170,7 +170,7 @@ static int vibe_terminate(void)
 
 static int vibe_setsamples(int index, u16 depth, u16 size, char *buff)
 {
-	char force;
+	int8_t force;
 
 	switch (depth) {
 	case 8:
@@ -184,7 +184,7 @@ static int vibe_setsamples(int index, u16 depth, u16 size, char *buff)
 	case 16:
 		if (size != 2)
 			return VIBE_E_FAIL;
-		force = ((u16 *)buff)[0] >> 8;
+		force = ((int16_t *)buff)[0] >> 8;
 		break;
 
 	default:

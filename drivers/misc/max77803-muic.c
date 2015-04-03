@@ -3,7 +3,6 @@
  *
  *  Copyright (C) 2012 Samsung Electronics
  *  <sukdong.kim@samsung.com>
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -41,10 +40,6 @@
 /* #include <linux/extcon.h> */
 
 #define DEV_NAME	"max77803-muic"
-#if defined(CONFIG_MACH_J_CHN_CTC) || \
-	defined(CONFIG_MACH_J_CHN_CU)
-#define REGARD_442K_AS_523K
-#endif
 
 extern unsigned int lpcharge;
 
@@ -89,16 +84,8 @@ enum {
 
 enum {
 	ADC_GND			= 0x00,
-#if defined(CONFIG_MUIC_DET_JACK)
-	ADC_MHL_OR_SENDEND	= 0x01,
-#else
-	ADC_MHL			= 0x01,
-#endif
-	ADC_DOCK_PREV_KEY	= 0x04,
-	ADC_DOCK_NEXT_KEY	= 0x07,
-	ADC_DOCK_VOL_DN		= 0x0a, /* 0x01010 14.46K ohm */
-	ADC_DOCK_VOL_UP		= 0x0b, /* 0x01011 17.26K ohm */
-	ADC_DOCK_PLAY_PAUSE_KEY = 0x0d,
+	ADC_SEND_END_KEY	= 0x01,
+	ADC_REMOTE_S12		= 0x0d,
 	ADC_SMARTDOCK		= 0x10, /* 0x10000 40.2K ohm */
 	ADC_AUDIODOCK		= 0x12, /* 0x10010 64.9K ohm */
 	ADC_LANHUB		= 0x13, /* 0x10011 80.07K ohm */
@@ -111,9 +98,7 @@ enum {
 	ADC_JIG_UART_OFF	= 0x1c, /* 0x11100 523K ohm */
 	ADC_JIG_UART_ON		= 0x1d, /* 0x11101 619K ohm */
 	ADC_CARDOCK		= 0x1d, /* 0x11101 619K ohm */
-#if defined(CONFIG_MUIC_DET_JACK)
 	ADC_EARJACK		= 0x1e, /* 0x11110 1000 or 1002 ohm */
-#endif
 	ADC_OPEN		= 0x1f
 };
 
@@ -173,10 +158,6 @@ struct max77803_muic_info {
 	bool			is_factory_start;
 #endif /* !CONFIG_MUIC_MAX77803_SUPPORT_CAR_DOCK */
 
-#if defined(CONFIG_MUIC_DET_JACK)
-	int			earkeypressed;
-	int			previous_earkey;
-#endif
 #ifdef CONFIG_EXTCON
 	struct extcon_dev	*edev;
 #endif
@@ -185,9 +166,6 @@ struct max77803_muic_info {
 static int if_muic_info;
 static int switch_sel;
 static int if_pmic_rev;
-#if defined(REGARD_442K_AS_523K)
-static int is_factory_mode = -1;
-#endif
 
 /* func : get_if_pmic_inifo
  * switch_sel value get from bootloader comand line
@@ -483,10 +461,6 @@ static int max77803_muic_set_comp2_comn1_pass2
 			return -EINVAL;
 		}
 	}
-#if defined(CONFIG_MUIC_DET_JACK)
-	else if (type == 2)
-		val = MAX77803_MUIC_CTRL1_BIN_2_010;
-#endif
 	else {
 		dev_err(info->dev, "func: %s invalid path type(%d)\n"
 			, __func__, type);
@@ -535,17 +509,17 @@ static int max77803_muic_set_uart_path_pass2
 {
 	int ret = 0;
 
-	switch (info->cable_type) { 
-	case CABLE_TYPE_JIG_UART_OFF_MUIC: 
-	case CABLE_TYPE_JIG_UART_OFF_VB_MUIC: 
+	switch (info->cable_type) {
+	case CABLE_TYPE_JIG_UART_OFF_MUIC:
+	case CABLE_TYPE_JIG_UART_OFF_VB_MUIC:
 		ret = max77803_muic_set_comp2_comn1_pass2
 			(info, 1/*uart*/, path);
-		break; 
-	default: 
-		pr_info("%s:%s JIG UART OFF isn't connected," 
-			"don't change MUIC path\n", DEV_NAME, __func__); 
-		break; 
-	} 
+		break;
+	default:
+		pr_info("%s:%s JIG UART OFF isn't connected,"
+			"don't change MUIC path\n", DEV_NAME, __func__);
+		break;
+	}
 
 	return ret;
 
@@ -587,103 +561,6 @@ static int max77803_muic_get_uart_path_pass2
 		return -EINVAL;
 	}
 }
-#endif
-
-#if defined(CONFIG_MUIC_DET_JACK)
-static int max77803_muic_set_audio_path_pass2
-	(struct max77803_muic_info *info, int path)
-{
-	int ret = 0;
-	ret = max77803_muic_set_comp2_comn1_pass2
-		(info, 2/*audio*/, path);
-	return ret;
-
-}
-#endif
-
-#if defined(REGARD_442K_AS_523K)
-static void max77803_muic_force_uart_switch(int uart_path)
-{
-	u8 ctrl1_mask, ctrl1_val;
-	u8 ctrl2_val;
-	u8 gpio_uart_sel = 0;
-
-	switch (uart_path)	{
-	case UART_PATH_CP:
-		/* Switch UART path to MASTER (PMB9811C, infinion) */
-		pr_info("[%s] Force UART path switch to CP (infi)\n",
-				__func__);
-		ctrl1_val =
-			(MAX77803_MUIC_CTRL1_BIN_5_101<<COMN1SW_SHIFT) |
-			(MAX77803_MUIC_CTRL1_BIN_5_101<<COMP2SW_SHIFT);
-		ctrl1_mask = COMN1SW_MASK | COMP2SW_MASK;
-		gpio_uart_sel = GPIO_LEVEL_LOW;
-		break;
-	case UART_PATH_CP_ESC:
-		/* Switch UART path to SLAVE (ESC6270, qualcomm) */
-		pr_info("[%s] Force UART path switch to CP (esc)\n",
-				__func__);
-		ctrl1_val =
-			(MAX77803_MUIC_CTRL1_BIN_5_101<<COMN1SW_SHIFT) |
-			(MAX77803_MUIC_CTRL1_BIN_5_101<<COMP2SW_SHIFT);
-		ctrl1_mask = COMN1SW_MASK | COMP2SW_MASK;
-		gpio_uart_sel = GPIO_LEVEL_HIGH;
-		break;
-	case UART_PATH_AP:
-		/* Switch UART path to AP */
-		pr_info("[%s] Force UART path switch to AP\n",
-				__func__);
-		ctrl1_val =
-			(MAX77803_MUIC_CTRL1_BIN_3_011<<COMN1SW_SHIFT) |
-			(MAX77803_MUIC_CTRL1_BIN_3_011<<COMP2SW_SHIFT);
-		ctrl1_mask = COMN1SW_MASK | COMP2SW_MASK;
-		break;
-	default:
-		pr_info("[%s] wrong uart_path, return\n", __func__);
-		return;
-		break;
-	}
-
-	max77803_update_reg(gInfo->muic, MAX77803_MUIC_REG_CTRL1,
-						ctrl1_val, ctrl1_mask);
-	max77803_update_reg(gInfo->muic,
-					MAX77803_MUIC_REG_CTRL2,
-					0 << CTRL2_ACCDET_SHIFT,
-					CTRL2_ACCDET_MASK);
-	max77803_read_reg(gInfo->muic, MAX77803_MUIC_REG_CTRL1, &ctrl1_val);
-	max77803_read_reg(gInfo->muic, MAX77803_MUIC_REG_CTRL2, &ctrl2_val);
-	pr_info("[%s] REG_CTRL1=0x%x, REG_CTRL2=0x%x\n",
-			__func__, ctrl1_val, ctrl2_val);
-	if (uart_path != UART_PATH_AP)
-		gpio_set_value(GPIO_UART_SEL, gpio_uart_sel);
-	pr_info("[%s] GPIO_UART_SEL(%d)\n",
-			__func__, gpio_get_value(GPIO_UART_SEL));
-
-}
-
-static void max77803_muic_switch_uart_path_default(void)
-{
-	int switch_sel = get_switch_sel();
-	switch_sel &= 0xf;
-
-	switch(switch_sel & MAX77803_SWITCH_SEL_2nd_BIT_UART)	{
-	case 0x00 << 2:
-		max77803_muic_force_uart_switch(UART_PATH_CP);
-		break;
-	case 0x01 << 2:
-		max77803_muic_force_uart_switch(UART_PATH_AP);
-		break;
-	case 0x02 << 2:
-		max77803_muic_force_uart_switch(UART_PATH_CP_ESC);
-		break;
-	default:
-		pr_err("%s: unexpected switch_sel(0x%x)\n", __func__, switch_sel);
-		break;
-	}
-
-	return;
-}
-
 #endif
 
 static ssize_t max77803_muic_show_usb_state(struct device *dev,
@@ -815,7 +692,7 @@ static ssize_t max77803_muic_set_manualsw(struct device *dev,
 #endif
 		dev_info(info->dev, "%s: CP_USB_MODE\n", __func__);
 #if defined(CONFIG_MACH_J_CHN_CTC)
-		dev_info(info->dev, "GPIO_USB_BOOT_EN enable\n");		
+		dev_info(info->dev, "GPIO_USB_BOOT_EN enable\n");
 		gpio_direction_output(GPIO_USB_BOOT_EN, 1);
 #endif
 	} else
@@ -958,22 +835,10 @@ static void max77803_muic_set_adcdbset(struct max77803_muic_info *info,
 		return;
 	}
 
-#if defined(CONFIG_MFD_MAX77888)
-	if (info->max77803->pmic_rev >= MAX77803_REV_PASS3)
-	{
-		val = value << CTRL4_ADCDBSET_SHIFT;
-		dev_info(info->dev, "%s: ADCDBSET(0x%02x)\n", __func__, val);
-		ret = max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL4, val,
-					  CTRL4_ADCDBSET_MASK);
-	}
-	else
-#endif
-	{
-		val = value << CTRL3_ADCDBSET_SHIFT;
-		dev_info(info->dev, "%s: ADCDBSET(0x%02x)\n", __func__, val);
-		ret = max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL3, val,
-					  CTRL3_ADCDBSET_MASK);
-	}
+	val = value << CTRL3_ADCDBSET_SHIFT;
+	dev_info(info->dev, "%s: ADCDBSET(0x%02x)\n", __func__, val);
+	ret = max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL3, val,
+				  CTRL3_ADCDBSET_MASK);
 
 	if (ret < 0)
 		dev_err(info->dev, "%s: fail to update reg\n", __func__);
@@ -990,29 +855,14 @@ static ssize_t max77803_muic_show_adc_debounce_time(struct device *dev,
 	if (!info->muic)
 		return sprintf(buf, "No I2C client\n");
 
-#if defined(CONFIG_MFD_MAX77888)
-	if (info->max77803->pmic_rev >= MAX77803_REV_PASS3)
-		ret = max77803_read_reg(info->muic, MAX77803_MUIC_REG_CTRL4, &val);
-	else
-#endif	
-		ret = max77803_read_reg(info->muic, MAX77803_MUIC_REG_CTRL3, &val);
-	
+	ret = max77803_read_reg(info->muic, MAX77803_MUIC_REG_CTRL3, &val);
 	if (ret) {
 		dev_err(info->dev, "%s: fail to read muic reg\n", __func__);
 		return sprintf(buf, "UNKNOWN\n");
 	}
-#if defined(CONFIG_MFD_MAX77888)
-	if (info->max77803->pmic_rev >= MAX77803_REV_PASS3)
-	{
-		val &= CTRL3_ADCDBSET_MASK;
-		val = val >> CTRL3_ADCDBSET_SHIFT;
-	}
-	else
-#endif
-	{
-		val &= CTRL4_ADCDBSET_MASK;
-		val = val >> CTRL4_ADCDBSET_SHIFT;
-	}
+	val &= CTRL4_ADCDBSET_MASK;
+	val = val >> CTRL4_ADCDBSET_SHIFT;
+
 	dev_info(info->dev, "func:%s val:%x\n", __func__, val);
 	return sprintf(buf, "%x\n", val);
 }
@@ -1032,47 +882,6 @@ static ssize_t max77803_muic_set_adc_debounce_time(struct device *dev,
 	return count;
 }
 
-#if defined(REGARD_442K_AS_523K)
-static ssize_t max77803_muic_show_is_factory_mode(struct device *dev,
-			struct device_attribute *attr, char *buf)
-{
-	struct max77803_muic_info *info = dev_get_drvdata(dev);
-	int ret;
-	u8 val;
-	pr_info("[%s][buf=%s]", __func__, buf);
-
-	if (!info->muic)
-		return sprintf(buf, "No I2C client\n");
-
-	return sprintf(buf, "%d\n", is_factory_mode);
-}
-
-static ssize_t max77803_muic_set_is_factory_mode(struct device *dev,
-				    struct device_attribute *attr,
-				    const char *buf, size_t count)
-{
-	struct max77803_muic_info *info = dev_get_drvdata(dev);
-	pr_info("[%s][buf=%s][cable_type=%d]", __func__, buf, info->cable_type);
-
-	if (!strncasecmp(buf, "0", 1)) {
-		is_factory_mode = 0;
-		if (info->cable_type ==
-				CABLE_TYPE_JIG_UART_OFF_MUIC)
-			max77803_muic_force_uart_switch(info->muic_data->uart_path);
-	} else if ((!strncasecmp(buf, "1", 1))) {
-		is_factory_mode = 1;
-		if (info->cable_type ==
-				CABLE_TYPE_JIG_UART_OFF_MUIC)
-			max77803_muic_switch_uart_path_default();
-	} else {
-		pr_info("[%s] wrong value", __func__);
-		return -1;
-	}
-
-	return count;
-}
-#endif
-
 static ssize_t max77803_muic_set_uart_sel(struct device *dev,
 					  struct device_attribute *attr,
 					  const char *buf, size_t count)
@@ -1089,7 +898,7 @@ static ssize_t max77803_muic_set_uart_sel(struct device *dev,
 		else
 			pr_err("%s: Change(AP) fail!!"
 				, __func__);
-	}	
+	}
 #if defined(CONFIG_SWITCH_DUAL_MODEM)
 	else if (!strncasecmp(buf, "CP2", 3)) {
 		int ret = max77803_muic_set_uart_path_pass2
@@ -1290,7 +1099,7 @@ static ssize_t max77803_muic_show_charger_type(struct device *dev,
 	*  1 : Non-Dedicated Charger
 	*/
 	switch (adc){
-	case ADC_MHL:
+	case ADC_SEND_END_KEY:
 	case ADC_SMARTDOCK:
 	case ADC_AUDIODOCK:
 	case ADC_DESKDOCK:
@@ -1341,12 +1150,6 @@ static DEVICE_ATTR(check_cpboot, 0664,
 		max77803_muic_set_check_cpboot);
 #endif
 
-#if defined(REGARD_442K_AS_523K)
-static DEVICE_ATTR(is_factory_mode, 0664,
-		max77803_muic_show_is_factory_mode,
-		max77803_muic_set_is_factory_mode);
-#endif
-
 static struct attribute *max77803_muic_attributes[] = {
 	&dev_attr_uart_sel.attr,
 	&dev_attr_usb_state.attr,
@@ -1361,9 +1164,6 @@ static struct attribute *max77803_muic_attributes[] = {
 #endif /* !CONFIG_MUIC_MAX77803_SUPPORT_CAR_DOCK */
 #ifdef CONFIG_LTE_VIA_SWITCH
 	&dev_attr_check_cpboot.attr,
-#endif
-#if defined(REGARD_442K_AS_523K)
-	&dev_attr_is_factory_mode.attr,
 #endif
 	&dev_attr_chg_type.attr,
 	NULL
@@ -1473,135 +1273,6 @@ static int max77803_muic_set_charging_type(struct max77803_muic_info *info,
 		return ret;
 	}
 	return 0;
-}
-
-static int max77803_muic_handle_dock_vol_key(struct max77803_muic_info *info,
-					     u8 status1)
-{
-	struct input_dev *input = info->input;
-	int pre_key = info->previous_key;
-	unsigned int code;
-	int state;
-	u8 adc;
-
-	adc = status1 & STATUS1_ADC_MASK;
-	dev_info(info->dev,
-		 "func:%s status1:%x adc:%x cable_type:%d\n",
-		 __func__, status1, adc, info->cable_type);
-	if (info->cable_type != CABLE_TYPE_DESKDOCK_MUIC ||
-		info->cable_type != CABLE_TYPE_DESKDOCK_TA_MUIC)
-		return 0;
-
-	if (adc == ADC_OPEN) {
-		switch (pre_key) {
-		case DOCK_KEY_VOL_UP_PRESSED:
-			code = KEY_VOLUMEUP;
-			state = 0;
-			info->previous_key = DOCK_KEY_VOL_UP_RELEASED;
-			break;
-		case DOCK_KEY_VOL_DOWN_PRESSED:
-			code = KEY_VOLUMEDOWN;
-			state = 0;
-			info->previous_key = DOCK_KEY_VOL_DOWN_RELEASED;
-			break;
-		case DOCK_KEY_PREV_PRESSED:
-			code = KEY_PREVIOUSSONG;
-			state = 0;
-			info->previous_key = DOCK_KEY_PREV_RELEASED;
-			break;
-		case DOCK_KEY_PLAY_PAUSE_PRESSED:
-			code = KEY_PLAYPAUSE;
-			state = 0;
-			info->previous_key = DOCK_KEY_PLAY_PAUSE_RELEASED;
-			break;
-		case DOCK_KEY_NEXT_PRESSED:
-			code = KEY_NEXTSONG;
-			state = 0;
-			info->previous_key = DOCK_KEY_NEXT_RELEASED;
-			break;
-		default:
-			return 0;
-		}
-		input_event(input, EV_KEY, code, state);
-		input_sync(input);
-		return 0;
-	}
-
-	if (pre_key == DOCK_KEY_NONE) {
-		/*
-		if (adc != ADC_DOCK_VOL_UP && adc != ADC_DOCK_VOL_DN && \
-		adc != ADC_DOCK_PREV_KEY && adc != ADC_DOCK_PLAY_PAUSE_KEY \
-		&& adc != ADC_DOCK_NEXT_KEY)
-		*/
-		if ((adc < 0x03) || (adc > 0x0d))
-			return 0;
-	}
-
-	dev_info(info->dev, "%s: dock vol key(%d)\n", __func__, pre_key);
-
-	switch (adc) {
-	case ADC_DOCK_VOL_UP:
-		code = KEY_VOLUMEUP;
-		state = 1;
-		info->previous_key = DOCK_KEY_VOL_UP_PRESSED;
-		break;
-	case ADC_DOCK_VOL_DN:
-		code = KEY_VOLUMEDOWN;
-		state = 1;
-		info->previous_key = DOCK_KEY_VOL_DOWN_PRESSED;
-		break;
-	case ADC_DOCK_PREV_KEY-1 ... ADC_DOCK_PREV_KEY+1:
-		code = KEY_PREVIOUSSONG;
-		state = 1;
-		info->previous_key = DOCK_KEY_PREV_PRESSED;
-		break;
-	case ADC_DOCK_PLAY_PAUSE_KEY-1 ... ADC_DOCK_PLAY_PAUSE_KEY+1:
-		code = KEY_PLAYPAUSE;
-		state = 1;
-		info->previous_key = DOCK_KEY_PLAY_PAUSE_PRESSED;
-		break;
-	case ADC_DOCK_NEXT_KEY-1 ... ADC_DOCK_NEXT_KEY+1:
-		code = KEY_NEXTSONG;
-		state = 1;
-		info->previous_key = DOCK_KEY_NEXT_PRESSED;
-		break;
-	case ADC_DESKDOCK: /* key release routine */
-		if (pre_key == DOCK_KEY_VOL_UP_PRESSED) {
-			code = KEY_VOLUMEUP;
-			state = 0;
-			info->previous_key = DOCK_KEY_VOL_UP_RELEASED;
-		} else if (pre_key == DOCK_KEY_VOL_DOWN_PRESSED) {
-			code = KEY_VOLUMEDOWN;
-			state = 0;
-			info->previous_key = DOCK_KEY_VOL_DOWN_RELEASED;
-		} else if (pre_key == DOCK_KEY_PREV_PRESSED) {
-			code = KEY_PREVIOUSSONG;
-			state = 0;
-			info->previous_key = DOCK_KEY_PREV_RELEASED;
-		} else if (pre_key == DOCK_KEY_PLAY_PAUSE_PRESSED) {
-			code = KEY_PLAYPAUSE;
-			state = 0;
-			info->previous_key = DOCK_KEY_PLAY_PAUSE_RELEASED;
-		} else if (pre_key == DOCK_KEY_NEXT_PRESSED) {
-			code = KEY_NEXTSONG;
-			state = 0;
-			info->previous_key = DOCK_KEY_NEXT_RELEASED;
-		} else {
-			dev_warn(info->dev, "%s:%d should not reach here\n",
-				 __func__, __LINE__);
-			return 0;
-		}
-		break;
-	default:
-		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n", __func__,
-			 adc);
-		return 0;
-	}
-
-	input_event(input, EV_KEY, code, state);
-	input_sync(input);
-
-	return 1;
 }
 
 static int max77803_muic_attach_usb_type(struct max77803_muic_info *info,
@@ -1773,7 +1444,7 @@ static int max77803_muic_attach_dock_type(struct max77803_muic_info *info,
 		} else	{
 			info->cable_type = CABLE_TYPE_SMARTDOCK_MUIC;
 		}
-		
+
 		if (info->is_usb_ready) {
 			pr_info("%s:%s usb is ready, D+,D- line(AP_USB)\n",
 				DEV_NAME, __func__);
@@ -1872,64 +1543,6 @@ static void max77803_muic_attach_mhl(struct max77803_muic_info *info, u8 chgtyp)
 	}
 }
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION */
-
-#if defined(CONFIG_MUIC_DET_JACK)
-static int max77803_muic_attach_earjack(struct max77803_muic_info *info,
-					  int adc)
-{
-	struct max77803_muic_data *mdata = info->muic_data;
-
-	if (info->cable_type == CABLE_TYPE_EARJACK_MUIC) {
-		dev_info(info->dev, "%s: duplicated(EarJack)\n",
-			 __func__);
-		return 0;
-	}
-
-	dev_info(info->dev, "%s:EarJack\n", __func__);
-	info->cable_type = CABLE_TYPE_EARJACK_MUIC;
-
-	if (mdata->earjack_cb)
-		mdata->earjack_cb(MAX77803_MUIC_ATTACHED);
-
-	max77803_muic_set_audio_path_pass2(info, 0);
-
-	return 0;
-}
-
-static int max77803_muic_press_earjack_key(struct max77803_muic_info *info,
-					  int adc)
-{
-	struct max77803_muic_data *mdata = info->muic_data;
-	unsigned int code;
-
-	if (info->earkeypressed) {
-		switch (adc) {
-		case ADC_MHL_OR_SENDEND:
-			code = KEY_MEDIA;
-			info->previous_earkey = KEY_MEDIA;
-			break;
-		case ADC_DOCK_VOL_UP:
-			code = KEY_VOLUMEUP;
-			info->previous_earkey = KEY_VOLUMEUP;
-			break;
-		case ADC_DOCK_VOL_DN:
-			code = KEY_VOLUMEDOWN;
-			info->previous_earkey = KEY_VOLUMEDOWN;
-			break;
-		default:
-			dev_info(info->dev, "%s: should not reach here(0x%x)\n",
-				 __func__, adc);
-			return 0;
-		}
-	} else
-		code = info->previous_earkey;
-
-	if (mdata->earjackkey_cb)
-		mdata->earjackkey_cb(info->earkeypressed, code);
-
-	return 0;
-}
-#endif
 
 static void max77803_muic_handle_jig_uart(struct max77803_muic_info *info,
 					  u8 vbvolt)
@@ -2033,35 +1646,6 @@ static void max77803_muic_handle_jig_uart(struct max77803_muic_info *info,
 				CTRL2_CPEn1_LOWPWD0,
 				CTRL2_CPEn_MASK | CTRL2_LOWPWD_MASK);
 
-#if defined(CONFIG_MFD_MAX77888)
-		if (mdata->host_notify_cb) {
-			if (mdata->host_notify_cb(1) == NOTIFY_TEST_MODE) {
-				is_otgtest = true;
-				dev_info(info->dev, "%s: OTG TEST\n", __func__);
-			}
-		}
-
-		if (vbvolt & STATUS2_VBVOLT_MASK) {
-			if (is_otgtest == false)
-				max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL2,
-					(0 << CTRL2_ACCDET_SHIFT), CTRL2_ACCDET_MASK);
-
-			info->cable_type = CABLE_TYPE_JIG_UART_OFF_VB_MUIC;
-			max77803_muic_set_charging_type(info, is_otgtest);
-		} else {
-			info->cable_type = CABLE_TYPE_JIG_UART_OFF_MUIC;
-
-			if (prev_ct == CABLE_TYPE_JIG_UART_OFF_VB_MUIC) {
-				max77803_muic_set_charging_type(info, is_otgtest);
-
-				if (mdata->host_notify_cb)
-					mdata->host_notify_cb(0);
-
-				max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL2,
-					(1 << CTRL2_ACCDET_SHIFT), CTRL2_ACCDET_MASK);
-			}
-		}
-#else
 	if (vbvolt & STATUS2_VBVOLT_MASK) {
 		if (mdata->host_notify_cb) {
 			if (mdata->host_notify_cb(1) == NOTIFY_TEST_MODE) {
@@ -2086,7 +1670,6 @@ static void max77803_muic_handle_jig_uart(struct max77803_muic_info *info,
 				mdata->host_notify_cb(0);
 		}
 	}
-#endif
 }
 
 void max77803_otg_control(struct max77803_muic_info *info, int enable)
@@ -2232,18 +1815,6 @@ void powered_otg_control(int enable)
 	max77803_powered_otg_control(gInfo, enable);
 }
 
-#if defined(CONFIG_MFD_MAX77888)
-static void max77803_muic_set_adc_mode(struct max77803_muic_info *info, int mode)
-{
-	if (info->max77803->pmic_rev >= MAX77803_REV_PASS3)
-	{
-		max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL4,
-			    mode << CTRL4_ADCMODE_SHIFT, CTRL4_ADCMODE_MASK);
-		dev_info(info->dev, "func:%s 0x%x\n",  __func__, mode);
-	}
-}
-#endif
-
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_SMART_DOCK)
 #if 0 // unused
 static void max77803_muic_set_cddelay(struct max77803_muic_info *info)
@@ -2314,10 +1885,6 @@ static void max77803_muic_detach_smart_dock(struct max77803_muic_info *info)
 		return;
 	}
 
-#if defined(CONFIG_MFD_MAX77888)
-	max77803_muic_set_adc_mode(info, 3);
-#endif
-
 	if (mdata->dock_cb)
 		mdata->dock_cb(MAX77803_MUIC_DOCK_DETACHED);
 
@@ -2375,10 +1942,6 @@ static void max77803_muic_attach_smart_dock(struct max77803_muic_info *info,
 				mdata->usb_cb(USB_POWERED_HOST_ATTACHED);
 
 			info->cable_type = CABLE_TYPE_SMARTDOCK_TA_MUIC;
-
-#if defined(CONFIG_MFD_MAX77888)
-			max77803_muic_set_adc_mode(info, 0);
-#endif
 		} else if (chgtyp == CHGTYP_USB) {
 			/* clear CDDelay 500ms */
 			max77803_muic_clear_cddelay(info);
@@ -2392,10 +1955,6 @@ static void max77803_muic_attach_smart_dock(struct max77803_muic_info *info,
 		} else
 			pr_info("%s:%s SMART_DOCK + [%d] = ?\n", DEV_NAME,
 					__func__, chgtyp);
-
-#if defined(CONFIG_MFD_MAX77888)
-			max77803_muic_set_adc_mode(info, 0);
-#endif
 		break;
 	case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 		if (chgtyp == CHGTYP_DEDICATED_CHGR)
@@ -2430,10 +1989,6 @@ static void max77803_muic_attach_smart_dock(struct max77803_muic_info *info,
 
 			max77803_muic_attach_dock_type(info, adc, chgtyp);
 
-#if defined(CONFIG_MFD_MAX77888)
-			max77803_muic_set_adc_mode(info, 0);
-#endif
-
 			if (chgtyp == CHGTYP_DEDICATED_CHGR) {
 				/* clear CDDelay 500ms */
 				max77803_muic_clear_cddelay(info);
@@ -2450,7 +2005,7 @@ static void max77803_muic_attach_smart_dock(struct max77803_muic_info *info,
 
 				if (mdata->usb_cb && info->is_usb_ready)
 					mdata->usb_cb(USB_CABLE_ATTACHED);
-			}		
+			}
 		} else {
 			/* set CDDelay 500ms */
 			/*max77803_muic_set_cddelay(info);*/
@@ -2500,7 +2055,6 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 
 	switch (info->cable_type) {
 	case CABLE_TYPE_OTG_MUIC:
-#if !defined(CONFIG_MFD_MAX77888)
 		if (!!adclow) {
 			pr_warn("%s:%s assume OTG detach\n", DEV_NAME,
 					__func__);
@@ -2511,7 +2065,6 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 			if (mdata->usb_cb && info->is_usb_ready)
 				mdata->usb_cb(USB_OTGHOST_DETACHED);
 		}
-#endif		
 		break;
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_VB_MUIC:
@@ -2656,13 +2209,11 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 	switch (adc) {
 	case ADC_GND:
 		if (chgtyp == CHGTYP_NO_VOLTAGE) {
-#if !defined(CONFIG_MFD_MAX77888)
 			if (info->cable_type == CABLE_TYPE_OTG_MUIC) {
 				dev_info(info->dev,
 					 "%s: duplicated(OTG)\n", __func__);
 				break;
 			}
-#endif
 			info->cable_type = CABLE_TYPE_OTG_MUIC;
 			max77803_muic_set_usb_path(info, AP_USB_MODE);
 			msleep(40);
@@ -2675,7 +2226,7 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 			dev_info(info->dev, "%s: OTG charging pump\n",
 				 __func__);
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
-			if (info->cable_type == CABLE_TYPE_LANHUB) {
+			if (info->cable_type == CABLE_TYPE_LANHUB_MUIC) {
 				info->cable_type = CABLE_TYPE_OTG_MUIC;
 				ret = max77803_muic_set_charging_type(info, true);
 			} else if (info->cable_type == CABLE_TYPE_OTG_MUIC) {
@@ -2716,7 +2267,7 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
 	case ADC_LANHUB:
 		dev_info(info->dev, "%s: LANHUB detected.\n", __func__);
-		info->cable_type = CABLE_TYPE_LANHUB;
+		info->cable_type = CABLE_TYPE_LANHUB_MUIC;
 		ret = max77803_muic_set_charging_type(info, false);
 		if (ret) {
 			info->cable_type = CABLE_TYPE_NONE_MUIC;
@@ -2820,42 +2371,7 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 		}
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_CAR_DOCK */
 		break;
-#if defined(CONFIG_MUIC_DET_JACK)
-	case ADC_MHL_OR_SENDEND:
-	case ADC_DOCK_VOL_UP:
-	case ADC_DOCK_VOL_DN:
-		if ((!adc1k) && (info->cable_type == CABLE_TYPE_EARJACK_MUIC)) {
-			info->earkeypressed = true;
-			max77803_muic_press_earjack_key(info, adc);
-		}
-			break;
-	case ADC_EARJACK:
-		if ((info->cable_type == CABLE_TYPE_EARJACK_MUIC)
-			&& (info->earkeypressed)) {
-			info->earkeypressed = false;
-			max77803_muic_press_earjack_key(info, adc);
-		} else {
-			max77803_muic_attach_earjack(info, adc);
-		}
-			break;
-#endif
 	case ADC_CEA936ATYPE2_CHG:
-#if defined(CONFIG_MFD_MAX77888)
-		max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL2,
-			    0x0 << CTRL2_ADCEn_SHIFT, CTRL2_ADCEn_MASK);
-		max77803_update_reg(info->muic, MAX77803_MUIC_REG_CTRL2,
-			    0x1 << CTRL2_ADCEn_SHIFT, CTRL2_ADCEn_MASK);
-		pr_info("%s 442K detected! Read again.\n", __func__);
-		break;
-#endif
-#if defined(REGARD_442K_AS_523K)
-		pr_info("[%s] is_factory_mode=%d\n", __func__, is_factory_mode);
-		if (is_factory_mode==1)	{
-			info->cable_type = CABLE_TYPE_JIG_UART_OFF_MUIC;
-			max77803_muic_switch_uart_path_default();
-			break;
-		}
-#endif
 	case ADC_CEA936ATYPE1_CHG:
 	case ADC_OPEN:
 		switch (chgtyp) {
@@ -2890,6 +2406,7 @@ static int max77803_muic_handle_attach(struct max77803_muic_info *info,
 		case CHGTYP_DEDICATED_CHGR:
 		case CHGTYP_500MA:
 		case CHGTYP_1A:
+		case CHGTYP_RFU:
 			dev_info(info->dev, "%s:TA\n", __func__);
 			info->cable_type = CABLE_TYPE_TA_MUIC;
 #ifdef CONFIG_EXTCON
@@ -2973,10 +2490,6 @@ static int max77803_muic_handle_detach(struct max77803_muic_info *info, int irq)
 		return 0;
 	}
 
-#if defined(CONFIG_MFD_MAX77888)
-	max77803_muic_set_adc_mode(info, 3);
-#endif
-
 #if 0
 	if (mdata->jig_uart_cb)
 		mdata->jig_uart_cb(UART_PATH_AP);
@@ -3038,7 +2551,7 @@ static int max77803_muic_handle_detach(struct max77803_muic_info *info, int irq)
 			break;
 		}
 /* When the CHG INT comes before ADC INT,
- * ADC INT can not get a chance to detach the desk dock 
+ * ADC INT can not get a chance to detach the desk dock
  * Because the ADC value will be already changed at ADC INT
  * So, if ADC value is not ADC_DESKDOCK here,
  * we will detach the deskdock
@@ -3163,22 +2676,13 @@ static int max77803_muic_handle_detach(struct max77803_muic_info *info, int irq)
 			mdata->mhl_cb(MAX77803_MUIC_DETACHED);
 #endif
 		break;
-#if defined(CONFIG_MUIC_DET_JACK)
-	case CABLE_TYPE_EARJACK_MUIC:
-		dev_info(info->dev, "%s: EARJACK\n", __func__);
-		info->cable_type = CABLE_TYPE_NONE_MUIC;
-
-		if (mdata->earjack_cb)
-			mdata->earjack_cb(MAX77803_MUIC_DETACHED);
-		break;
-#endif
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
-	case CABLE_TYPE_LANHUB:
+	case CABLE_TYPE_LANHUB_MUIC:
 		dev_info(info->dev, "%s: LANHUB\n", __func__);
 		info->cable_type = CABLE_TYPE_OTG_MUIC;
 		ret = max77803_muic_set_charging_type(info, true);
 		if (ret)
-			info->cable_type = CABLE_TYPE_LANHUB;
+			info->cable_type = CABLE_TYPE_LANHUB_MUIC;
 		break;
 #endif
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE)
@@ -3231,31 +2735,14 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 		adc, adcerr, chgtyp, vbvolt, dxovp, info->cable_type);
 
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION)
-#if defined(CONFIG_MFD_MAX77888)
-	if (adc1k) {
-#else
 	if (adclow && adc1k) {
-#endif
 		pr_info("%s:%s MHL cable connected\n", DEV_NAME, __func__);
 		return INT_ATTACH;
 	}
 #endif /* CONFIG_MUIC_MAX77803_SUPPORT_MHL_CABLE_DETECTION */
 
 	switch (adc) {
-#if defined(CONFIG_MACH_GC1)
 	case ADC_GND:
-		if (info->is_otg_attach_blocked) {
-			pr_warn("%s:%s otg attach is blocked, ignore\n",
-					DEV_NAME, __func__);
-			return -1;
-		}
-		break;
-	case ADC_MHL ... (ADC_CEA936ATYPE1_CHG - 1):
-	case ADC_DESKDOCK:
-	case ADC_CARDOCK ... (ADC_OPEN - 1):
-#else
-	case ADC_GND:
-#if !defined(CONFIG_MFD_MAX77888)
 		if (!adclow) {
 			pr_info("%s:%s ADC_GND & !adclow = OTG\n", DEV_NAME,
 					__func__);
@@ -3263,23 +2750,15 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 		}
 		pr_info("%s:%s ADC_GND & adclow != OTG\n", DEV_NAME,
 				__func__);
-#else
-		pr_info("%s:%s ADC_GND = OTG\n", DEV_NAME,
-				__func__);
-		if (info-> cable_type == CABLE_TYPE_LANHUB)
-			intr = INT_DETACH;
-		break;
-#endif
 #if defined(CONFIG_MUIC_MAX77803_SUPPORT_LANHUB)
 	case ADC_LANHUB:
 		if (vbvolt == 0)
 			intr = INT_DETACH;
 		break;
-#endif
-#if !defined(CONFIG_MUIC_DET_JACK)
-	case ADC_MHL ... (ADC_SMARTDOCK - 1):
+#endif	/* CONFIG_MUIC_MAX77803_SUPPORT_LANHUB */
+/* Below ADC will be unsupported */
+	case ADC_SEND_END_KEY ... (ADC_SMARTDOCK - 1):
 	case (ADC_OPEN - 1):
-#endif /* !CONFIG_MUIC_DET_JACK */
 	case (ADC_SMARTDOCK + 1):
 #if !defined(CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK)
 	case ADC_AUDIODOCK:
@@ -3291,7 +2770,6 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 	case ADC_PS_CABLE:
 #endif	/* CONFIG_MUIC_MAX77803_SUPPORT_PS_CABLE */
 	case (ADC_PS_CABLE + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
-#endif /* CONFIG_MACH_GC1 */
 		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n",
 				__func__, adc);
 		intr = INT_DETACH;
@@ -3327,7 +2805,7 @@ static int max77803_muic_filter_dev(struct max77803_muic_info *info,
 				case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 				case CABLE_TYPE_SMARTDOCK_USB_MUIC:
 				case CABLE_TYPE_AUDIODOCK_MUIC:
-				case CABLE_TYPE_LANHUB:
+				case CABLE_TYPE_LANHUB_MUIC:
 					intr = INT_DETACH;
 					break;
 				default:
@@ -3362,10 +2840,6 @@ static void max77803_muic_detect_dev(struct max77803_muic_info *info, int irq)
 		return;
 	}
 	if ((info->cable_type == CABLE_TYPE_OTG_MUIC) && status[0] == 0x33) {
-
-#if defined(CONFIG_MFD_MAX77888)
-		max77803_muic_set_adc_mode(info, 0);
-#endif
 		/* VB voltage interrupt Unmask */
 		max77803_read_reg(info->max77803->muic,
 			MAX77803_MUIC_REG_INTMASK2, &int_mask2);
@@ -3385,19 +2859,10 @@ static void max77803_muic_detect_dev(struct max77803_muic_info *info, int irq)
 	dev_info(info->dev, "%s: STATUS1:0x%x, 2:0x%x\n", __func__,
 		 status[0], status[1]);
 
-#if !defined(CONFIG_MACH_GC1)
-	if ((irq == info->irq_adc) &&
-	    max77803_muic_handle_dock_vol_key(info, status[0])) {
-		dev_info(info->dev,
-			 "max77803_muic_handle_dock_vol_key(irq_adc:%x)", irq);
-		return;
-	}
-#endif
-
 	wake_lock_timeout(&info->muic_wake_lock, HZ * 2);
 
 	intr = max77803_muic_filter_dev(info, status[0], status[1]);
-	
+
 	info->adc = status[0] & STATUS1_ADC_MASK;
 	info->chgtyp = status[1] & STATUS2_CHGTYP_MASK;
 	info->vbvolt = status[1] & STATUS2_VBVOLT_MASK;
@@ -3835,7 +3300,7 @@ int max77803_muic_interruptmask_check(void)
 	pr_info("func:%s, intmask1: 0x%x\n", __func__, val1);
 
 	 if (!(val1 & (MAX77803_MUIC_IRQ_INT1_ADC1K | MAX77803_MUIC_IRQ_INT1_ADC))) {
-		pr_info("func:%s, re-write intmask1:0x09, intmask2: 0x11 \n", __func__);	
+		pr_info("func:%s, re-write intmask1:0x09, intmask2: 0x11 \n", __func__);
 		max77803_write_reg(gInfo->muic, MAX77803_MUIC_REG_INTMASK1, 0x09);
 		max77803_write_reg(gInfo->muic, MAX77803_MUIC_REG_INTMASK2, 0x11);
 	}
@@ -3844,7 +3309,7 @@ int max77803_muic_interruptmask_check(void)
 }
 #endif
 
-#if defined(CONFIG_FEAT_LED_MAX77888)
+#if defined(CONFIG_FEAT_LED_MAX77803)
 /*
 * func: max77803_muic_set_jigset
 * arg: Manual control
@@ -3978,10 +3443,6 @@ static int __devinit max77803_muic_probe(struct platform_device *pdev)
 
 	info->cable_type = CABLE_TYPE_UNKNOWN_MUIC;
 	info->muic_data->sw_path = AP_USB_MODE;
-#if defined(CONFIG_MUIC_DET_JACK)
-	info->earkeypressed = false;
-	info->previous_earkey = 0;
-#endif
 	info->adc = -1;
 	info->chgtyp = 0;
 	info->vbvolt = 0;
@@ -4117,7 +3578,7 @@ static int __devinit max77803_muic_probe(struct platform_device *pdev)
 	CONFIG_MUIC_MAX77803_SUPPORT_OTG_AUDIO_DOCK */
 
 	INIT_DELAYED_WORK(&info->init_work, max77803_muic_init_detect);
-	
+
 	if(lpcharge) {
 		schedule_delayed_work(&info->init_work, msecs_to_jiffies(1800));
 	} else {
@@ -4138,7 +3599,6 @@ static int __devinit max77803_muic_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&info->mhl_work, max77803_muic_mhl_detect);
 	schedule_delayed_work(&info->mhl_work, msecs_to_jiffies(25000));
 #endif
-
 	return 0;
 
  fail:

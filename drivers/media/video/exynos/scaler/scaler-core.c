@@ -18,6 +18,7 @@
 #include <linux/clk.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
+#include <linux/pm_qos.h>
 
 #include <media/v4l2-ioctl.h>
 #include <mach/videonode.h>
@@ -665,6 +666,15 @@ static int sc_v4l2_s_crop(struct file *file, void *fh, struct v4l2_crop *cr)
 			x_align, &cr->c.top, 0, frame->height - cr->c.height,
 			y_align, 0);
 
+	if ((frame->width < (cr->c.left + cr->c.width)) ||
+		(frame->height < (cr->c.top + cr->c.height))) {
+		v4l2_err(&ctx->sc_dev->m2m.v4l2_dev,
+			"Out of crop range: (%d,%d,%d,%d) from %dx%d\n",
+			cr->c.left, cr->c.top, cr->c.width, cr->c.height,
+			frame->width, frame->height);
+		return -EINVAL;
+	}
+
 	frame->crop.top = cr->c.top;
 	frame->crop.left = cr->c.left;
 	frame->crop.height = cr->c.height;
@@ -735,7 +745,7 @@ static void sc_calc_intbufsize(struct sc_dev *sc, struct sc_int_frame *int_frame
 
 	switch (frame->sc_fmt->num_comp) {
 	case 1:
-		frame->addr.ysize = size * frame->sc_fmt->bitperpixel[0];
+		frame->addr.ysize = (size * frame->sc_fmt->bitperpixel[0]) / 8;
 		break;
 	case 2:
 		if (frame->sc_fmt->num_planes == 1) {
@@ -1119,6 +1129,48 @@ static void sc_vb2_buf_queue(struct vb2_buffer *vb)
 	struct sync_fence *fence;
 	unsigned long flags;
 
+	if (V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type)) {
+		struct sc_dev *sc = ctx->sc_dev;
+		/*
+		 * It is expected that the capture buffer is queued in a mean
+		 * time, actually within 100 msec.
+		 */
+
+		/*
+		 * sc->pmqos_count and the state of sc->qos_int should be
+		 * synchronized.
+		 */
+		mutex_lock(&sc->pmqos_lock);
+
+		if (WARN_ON(atomic_read(&sc->pmqos_count) < 0))
+			atomic_set(&sc->pmqos_count, 0);
+
+		atomic_inc(&sc->pmqos_count);
+		/*
+		 * del_timer() is called just for the purpose of correct
+		 * refcounting to sc->pmqos_count. It should be guaranteed that
+		 * INT lock is kept until the queued buffer is processed. But
+		 * the workqueue function invoked by the timer function added
+		 * here can unlocks INT level before H/W processing is finished
+		 * even though INT level is locked here.
+		 * To prevent unlocking INT level unexpectedly due to the
+		 * asynchronous function call to pm_qos_update_request(*, 0),
+		 * locking INT level is now refcounted.
+		 * It is required to check if a pending timer is canceled before
+		 * inserting a new timer because timer function is not called
+		 * if a pending timer is canceled.
+		 */
+		if (del_timer(&sc->pmqos_timer) != 0)
+			atomic_dec(&sc->pmqos_count);
+
+		sc->pmqos_timer.expires = jiffies + msecs_to_jiffies(100);
+		add_timer(&sc->pmqos_timer);
+
+		pm_qos_update_request(&sc->qos_int, 222000);
+
+		mutex_unlock(&sc->pmqos_lock);
+	}
+
 	fence = vb->acquire_fence;
 	if (fence) {
 		spin_lock_irqsave(&ctx->slock, flags);
@@ -1372,7 +1424,6 @@ static int sc_open(struct file *file)
 		return -ENOMEM;
 	}
 
-	atomic_inc(&sc->m2m.in_use);
 	ctx->sc_dev = sc;
 
 	v4l2_fh_init(&ctx->fh, sc->m2m.vfd);
@@ -1405,7 +1456,12 @@ static int sc_open(struct file *file)
 		goto err_ctx;
 	}
 
-	pm_runtime_get_sync(sc->dev);
+	ret = pm_runtime_get_sync(sc->dev);
+	if (ret < 0)
+		goto err_ctx;
+
+	atomic_inc(&sc->m2m.in_use);
+
 	return 0;
 
 err_ctx:
@@ -1416,7 +1472,6 @@ err_wq:
 err_fh:
 	v4l2_ctrl_handler_free(&ctx->ctrl_handler);
 	v4l2_fh_exit(&ctx->fh);
-	atomic_dec(&sc->m2m.in_use);
 	kfree(ctx);
 
 	return ret;
@@ -1429,14 +1484,18 @@ static int sc_release(struct file *file)
 
 	sc_dbg("refcnt= %d", atomic_read(&sc->m2m.in_use));
 
-	pm_runtime_put_sync(sc->dev);
 	v4l2_m2m_ctx_release(ctx->m2m_ctx);
+
+	pm_runtime_put(sc->dev);
+
+	atomic_dec(&sc->m2m.in_use);
+
 	if (ctx->fence_wq)
 		destroy_workqueue(ctx->fence_wq);
+
 	v4l2_ctrl_handler_free(&ctx->ctrl_handler);
 	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
-	atomic_dec(&sc->m2m.in_use);
 	kfree(ctx);
 
 	return 0;
@@ -1488,6 +1547,30 @@ static void sc_clock_gating(struct sc_dev *sc, enum sc_clk_status status)
 	}
 }
 
+static void sc_pmqos_work(struct work_struct *work)
+{
+	struct sc_dev *sc = container_of(work, struct sc_dev, pmqos_work);
+
+	mutex_lock(&sc->pmqos_lock);
+
+	if (atomic_dec_and_test(&sc->pmqos_count))
+		pm_qos_update_request(&sc->qos_int, 0);
+
+	mutex_unlock(&sc->pmqos_lock);
+}
+
+static void sc_reset_pmqos_request(unsigned long arg)
+{
+	struct sc_dev *sc = (struct sc_dev *)arg;
+
+	/* if the work is still pending, the refcount of INT lock should be
+	 * decremented here because the workqueue function that is responsible
+	 * for decrementing the refcount is not called for the current request.
+	 */
+	if (!queue_work(sc->pmqos_wq, &sc->pmqos_work))
+		atomic_dec(&sc->pmqos_count);
+}
+
 static void sc_watchdog(unsigned long arg)
 {
 	struct sc_dev *sc = (struct sc_dev *)arg;
@@ -1497,7 +1580,6 @@ static void sc_watchdog(unsigned long arg)
 
 	sc_dbg("timeout watchdog\n");
 	if (atomic_read(&sc->wdt.cnt) >= SC_WDT_CNT) {
-		pm_runtime_put(sc->dev);
 		sc_clock_gating(sc, SC_CLK_OFF);
 
 		sc_dbg("wakeup blocked process\n");
@@ -1716,7 +1798,6 @@ static irqreturn_t sc_irq_handler(int irq, void *priv)
 
 	ctx = v4l2_m2m_get_curr_priv(sc->m2m.m2m_dev);
 	if (!ctx || !ctx->m2m_ctx) {
-//		pm_runtime_put(sc->dev);
 		sc_clock_gating(sc, SC_CLK_OFF);
 		dev_err(sc->dev, "current ctx is NULL\n");
 		goto isr_unlock;
@@ -1725,7 +1806,6 @@ static irqreturn_t sc_irq_handler(int irq, void *priv)
 	if(sc_process_2nd_stage(sc, ctx))
 		goto isr_unlock;
 
-//	pm_runtime_put(sc->dev);
 	sc_clock_gating(sc, SC_CLK_OFF);
 
 	clear_bit(CTX_RUN, &ctx->flags);
@@ -2016,19 +2096,13 @@ static void sc_m2m_device_run(void *priv)
 	sc_get_bufaddr(sc, v4l2_m2m_next_dst_buf(ctx->m2m_ctx), d_frame);
 
 	sc_clock_gating(sc, SC_CLK_ON);
-#if 0
-	if (in_irq())
-		pm_runtime_get(sc->dev);
-	else
-		pm_runtime_get_sync(sc->dev);
-#endif
+
 	sc_hwset_soft_reset(sc);
 
 	if (!sc_init_scaling_ratio(ctx)) {
 		/* invalid scaling ratio: aborting the current task */
 		struct vb2_buffer *src_vb, *dst_vb;
 
-//		pm_runtime_put(sc->dev);
 		sc_clock_gating(sc, SC_CLK_OFF);
 
 		src_vb = v4l2_m2m_src_buf_remove(ctx->m2m_ctx);
@@ -2246,6 +2320,16 @@ static int sc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	sc->pmqos_wq = create_singlethread_workqueue("sc_pmqos_wq");
+	if (!sc->pmqos_wq) {
+		dev_err(&pdev->dev, "Failed to create pmqos_wq\n");
+		return -ENOMEM;
+	}
+
+	mutex_init(&sc->pmqos_lock);
+	INIT_WORK(&sc->pmqos_work, sc_pmqos_work);
+	setup_timer(&sc->pmqos_timer, sc_reset_pmqos_request, (unsigned long)sc);
+
 	sc->dev = &pdev->dev;
 	sc->id = pdev->id;
 	pdata = pdev->dev.platform_data;
@@ -2258,21 +2342,25 @@ static int sc_probe(struct platform_device *pdev)
 	sc->regs = devm_request_and_ioremap(&pdev->dev, res);
 	if (sc->regs == NULL) {
 		dev_err(&pdev->dev, "failed to claim register region\n");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto err;
 	}
 
 	/* Get IRQ resource and register IRQ handler. */
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "failed to get IRQ resource\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto err;
 	}
+
+	sc->irq = res->start;
 
 	ret = devm_request_irq(&pdev->dev, res->start, sc_irq_handler, 0,
 			pdev->name, sc);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to install irq\n");
-		return ret;
+		goto err;
 	}
 
 	atomic_set(&sc->wdt.cnt, 0);
@@ -2282,20 +2370,23 @@ static int sc_probe(struct platform_device *pdev)
 		sc->aclk = clk_get(sc->dev, "sc-aclk");
 		if (IS_ERR(sc->aclk)) {
 			dev_err(&pdev->dev, "failed to get aclk for scaler\n");
-			return -ENXIO;
+			ret = PTR_ERR(sc->aclk);
+			goto err_clk;
 		}
 
 		sc->pclk = clk_get(sc->dev, "sc-pclk");
 		if (IS_ERR(sc->pclk)) {
 			dev_err(&pdev->dev, "failed to get pclk for scaler\n");
 			clk_put(sc->aclk);
-			return -ENXIO;
+			ret = PTR_ERR(sc->pclk);
+			goto err_clk;
 		}
 	} else {
 		sc->aclk = clk_get(sc->dev, "mscl");
 		if (IS_ERR(sc->aclk)) {
 			dev_err(&pdev->dev, "failed to get clk for scaler\n");
-			return -ENXIO;
+			ret = PTR_ERR(sc->aclk);
+			goto err_clk;
 		}
 	}
 
@@ -2311,7 +2402,7 @@ static int sc_probe(struct platform_device *pdev)
 				clk_put(sc->pclk);
 
 			dev_err(&pdev->dev, "Failed to setup clock hierarch\n");
-			return ret;
+			goto err_clk;
 		}
 	}
 
@@ -2325,7 +2416,7 @@ static int sc_probe(struct platform_device *pdev)
 	if (IS_ERR_OR_NULL(sc->alloc_ctx)) {
 		ret = PTR_ERR(sc->alloc_ctx);
 		dev_err(&pdev->dev, "failed to alloc_ctx\n");
-		goto err_clk;
+		goto err_init;
 	}
 
 	platform_set_drvdata(pdev, sc);
@@ -2349,20 +2440,25 @@ static int sc_probe(struct platform_device *pdev)
 	ret = sc_register_m2m_device(sc);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to register m2m device\n");
-		ret = -EPERM;
-		goto err_clk;
+		goto err_init;
 	}
 
 	exynos_sysmmu_set_fault_handler(&pdev->dev, sc_sysmmu_fault_handler);
+
+	pm_qos_add_request(&sc->qos_int, PM_QOS_DEVICE_THROUGHPUT, 0);
 
 	dev_info(&pdev->dev, "scaler registered successfully\n");
 
 	return 0;
 
-err_clk:
+err_init:
 	clk_put(sc->aclk);
 	if (sc->pclk)
 		clk_put(sc->pclk);
+err_clk:
+	devm_free_irq(sc->dev, sc->irq, sc);
+err:
+	destroy_workqueue(sc->pmqos_wq);
 
 	return ret;
 }
@@ -2370,6 +2466,10 @@ err_clk:
 static int sc_remove(struct platform_device *pdev)
 {
 	struct sc_dev *sc = platform_get_drvdata(pdev);
+
+	pm_qos_remove_request(&sc->qos_int);
+	del_timer(&sc->pmqos_timer);
+	destroy_workqueue(sc->pmqos_wq);
 
 	sc->vb2->suspend(sc->alloc_ctx);
 
@@ -2382,6 +2482,8 @@ static int sc_remove(struct platform_device *pdev)
 
 	if (timer_pending(&sc->wdt.timer))
 		del_timer(&sc->wdt.timer);
+
+	devm_free_irq(sc->dev, sc->irq, sc);
 
 	return 0;
 }

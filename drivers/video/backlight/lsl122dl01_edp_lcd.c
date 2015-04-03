@@ -177,18 +177,25 @@ static int tcon_i2c_slave_enable(struct lsl122dl01 *plcd)
 	u8 cmd3_buf[3] = {0x81, 0x68, 0x04};
 #endif
 
+#ifdef CONFIG_S5P_DP_PSR
+	if (plcd->dp->user_disabled) {
+		dev_err(plcd->dev, "%s: DP state shutdown\n", __func__);
+		return -EINVAL;
+	}
+#endif
+
 	mutex_lock(&plcd->dp->lock);
-	
+
 	if (!plcd->dp->enabled) {
 		dev_err(plcd->dev, "%s: DP state power off\n", __func__);
 		goto err_dp;
 	}
-	
+
 	ret = s5p_dp_write_bytes_to_dpcd(plcd->dp, 0x491,
 			ARRAY_SIZE(cmd1_buf), cmd1_buf);
 	if (ret < 0)
 		goto err_dp;
-	
+
 	ret = s5p_dp_write_bytes_to_dpcd(plcd->dp, 0x491,
 			ARRAY_SIZE(cmd2_buf), cmd2_buf);
 	if (ret < 0)
@@ -565,7 +572,7 @@ static ssize_t tcon_black_test_store(struct device *dev,
 	}
 
 	mutex_lock(&plcd->ops_lock);
-	
+
 	if (value)
 		ret = tcon_black_frame_bl_on(plcd);
 	else
@@ -653,10 +660,8 @@ static void sending_tune_cmd(struct lsl122dl01 *info, char *src, int len)
 		//Send Tune Commands
 		lsl122dl01_i2c_write(info->client, mdni_addr[data_pos], mdni_tuning_val[data_pos]);
 	}
-
 	printk(KERN_INFO "\n");
 
-	
 	for(data_pos = 0;data_pos < cmd_pos ;data_pos++) {
 		lsl122dl01_i2c_read(info->client, mdni_addr[data_pos], data);
 		pr_info("0x%04x,0x%02x\n",mdni_addr[data_pos], data[0]);
@@ -696,7 +701,6 @@ static void sending_tcon_tune_cmd(struct lsl122dl01 *info, char *src, int len)
 		//Send Tune Commands
 		lsl122dl01_i2c_write(info->client, tcon_addr[data_pos], tcon_tuning_val[data_pos]);
 	}
-
 
 	//Enable double bufferd regiset
 	i2c_addr = 0x0F10; i2c_data = 0x80;
@@ -801,7 +805,7 @@ static ssize_t store_tcon_test(struct device *dev,
 static ssize_t psr_hfreq_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-  	struct lsl122dl01 *plcd = dev_get_drvdata(dev);
+	struct lsl122dl01 *plcd = dev_get_drvdata(dev);
 
 	sprintf((char *)buf, "%d\n", plcd->current_hfreq_data);
 
@@ -813,9 +817,9 @@ static ssize_t psr_hfreq_show(struct device *dev,
 static ssize_t psr_hfreq_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-  	struct lsl122dl01 *plcd = dev_get_drvdata(dev);
+	struct lsl122dl01 *plcd = dev_get_drvdata(dev);
 	int value = 0, rc = 0;
-	
+
 	rc = kstrtoint(buf, 10, &value);
 
 	if (rc < 0)
@@ -906,11 +910,16 @@ static int set_hsync_for_psr(struct lsl122dl01 *plcd, int hsync)
 	int ret = 0, offset = 0;
 	u8 cmd1_buf[3] = {0x04, 0xC3, 0x00};
 	u8 cmd2_buf[3] = {0x04, 0xC4, 0x72};
-	
+
 	struct lsl122dl01_platform_data *pdata = plcd->pdata;
 
+	if (plcd->dp->user_disabled) {
+		dev_err(plcd->dev, "%s: DP state shutdown\n", __func__);
+		return -EINVAL;
+	}
+
 	mutex_lock(&plcd->dp->lock);
-	
+
 	if (!plcd->dp->enabled) {
 		dev_err(plcd->dev, "%s: DP state power off\n", __func__);
 		goto err_dp;
@@ -928,12 +937,11 @@ static int set_hsync_for_psr(struct lsl122dl01 *plcd, int hsync)
 			ARRAY_SIZE(cmd1_buf), cmd1_buf);
 	if (ret < 0)
 		goto err_dp;
-	
+
 	ret = s5p_dp_write_bytes_to_dpcd(plcd->dp, 0x491,
 			ARRAY_SIZE(cmd2_buf), cmd2_buf);
 	if (ret < 0)
 		goto err_dp;
-
 
 	mutex_unlock(&plcd->dp->lock);
 	return 0;

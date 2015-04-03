@@ -101,6 +101,8 @@ struct scan_control {
 
 	int order;
 
+	int swappiness;
+
 	/*
 	 * Intend to reclaim enough continuous memory rather than reclaim
 	 * enough amount of memory. i.e, mode for high order allocation.
@@ -1973,7 +1975,7 @@ static int vmscan_swappiness(struct mem_cgroup_zone *mz,
 			     struct scan_control *sc)
 {
 	if (global_reclaim(sc))
-		return vm_swappiness;
+		return sc->swappiness;
 	return mem_cgroup_swappiness(mz->mem_cgroup);
 }
 
@@ -2537,6 +2539,11 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 #else
 		.may_swap = 1,
 #endif
+#ifdef CONFIG_ZSWAP
+		.swappiness = vm_swappiness / 2,
+#else
+		.swappiness = vm_swappiness,
+#endif
 		.order = order,
 		.target_mem_cgroup = NULL,
 		.nodemask = nodemask,
@@ -2570,6 +2577,7 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 		.may_unmap = 1,
 		.may_swap = !noswap,
 		.order = 0,
+		.swappiness = vm_swappiness,
 		.target_mem_cgroup = memcg,
 	};
 	struct mem_cgroup_zone mz = {
@@ -2612,6 +2620,7 @@ unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 		.may_swap = !noswap,
 		.nr_to_reclaim = SWAP_CLUSTER_MAX,
 		.order = 0,
+		.swappiness = vm_swappiness,
 		.target_mem_cgroup = memcg,
 		.nodemask = NULL, /* we don't care the placement */
 		.gfp_mask = (gfp_mask & GFP_RECLAIM_MASK) |
@@ -2789,6 +2798,7 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 		 */
 		.nr_to_reclaim = ULONG_MAX,
 		.order = order,
+		.swappiness = vm_swappiness,
 		.target_mem_cgroup = NULL,
 	};
 	struct shrink_control shrink = {
@@ -2911,12 +2921,11 @@ loop_again:
 			 * Do not reclaim more than needed for compaction.
 			 */
 			testorder = order;
-#ifndef CONFIG_TIGHT_PGDAT_BALANCE
 			if (COMPACTION_BUILD && order &&
 					compaction_suitable(zone, order) !=
 						COMPACT_SKIPPED)
 				testorder = 0;
-#endif
+
 			if ((buffer_heads_over_limit && is_highmem_idx(i)) ||
 				    !zone_watermark_ok_safe(zone, testorder,
 					high_wmark_pages(zone) + balance_gap,
@@ -3315,6 +3324,7 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 		.nr_to_reclaim = nr_to_reclaim,
 		.hibernation_mode = 1,
 		.order = 0,
+		.swappiness = vm_swappiness,
 	};
 	struct shrink_control shrink = {
 		.gfp_mask = sc.gfp_mask,
@@ -3504,6 +3514,7 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 				       SWAP_CLUSTER_MAX),
 		.gfp_mask = gfp_mask,
 		.order = order,
+		.swappiness = vm_swappiness,
 	};
 	struct shrink_control shrink = {
 		.gfp_mask = sc.gfp_mask,

@@ -35,16 +35,27 @@
 #elif defined(CONFIG_SENSORS_AK09911C)
 #include <linux/ak09911c_platformdata.h>
 #endif
+#if defined(CONFIG_SENSORS_TMD3782)
+#include <linux/tmd3782_platformdata.h>
+#endif
 
 #if defined(CONFIG_SENSORS_BMI055)
 static void bma255_get_position(int *pos)
 {
+#if defined(CONFIG_KLIMT)
+	*pos = BMA255_BOTTOM_UPPER_RIGHT;
+#else
 	*pos = BMA255_BOTTOM_UPPER_LEFT;
+#endif
 }
 
 static void bmg160_get_position(int *pos)
 {
+#if defined(CONFIG_KLIMT)
+	*pos = BMG160_BOTTOM_UPPER_RIGHT;
+#else
 	*pos = BMG160_BOTTOM_UPPER_LEFT;
+#endif
 }
 
 static struct bma255_platform_data bma255_pdata = {
@@ -96,7 +107,11 @@ static struct ak8963c_platform_data ak8963c_pdata = {
 #elif defined(CONFIG_SENSORS_AK09911C)
 static void ak09911c_get_position(int *pos)
 {
+#if defined(CONFIG_CHAGALL)
+	*pos = AK09911C_BOTTOM_LOWER_RIGHT;
+#else
 	*pos = AK09911C_BOTTOM_LOWER_LEFT;
+#endif
 }
 
 static struct ak09911c_platform_data ak09911c_pdata = {
@@ -105,23 +120,44 @@ static struct ak09911c_platform_data ak09911c_pdata = {
 };
 #endif
 
+#if defined(CONFIG_SENSORS_TMD3782)
+static struct tmd3782_platform_data tmd3782_pdata = {
+	.atime_ms = 504,
+	.dgf = 550,
+	.coef_b = 535,
+	.coef_c = 1000,
+	.coef_d = 795,
+	.ct_coef = 2855,
+	.ct_offset = 1973,
+	.integration_cycle = 240,
+	.prox_default_thd_high = 660,
+	.prox_default_thd_low = 470,
+	.prox_rawdata_trim = 90,
+};
+#endif
+
 #if !defined(CONFIG_HA)
+
 static struct i2c_board_info i2c_devs3[] __initdata = {
 #if defined(CONFIG_SENSORS_BMI055)
 	{
 		I2C_BOARD_INFO("bma255-i2c", 0x18),
 		.platform_data = &bma255_pdata,
 	},
+	{
+		I2C_BOARD_INFO("bmg160-i2c", 0x68),
+		.platform_data = &bmg160_pdata,
+	},
 #elif defined(CONFIG_SENSORS_BMI058)
 	{
 		I2C_BOARD_INFO("bma280-i2c", 0x18),
 		.platform_data = &bma280_pdata,
 	},
-#endif
 	{
 		I2C_BOARD_INFO("bmg160-i2c", 0x68),
 		.platform_data = &bmg160_pdata,
 	},
+#endif
 #if defined(CONFIG_SENSORS_AK8963C)
 	{
 		I2C_BOARD_INFO("ak8963c-i2c", 0x0c),
@@ -133,14 +169,21 @@ static struct i2c_board_info i2c_devs3[] __initdata = {
 		.platform_data = &ak09911c_pdata,
 	},
 #endif
-
+#if defined(CONFIG_SENSORS_CM3323)
 	{
 		I2C_BOARD_INFO("cm3323-i2c", 0x10),
 	},
+#elif defined(CONFIG_SENSORS_TMD3782)
+	{
+		I2C_BOARD_INFO("tmd3782-i2c", 0x39),
+		.irq = GPIO_PS_ALS_INT,
+		.platform_data = &tmd3782_pdata,
+	},
+#endif
 };
 #endif
 
-#if defined(CONFIG_V1A_3G) || defined(CONFIG_V2A_3G) || defined(CONFIG_N1A_3G)
+#if defined(CONFIG_SENSORS_SX9500)
 struct exynos5_platform_i2c hs_i2c0_data __initdata = {
 	.bus_number = 4,
 	.speed_mode = HSI2C_FAST_SPD,
@@ -326,54 +369,41 @@ static struct spi_board_info spi0_board_info[] __initdata = {
 };
 #endif
 
-
 #if defined(CONFIG_SENSORS_VFS61XX)
-#define GPIO_BTP_LDO_EN	EXYNOS5420_GPY6(5)
-
-static int vfs61xx_regulator_onoff(int onoff)
-{
-
-	pr_info("%s: %s\n", __func__, onoff ? "on" : "off");
-	if (system_rev > 2)
-		gpio_set_value(GPIO_BTP_LDO_EN, onoff);
-
-	return 0;
-}
-
 static void vfs61xx_setup_gpio(void)
 {
-	int ret;
+	s3c_gpio_cfgpin(GPIO_BTP_LDO_EN_33V, S3C_GPIO_SFN(S3C_GPIO_OUTPUT));
+	s3c_gpio_setpull(GPIO_BTP_LDO_EN_33V, S3C_GPIO_PULL_DOWN);
+	s5p_gpio_set_drvstr(GPIO_BTP_LDO_EN_33V, S5P_GPIO_DRVSTR_LV3);
+	gpio_set_value(GPIO_BTP_LDO_EN_33V, 0);
 
-	if (system_rev > 2) {
-		ret = gpio_request(GPIO_BTP_LDO_EN, "BTP_LDO_EN");
-		if (ret)
-			pr_err("%s, failed to request AP_MCU_INT for SSP\n",
-				__func__);
-		s3c_gpio_cfgpin(GPIO_BTP_LDO_EN,
-		S3C_GPIO_SFN(S3C_GPIO_OUTPUT));
-		s3c_gpio_setpull(GPIO_BTP_LDO_EN, S3C_GPIO_PULL_DOWN);
-
-		if (system_rev == 4) {	/* SHCT1 shares LDO with VFS */
-			pr_info("%s, LDO enable first on system_rev=4, REV0.3\n",
-				__func__);
-			gpio_set_value(GPIO_BTP_LDO_EN, 1);
-		} else
-			gpio_set_value(GPIO_BTP_LDO_EN, 0);
-	}
+	s3c_gpio_cfgpin(GPIO_BTP_LDO_EN_18V, S3C_GPIO_SFN(S3C_GPIO_OUTPUT));
+	s3c_gpio_setpull(GPIO_BTP_LDO_EN_18V, S3C_GPIO_PULL_DOWN);
+	s5p_gpio_set_drvstr(GPIO_BTP_LDO_EN_18V, S5P_GPIO_DRVSTR_LV3);
+	gpio_set_value(GPIO_BTP_LDO_EN_18V, 0);
 
 	s3c_gpio_cfgpin(GPIO_BTP_IRQ, S3C_GPIO_SFN(S3C_GPIO_INPUT));
 	s3c_gpio_setpull(GPIO_BTP_IRQ, S3C_GPIO_PULL_UP);
+	s5p_gpio_set_drvstr(GPIO_BTP_IRQ, S5P_GPIO_DRVSTR_LV3);
 
 	s3c_gpio_cfgpin(GPIO_BTP_RST_N, S3C_GPIO_SFN(S3C_GPIO_OUTPUT));
+	s3c_gpio_setpull(GPIO_BTP_RST_N, S3C_GPIO_PULL_DOWN);
+	s5p_gpio_set_drvstr(GPIO_BTP_RST_N, S5P_GPIO_DRVSTR_LV3);
 	gpio_set_value(GPIO_BTP_RST_N, 0);
-	s3c_gpio_setpull(GPIO_BTP_RST_N, S3C_GPIO_PULL_NONE);
 }
 
 static struct vfs61xx_platform_data vfs61xx_pdata = {
 	.drdy = GPIO_BTP_IRQ,
 	.sleep = GPIO_BTP_RST_N,
-	.vfs61xx_sovcc_on = vfs61xx_regulator_onoff,
+	.ldo_pin_33v = GPIO_BTP_LDO_EN_33V,
+	.ldo_pin_18v = GPIO_BTP_LDO_EN_18V,
+//	OCP FLAG NOT USED
+//	.ocpflag = GPIO_OCP_FLAG,
+#if defined(CONFIG_KLIMT)
+	.orient = 0,
+#else
 	.orient = 1,
+#endif
 };
 
 static struct s3c64xx_spi_csinfo spi1_csi[] = {
@@ -387,11 +417,11 @@ static struct s3c64xx_spi_csinfo spi1_csi[] = {
 static struct spi_board_info spi1_board_info[] __initdata = {
 	{
 		.modalias		= "validity_fingerprint",
-		.max_speed_hz		= 15 * 1000 * 1000,
+		.max_speed_hz		= 15 * MHZ,
 		.bus_num		= 1,
 		.chip_select		= 0,
 		.mode			= SPI_MODE_0,
-		.irq			= IRQ_EINT(15),
+		.irq			= IRQ_EINT(7),
 		.controller_data	= &spi1_csi[0],
 		.platform_data		= &vfs61xx_pdata,
 	}
@@ -424,7 +454,7 @@ void __init exynos5_universal5420_sensor_init(void)
 
 #endif
 
-#if defined(CONFIG_V1A_3G) || defined(CONFIG_V2A_3G) || defined(CONFIG_N1A_3G)
+#if defined(CONFIG_SENSORS_SX9500)
 	exynos5_hs_i2c0_set_platdata(&hs_i2c0_data);
 	ret = i2c_register_board_info(4, i2c_devs4, ARRAY_SIZE(i2c_devs4));
 	if (ret < 0) {
@@ -436,7 +466,6 @@ void __init exynos5_universal5420_sensor_init(void)
 		pr_err("%s, grip platform device register failed (err=%d)\n",
 			__func__, ret);
 #endif
-
 
 #if defined(CONFIG_SENSORS_SSP_STM)
 	pr_info("%s, SSP_SPI_SETUP\n", __func__);
@@ -459,11 +488,16 @@ void __init exynos5_universal5420_sensor_init(void)
 #endif
 
 #if defined(CONFIG_SENSORS_VFS61XX)
-	pr_info("%s: SENSORS_VFS61XX init\n", __func__);
+	pr_info("%s: SENSORS_VFS61XX init. system rev : %u\n", __func__, system_rev);
 	vfs61xx_setup_gpio();
+
+#ifdef CONFIG_SEC_FACTORY
 	s3c64xx_spi1_pdata.dma_mode = PIO_MODE;
-	if (system_rev > 4)
-		vfs61xx_pdata.ldocontrol = 1;
+#else
+	s3c64xx_spi1_pdata.dma_mode = HYBRID_MODE;
+#endif
+
+	vfs61xx_pdata.ldocontrol = 1;
 
 	if (!exynos_spi_cfg_cs(spi1_csi[0].line, 1)) {
 		pr_info("%s: spi1_set_platdata ...\n", __func__);

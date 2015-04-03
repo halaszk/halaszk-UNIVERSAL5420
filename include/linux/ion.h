@@ -21,6 +21,12 @@
 #include <linux/dma-direction.h>
 #include <linux/dma-buf.h>
 
+dma_addr_t ion_iovmm_map(struct dma_buf_attachment *attachment,
+			 off_t offset, size_t size,
+			 enum dma_data_direction direction, int id);
+void ion_iovmm_unmap(struct dma_buf_attachment *attachment, dma_addr_t iova);
+
+
 struct ion_handle;
 /**
  * enum ion_heap_types - list of all possible types of heaps
@@ -60,10 +66,11 @@ enum ion_heap_type {
 #define ION_FLAG_CACHED_NEEDS_SYNC 2	/* mappings of this buffer will created
 					   at mmap time, if this is set
 					   caches must be managed manually */
-#define ION_FLAG_PRESERVE_KMAP 4	/* kernel address is generated when
-					   allocating a buffer
+#define ION_FLAG_PRESERVE_KMAP 4	/* deprecated. ignored. */
+#define ION_FLAG_NOZEROED 8		/* Allocated buffer is not initialized
+					   with zero value and userspace is not
+					   able to access the buffer
 					 */
-#define __ION_FLAG_CPUMAPPED_DO_NOT_USE__INTERNAL_USE_ONLY__ 8
 
 #ifdef __KERNEL__
 struct ion_device;
@@ -396,6 +403,11 @@ struct ion_custom_data {
  * this will make the buffer in memory coherent.
  */
 #define ION_IOC_SYNC		_IOWR(ION_IOC_MAGIC, 7, struct ion_fd_data)
+
+/**
+ * DOC: ION_IOC_SYNC_INV - invalidates a shared file descriptors for cpu
+ */
+#define ION_IOC_SYNC_INV	_IOWR(ION_IOC_MAGIC, 8, struct ion_fd_data)
 
 /**
  * DOC: ION_IOC_CUSTOM - call architecture specific ion ioctl

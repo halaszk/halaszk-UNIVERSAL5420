@@ -255,6 +255,22 @@ int wacom_checksum(struct wacom_i2c *wac_i2c)
 	int i = 0;
 	u8 buf[5] = {0, };
 
+	printk(KERN_DEBUG"epen:%s\n", __func__);
+
+	ret = wake_lock_active(&wac_i2c->fw_wakelock);
+	if (ret) {
+		printk(KERN_DEBUG"epen:wake_lock active. pass wacom checksum\n");
+		goto out_wacom_checksum;
+	}
+
+	mutex_lock(&wac_i2c->lock);
+
+	if (wac_i2c->power_enable == false) {
+		wac_i2c->wac_pdata->resume_platform_hw();
+		msleep(200);
+		printk(KERN_DEBUG"epen:pwr on\n");
+	}
+
 	buf[0] = COM_CHECKSUM;
 
 	while (retry--) {
@@ -293,6 +309,13 @@ int wacom_checksum(struct wacom_i2c *wac_i2c)
 		}
 	}
 
+	if (wac_i2c->power_enable == false) {
+		wac_i2c->wac_pdata->suspend_platform_hw();
+		printk(KERN_DEBUG"epen:pwr off\n");
+	}
+	mutex_unlock(&wac_i2c->lock);
+
+ out_wacom_checksum:
 	wac_i2c->checksum_result = (5 == i);
 
 	return ret;

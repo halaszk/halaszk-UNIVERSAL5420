@@ -39,6 +39,11 @@
 #include <plat/sysmmu.h>
 #endif
 
+#ifdef CONFIG_SOC_EXYNOS5420
+#include <mach/regs-clock.h>
+#include <mach/regs-bts.h>
+#define GSC_PERF
+#endif
 extern const int h_coef_8t[7][16][8];
 extern const int v_coef_4t[7][16][4];
 extern int gsc_dbg;
@@ -578,6 +583,7 @@ struct gsc_dev {
 	struct pm_qos_request		exynos5_gsc_int_qos;
 	struct clk			*clk_child;
 	struct clk			*clk_parent;
+	struct timer_list		op_timer;
 };
 
 /**
@@ -612,7 +618,6 @@ struct gsc_ctx {
 	struct v4l2_fh		fh;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct gsc_ctrls	gsc_ctrls;
-	struct timer_list	op_timer;
 	bool			ctrls_rdy;
 	struct sysmmu_prefbuf	prebuf[GSC_MAX_PREF_BUF];
 	struct work_struct	fence_work;

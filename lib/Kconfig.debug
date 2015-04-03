@@ -27,6 +27,13 @@ config PRINTK_PID
 	  This allows you to see the running process with kernel log.
 	  See Documentation/kernel-parameters.txt
 
+config PRINTK_CORE_NUM
+	bool "Show core number on printks"
+	depends on PRINTK
+	help
+	  Selecting this option causes core number to be
+	  included in printk output. Or add printk.core_num=1 at boot-time.
+
 config DEFAULT_MESSAGE_LOGLEVEL
 	int "Default message log level (1-7)"
 	range 1 7

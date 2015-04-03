@@ -466,6 +466,8 @@ static int rpm_suspend(struct device *dev, int rpmflags)
 	dev->power.deferred_resume = false;
 	wake_up_all(&dev->power.wait_queue);
 
+	pr_info("~~~~~~~~~~~ PM DOMAIN : callback faild\n");
+
 	if (retval == -EAGAIN || retval == -EBUSY) {
 		dev->power.runtime_error = 0;
 
@@ -693,6 +695,7 @@ static void pm_runtime_work(struct work_struct *work)
 {
 	struct device *dev = container_of(work, struct device, power.work);
 	enum rpm_request req;
+	int ret = 0;
 
 	spin_lock_irq(&dev->power.lock);
 
@@ -707,18 +710,24 @@ static void pm_runtime_work(struct work_struct *work)
 	case RPM_REQ_NONE:
 		break;
 	case RPM_REQ_IDLE:
-		rpm_idle(dev, RPM_NOWAIT);
+		ret = rpm_idle(dev, RPM_NOWAIT);
 		break;
 	case RPM_REQ_SUSPEND:
-		rpm_suspend(dev, RPM_NOWAIT);
+		ret = rpm_suspend(dev, RPM_NOWAIT);
 		break;
 	case RPM_REQ_AUTOSUSPEND:
-		rpm_suspend(dev, RPM_NOWAIT | RPM_AUTO);
+		ret = rpm_suspend(dev, RPM_NOWAIT | RPM_AUTO);
 		break;
 	case RPM_REQ_RESUME:
-		rpm_resume(dev, RPM_NOWAIT);
+		ret = rpm_resume(dev, RPM_NOWAIT);
 		break;
 	}
+
+	if (ret && ret != -EAGAIN && strcmp(dev_name(dev), "exynos-gscl.0") == 0) {
+		pr_info("~~~~~!!!!! pm_runtime_work error (%x), request(%x), usage_count(%x), status(%d), !!!!!~~~~~\n", ret, req, atomic_read(&dev->power.usage_count), dev->power.runtime_status);
+	}
+
+
 
  out:
 	spin_unlock_irq(&dev->power.lock);
@@ -811,6 +820,11 @@ int __pm_runtime_idle(struct device *dev, int rpmflags)
 
 	spin_lock_irqsave(&dev->power.lock, flags);
 	retval = rpm_idle(dev, rpmflags);
+
+	if (retval && retval != -EAGAIN && strcmp(dev_name(dev), "exynos-gscl.0") == 0) {
+		pr_info("~~~~~!!!!! __pm_runtime_idle error (%x), request(pm_runtime_idle), usage_count(%x), status(%d), !!!!!~~~~~\n", retval, atomic_read(&dev->power.usage_count), dev->power.runtime_status);
+	}
+
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 
 	return retval;
@@ -843,6 +857,11 @@ int __pm_runtime_suspend(struct device *dev, int rpmflags)
 
 	spin_lock_irqsave(&dev->power.lock, flags);
 	retval = rpm_suspend(dev, rpmflags);
+
+	if (retval && retval != -EAGAIN && strcmp(dev_name(dev), "exynos-gscl.0") == 0) {
+		pr_info("~~~~~!!!!! pm_runtime_suspend error (%x), request(pm_runtime_suspend), usage_count(%x), status(%d), !!!!!~~~~~\n", retval, atomic_read(&dev->power.usage_count), dev->power.runtime_status);
+	}
+
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 
 	return retval;

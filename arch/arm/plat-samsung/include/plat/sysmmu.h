@@ -127,6 +127,7 @@ void exynos_sysmmu_set_prefbuf(struct device *owner,
 void exynos_sysmmu_set_pbuf(struct device *owner, int nbufs,
 				struct sysmmu_prefbuf prefbuf[]);
 
+void exynos_iommu_dump_status(struct device *dev);
 #else /* CONFIG_EXYNOS_IOMMU */
 static inline int exynos_sysmmu_enable(struct device *owner, unsigned long *pgd)
 {
@@ -142,5 +143,6 @@ static inline bool exynos_sysmmu_disable(struct device *owner)
 #define exynos_sysmmu_set_fault_handler(sysmmu, handler) do { } while (0)
 #define exynos_sysmmu_set_prefbuf(owner, b0, s0, b1, s1) do { } while (0)
 #define exynos_sysmmu_set_pbuf(owner, nbufs, prefbuf) do { } while (0)
+#define exynos_iommu_dump_status(dev) do { } while (0)
 #endif
 #endif /* __ASM_PLAT_SYSMMU_H */

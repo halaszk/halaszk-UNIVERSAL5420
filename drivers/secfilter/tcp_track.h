@@ -68,7 +68,7 @@ void            clean_tcp_TrackInfos(tcp_Info_Manager *manager);
 int             add_tcp_TrackInfo( tcp_Info_Manager *manager,  tcp_TrackInfo *node);
 tcp_TrackInfo * add_tcp_TrackInfo_ToHead(tcp_Info_Manager *manager,  tcp_TrackInfo *node);
 tcp_TrackInfo * find_tcp_TrackInfo(tcp_Info_Manager *manager, struct sk_buff *skb, int option);
-tcp_TrackInfo * find_tcp_TrackInfo_withID(tcp_Info_Manager *manager, int id, int option);
+tcp_TrackInfo * find_tcp_TrackInfo_withID(tcp_Info_Manager *manager, int id);
 void            free_tcp_TrackInfo(tcp_TrackInfo *node);
 tcp_TrackInfo * getFirst_tcp_TrackInfo(tcp_Info_Manager *manager);
 tcp_TrackInfo * make_tcp_TrackInfo ( struct sk_buff *skb);

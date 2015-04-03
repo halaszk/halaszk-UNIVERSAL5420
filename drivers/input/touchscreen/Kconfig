@@ -907,6 +907,7 @@ config TOUCHSCREEN_ATMEL_MXT1664S
 	  To compile this driver as a module, choose M here: the
 	  module will be called mxt1664s.
 
+source "drivers/input/touchscreen/mxt_t/Kconfig"
 source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
 
 endif

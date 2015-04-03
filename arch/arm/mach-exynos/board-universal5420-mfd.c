@@ -14,7 +14,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-gpio.h>
 
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
 #include <linux/regulator/machine.h>
@@ -39,7 +39,7 @@
 #define GPIO_IF_PMIC_IRQ	EXYNOS5420_GPX1(4)
 #define GPIO_WPC_INT		EXYNOS5420_GPX2(3)
 
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 
 static struct regulator_consumer_supply safeout1_supply[] = {
 	REGULATOR_SUPPLY("safeout1", NULL),
@@ -115,7 +115,7 @@ static struct max77803_led_platform_data max77803_led_pdata = {
 	.leds[0].timer = MAX77803_FLASH_TIME_187P5MS,
 	.leds[0].timer_mode = MAX77803_TIMER_MODE_MAX_TIMER,
 	.leds[0].cntrl_mode = MAX77803_LED_CTRL_BY_FLASHSTB,
-#if defined(CONFIG_MACH_V1A) || defined(CONFIG_MACH_N1A) || defined(CONFIG_N2A)
+#if defined(CONFIG_MACH_V1A) || defined(CONFIG_MACH_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT) 
 	.leds[0].brightness = 0x32, // Max77888 : 19.53mA+0x32*19.53 = 996.03 mA
 #else
 	.leds[0].brightness = 0x3D,
@@ -132,12 +132,16 @@ static struct max77803_led_platform_data max77803_led_pdata = {
 #ifdef CONFIG_VIBETONZ
 static struct max77803_haptic_platform_data max77803_haptic_pdata = {
 	.max_timeout = 10000,
+#if defined(CONFIG_N2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
+	.duty = 32775,
+#else
 	.duty = 34500,
+#endif
 	.period = 38240,
 	.reg2 = MOTOR_LRA | EXT_PWM | DIVIDER_128,
 	.init_hw = NULL,
 	.motor_en = NULL,
-#if defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	.pwm_id = 1,
 #else
 	.pwm_id = 0,
@@ -154,13 +158,11 @@ struct max77803_platform_data exynos4_max77803_info = {
 #if defined(CONFIG_HA)
 	.wc_irq_gpio	= GPIO_WPC_INT,
 #endif
+#if defined(CONFIG_MFD_MAX77888)
 	/* WA for V1 MUIC RESET */
-#if defined(CONFIG_V1A)
 	.muic_reset_irq = GPIO_MUIC_RESET_IRQ,
-#else
-	.muic_reset_irq = -1,
-#endif
 	/* WA for V1 MUIC RESET */
+#endif
 	.wakeup		= 1,
 	.muic = &max77803_muic,
 	.is_default_uart_path_cp =  is_muic_default_uart_path_cp,
@@ -356,7 +358,7 @@ static struct platform_device *vienna_mfd_device[] __initdata = {
 
 void __init exynos5_universal5420_mfd_init(void)
 {
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 	i2c_register_board_info(17, i2c_devs17_emul,
 				ARRAY_SIZE(i2c_devs17_emul));
 

@@ -132,10 +132,11 @@ void fimg2d_clean_outer_pagetable(struct mm_struct *mm, unsigned long vaddr,
 #endif /* CONFIG_OUTER_CACHE */
 
 enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
-		unsigned long vaddr, size_t size)
+		unsigned long vaddr, size_t size, int write)
 {
 	unsigned long *pgd;
 	unsigned long *lv1d, *lv2d;
+	pte_t *pte;
 
 	pgd = (unsigned long *)mm->pgd;
 
@@ -161,6 +162,27 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 
 		lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
 				((vaddr & LV2_PT_MASK) >> LV2_SHIFT);
+		pte = (pte_t *)(lv2d - PTE_HWTABLE_PTRS);
+
+		if (write && (!pte_present(*pte) || !pte_write(*pte))) {
+			struct vm_area_struct *vma;
+
+			vma = find_vma(mm, vaddr);
+			if (!vma) {
+				pr_err("%s: vma is null\n", __func__);
+				return PT_FAULT;
+			}
+
+			if (vma->vm_end < (vaddr + size)) {
+				pr_err("%s: vma overflow: %#lx--%#lx, "
+						"vaddr: %#lx, size: %zd\n",
+						__func__, vma->vm_start,
+						vma->vm_end, vaddr, size);
+				return PT_FAULT;
+			}
+
+			handle_mm_fault(mm, vma, vaddr, FAULT_FLAG_WRITE);
+		}
 
 		/*
 		 * check level 2 descriptor

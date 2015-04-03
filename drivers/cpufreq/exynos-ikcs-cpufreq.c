@@ -40,7 +40,7 @@
 #include <mach/asv-exynos.h>
 #include <plat/cpu.h>
 
-#if defined(CONFIG_RTC_DRV_MAX77802)
+#if defined(CONFIG_RTC_DRV_MAX77802) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT) 
 extern bool pmic_is_jig_attached;
 #endif
 
@@ -411,7 +411,7 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 				pm_qos_update_request(&min_int_qos, 400000);
 			} else if ((curr_freq < ARM_INT_SKEW_FREQ_H) &&
 					(target_freq < ARM_INT_SKEW_FREQ_H)) {
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 				pm_qos_update_request(&min_int_qos, 222000);
 #else
 				pm_qos_update_request(&min_int_qos, 111000);
@@ -495,7 +495,7 @@ static int exynos_cpufreq_scale(unsigned int target_freq,
 			(target_freq < ARM_INT_SKEW_FREQ_H) &&
 			(curr_freq >= ARM_INT_SKEW_FREQ_H)) {
 		if (pm_qos_request_active(&min_int_qos))
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 		pm_qos_update_request(&min_int_qos, 222000);
 #else
 		pm_qos_update_request(&min_int_qos, 111000);
@@ -1202,12 +1202,19 @@ struct freq_qos_val {
 
 static void get_boot_freq_qos(struct freq_qos_val *boot_freq_qos)
 {
-#if defined(CONFIG_RTC_DRV_MAX77802)
+#if defined(CONFIG_RTC_DRV_MAX77802) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	if (pmic_is_jig_attached) {
+#if defined(CONFIG_TARGET_LOCALE_DEMO)
+		boot_freq_qos->min_freq = 1000000;
+		boot_freq_qos->min_timeout_us = 900000 * 1000;
+		boot_freq_qos->max_freq = 1000000;
+		boot_freq_qos->max_timeout_us = 900000 * 1000;
+#else
 		boot_freq_qos->min_freq = 1000000;
 		boot_freq_qos->min_timeout_us = 360000 * 1000;
 		boot_freq_qos->max_freq = 1000000;
 		boot_freq_qos->max_timeout_us = 360000 * 1000;
+#endif
 	} else {
 		boot_freq_qos->min_freq = 1500000;
 		boot_freq_qos->min_timeout_us = 40000 * 1000;
@@ -1221,14 +1228,9 @@ static void get_boot_freq_qos(struct freq_qos_val *boot_freq_qos)
 	boot_freq_qos->max_freq = 1000000;
 	boot_freq_qos->max_timeout_us = 360000 * 1000;
 #else
-#if defined(CONFIG_CHAGALL)
-	boot_freq_qos->min_freq = 1200000;
-	boot_freq_qos->max_freq = 1200000;
-#else
 	boot_freq_qos->min_freq = 1700000;
-	boot_freq_qos->max_freq = 1700000;
-#endif
 	boot_freq_qos->min_timeout_us = 40000 * 1000;
+	boot_freq_qos->max_freq = 1700000;
 	boot_freq_qos->max_timeout_us = 40000 * 1000;
 #endif
 #endif

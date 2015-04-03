@@ -619,8 +619,9 @@ static int find_group_other(struct super_block *sb, struct inode *parent,
  * For other inodes, search forward from the parent directory's block
  * group to find a free inode.
  */
-struct inode *ext4_new_inode(handle_t *handle, struct inode *dir, umode_t mode,
-			     const struct qstr *qstr, __u32 goal, uid_t *owner)
+struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+			       umode_t mode, const struct qstr *qstr,
+			       __u32 goal, uid_t *owner, int nblocks)
 {
 	struct super_block *sb;
 	struct buffer_head *inode_bitmap_bh = NULL;
@@ -694,12 +695,6 @@ got_group:
 			ext4_debug("ext4_read_inode_bitmap error: %d\n", group);
 			goto fail;
 		}
-		BUFFER_TRACE(inode_bitmap_bh, "get_write_access");
-		err = ext4_journal_get_write_access(handle, inode_bitmap_bh);
-		if (err) {
-			ext4_debug("ext4_journal_get_write_access error\n");
-			goto fail;
-		}
 
 repeat_in_this_group:
 		ino = ext4_find_next_zero_bit((unsigned long *)
@@ -715,10 +710,19 @@ repeat_in_this_group:
 				   "inode=%lu", ino + 1);
 			continue;
 		}
+		if (!handle) {
+			BUG_ON(nblocks <= 0);
+			handle = ext4_journal_start_sb(dir->i_sb, nblocks);
+			if (IS_ERR(handle)) {
+				err = PTR_ERR(handle);
+				goto fail;
+			}
+		}
 		BUFFER_TRACE(inode_bitmap_bh, "get_write_access");
 		err = ext4_journal_get_write_access(handle, inode_bitmap_bh);
 		if (err)
 			goto fail;
+
 		ext4_lock_group(sb, group);
 		ret2 = ext4_test_and_set_bit(ino, inode_bitmap_bh->b_data);
 		ext4_unlock_group(sb, group);
@@ -737,6 +741,13 @@ got:
 	err = ext4_handle_dirty_metadata(handle, NULL, inode_bitmap_bh);
 	if (err) {
 		ext4_debug("ext4_handle_dirty_metadata error\n");
+		goto fail;
+	}
+
+	BUFFER_TRACE(group_desc_bh, "get_write_access");
+	err = ext4_journal_get_write_access(handle, group_desc_bh);
+	if (err) {
+		ext4_debug("ext4_journal_get_write_access error\n");
 		goto fail;
 	}
 
@@ -773,13 +784,6 @@ got:
 			ext4_debug("ext4_handle_dirty_metadata error\n");
 			goto fail;
 		}
-	}
-
-	BUFFER_TRACE(group_desc_bh, "get_write_access");
-	err = ext4_journal_get_write_access(handle, group_desc_bh);
-	if (err) {
-		ext4_debug("ext4_journal_get_write_access error\n");
-		goto fail;
 	}
 
 	/* Update the relevant bg descriptor fields */

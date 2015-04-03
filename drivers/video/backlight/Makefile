@@ -18,6 +18,7 @@ obj-$(CONFIG_LCD_MIPI_S6E8AB0)  += s6e8ab0_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_TC358764) += tc358764_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_S6E8AA0)	+= s6e8aa0_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_S6TNMR7)	+= s6tnmr7_mipi_lcd.o dynamic_aid.o
+obj-$(CONFIG_LCD_MIPI_S6E3HA1)	+= s6e3ha1_mipi_lcd.o dynamic_aid.o
 obj-$(CONFIG_LCD_LMS501KF03)       += lms501kf03.o
 obj-$(CONFIG_LCD_MIPI_AMS480GYXX)	+= ams480gyxx_mipi_lcd.o
 obj-$(CONFIG_LCD_MIPI_ER63311)		+= eR63311_mipi_lcd.o

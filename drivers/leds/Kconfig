@@ -408,7 +408,7 @@ config LEDS_TCA6507
 config LEDS_MAX77803
         bool "LED support for the MAX77803"
         depends on LEDS_CLASS
-        depends on MFD_MAX77803
+        depends on MFD_MAX77803 || MFD_MAX77888
         default y
         help
           This option enables support for the LEDs on the MAX77803.

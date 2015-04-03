@@ -3124,6 +3124,11 @@ static void exynos_ss_udc_init(struct exynos_ss_udc *udc)
 
 	writel(EXYNOS_USB3_DCFG_NumP(3) |
 	       EXYNOS_USB3_DCFG_PerFrInt(2) |
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+/* USB3.0 LPM disable, usb chapter9 bos test fails */
+#else
+		   EXYNOS_USB3_DCFG_LPMCap |
+#endif
 	       EXYNOS_USB3_DCFG_DevSpd(devspd),
 	       udc->regs + EXYNOS_USB3_DCFG);
 
@@ -3580,6 +3585,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 
 	if (ret < 0) {
 		dev_err(dev, "cannot claim IRQ\n");
+		devm_free_irq(dev, udc->irq, udc);
 		return ret;
 	}
 
@@ -3616,6 +3622,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 		ret = exynos_ss_udc_initep(udc, &udc->eps[epindex], epindex);
 		if (ret < 0) {
 			dev_err(dev, "cannot get memory for TRB\n");
+			devm_free_irq(dev, udc->irq, udc);
 			return ret;
 		}
 	}
@@ -3624,6 +3631,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(udc->dev, "failed to register gadget device\n");
 		put_device(&udc->gadget.dev);
+		devm_free_irq(dev, udc->irq, udc);
 		return ret;
 	}
 
@@ -3663,6 +3671,7 @@ err_sysfs:
 	usb_del_gadget_udc(&udc->gadget);
 err_add_udc:
 	device_unregister(&udc->gadget.dev);
+	devm_free_irq(dev, udc->irq, udc);
 
 	return ret;
 }

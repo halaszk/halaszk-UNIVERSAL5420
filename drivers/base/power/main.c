@@ -53,6 +53,9 @@ LIST_HEAD(dpm_noirq_list);
 struct suspend_stats suspend_stats;
 static DEFINE_MUTEX(dpm_list_mtx);
 static pm_message_t pm_transition;
+#if defined(CONFIG_MDM_HSIC_PM)
+static atomic_t ehci_area;
+#endif
 
 struct dpm_watchdog {
 	struct device		*dev;
@@ -1098,6 +1101,11 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	int error = 0;
 	struct dpm_watchdog wd;
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	if (!strcmp(dev_name(dev), "1-2"))
+		atomic_inc(&ehci_area);
+#endif
+
 	dpm_wait_for_children(dev, async);
 
 	if (async_error)
@@ -1107,11 +1115,30 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	if (pm_runtime_barrier(dev) && device_may_wakeup(dev))
 		pm_wakeup_event(dev, 0);
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	/* if usb1 device fail to suspend, ap wakeup without ehci resume.
+	 * so -113 error happend. in case of usb1 device, skip this condition.
+	 * and pm_wakeup_pending will be checked next device_suspend.
+	 * this code is temporary code. and it should be removed next version. */
+	if (!atomic_read(&ehci_area) && pm_wakeup_pending()) {
+		if (dev->parent)
+			dev_info(dev, "pm_wakeup_pending!!, area : %d, parent = %s\n",
+					atomic_read(&ehci_area), dev_name(dev->parent));
+		else
+			dev_info(dev, "pm_wakeup_pending!!, area : %d\n",
+					atomic_read(&ehci_area));
+#else
 	if (pm_wakeup_pending()) {
+#endif
 		pm_runtime_put_sync(dev);
 		async_error = -EBUSY;
 		goto Complete;
 	}
+
+#if defined(CONFIG_MDM_HSIC_PM)
+	if (!strcmp(dev_name(dev), "s5p-ehci"))
+		atomic_dec(&ehci_area);
+#endif
 
 	dpm_wd_set(&wd, dev);
 

@@ -43,9 +43,17 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+#ifdef CONFIG_MMC_SUPPORT_STLOG
+#include <linux/stlog.h>
+#else
+#define ST_LOG(fmt,...)
+#endif
+
 #if defined(CONFIG_BLK_DEV_IO_TRACE)
 #include "../card/queue.h"
 #endif
+
+#define MMC_CORE_ERASE_TIMEOUT_MS	(10 * 60 * 1000)	/* 10 min timeout for erase */
 
 static struct workqueue_struct *workqueue;
 
@@ -1670,6 +1678,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 {
 	struct mmc_command cmd = {0};
 	unsigned int qty = 0;
+	unsigned long timeout = 0;
 	int err;
 
 	mmc_add_trace(__MMC_TA_PRE_DONE, card->host->mqrq_cur);
@@ -1751,6 +1760,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	if (mmc_host_is_spi(card->host))
 		goto out;
 
+	timeout = jiffies + msecs_to_jiffies(MMC_CORE_ERASE_TIMEOUT_MS);
 	do {
 		memset(&cmd, 0, sizeof(struct mmc_command));
 		cmd.opcode = MMC_SEND_STATUS;
@@ -1762,6 +1772,14 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 			pr_err("error %d requesting status %#x\n",
 				err, cmd.resp[0]);
 			err = -EIO;
+			goto out;
+		}
+		/* in case of card stays on program status in 10 mins */
+		if (time_after(jiffies, timeout)) {
+			err =  -EIO;
+			pr_err("%s: erase error %d hang on checking status %#x.\n",
+					mmc_hostname(card->host), err,
+					cmd.resp[0]);
 			goto out;
 		}
 	} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
@@ -1880,6 +1898,9 @@ EXPORT_SYMBOL(mmc_can_discard);
 
 int mmc_can_sanitize(struct mmc_card *card)
 {
+	/* do not use sanitize*/
+	return 0;
+
 	if (!mmc_can_trim(card) && !mmc_can_erase(card))
 		return 0;
 	if (card->ext_csd.sec_feature_support & EXT_CSD_SEC_SANITIZE)
@@ -2159,6 +2180,7 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 	if (ret) {
 		mmc_card_set_removed(host->card);
 		pr_debug("%s: card remove detected\n", mmc_hostname(host));
+		ST_LOG("<%s> %s: card remove detected\n", __func__,mmc_hostname(host));
 	}
 
 	return ret;
@@ -2173,6 +2195,11 @@ int mmc_detect_card_removed(struct mmc_host *host)
 
 	if (!card)
 		return 1;
+
+	/* If SDcard is removed */
+	if (host->card && mmc_card_sd(host->card) &&
+			host->ops->get_cd && host->ops->get_cd(host) == 0)
+		mmc_card_set_removed(host->card);
 
 	ret = mmc_card_removed(card);
 	/*
@@ -2251,6 +2278,7 @@ void mmc_rescan(struct work_struct *work)
 	if (host->ops->get_cd && host->ops->get_cd(host) == 0)
 		goto out;
 
+	ST_LOG("<%s> %s insertion detected",__func__,host->class_dev.kobj.name);
 	mmc_claim_host(host);
 	for (i = 0; i < ARRAY_SIZE(freqs); i++) {
 		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min))) {

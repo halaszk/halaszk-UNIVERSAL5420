@@ -41,8 +41,13 @@ static void exynos_persistent_clock_read(struct rtc_time *rtc_tm)
 {
 	unsigned int have_retried = 0;
 	void __iomem *base = exynos_rtc_base;
+	int ret;
 
-	clk_enable(rtc_clk);
+	ret = clk_enable(rtc_clk);
+	if (ret) {
+		pr_err("%s: failed to enable clk(%d)\n", __func__, ret);
+		BUG();
+	}
 retry_get_time:
 	rtc_tm->tm_min  = bcd2bin(readb(base + S3C2410_RTCMIN));
 	rtc_tm->tm_hour = bcd2bin(readb(base + S3C2410_RTCHOUR));

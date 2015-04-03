@@ -602,9 +602,9 @@ retry_adc:
 			goto retry_adc;
 
 		success = false;
-	}
-	else
+	} else {
 		success = true;
+	}
 
 	mag.x = (temp[2] << 8) + temp[1];
 	mag.y = (temp[4] << 8) + temp[3];
@@ -831,8 +831,7 @@ static int ak8963c_input_init(struct ak8963c_p *data)
 	/* sysfs node creation */
 	ret = sysfs_create_group(&dev->dev.kobj, &ak8963c_attribute_group);
 	if (ret < 0) {
-		sensors_remove_symlink(&data->input->dev.kobj,
-			data->input->name);
+		sensors_remove_symlink(&dev->dev.kobj, dev->name);
 		input_unregister_device(dev);
 		return ret;
 	}

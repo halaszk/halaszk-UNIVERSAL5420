@@ -24,15 +24,21 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <asm/tlbflush.h>
 #include "ion_priv.h"
 
-static unsigned int high_order_gfp_flags = (GFP_HIGHUSER | __GFP_ZERO |
-					    __GFP_NOWARN | __GFP_NORETRY |
-					    __GFP_NO_KSWAPD) & ~__GFP_WAIT;
-static unsigned int low_order_gfp_flags  = (GFP_HIGHUSER | __GFP_ZERO |
-					 __GFP_NOWARN);
+static unsigned int high_order_gfp_flags = (GFP_HIGHUSER | __GFP_NOWARN |
+					   __GFP_NORETRY | __GFP_NO_KSWAPD) & ~__GFP_WAIT;
+static unsigned int low_order_gfp_flags  = (GFP_HIGHUSER | __GFP_NOWARN);
 static const unsigned int orders[] = {8, 4, 0};
 static const int num_orders = ARRAY_SIZE(orders);
+
+#define PG_ion_frompool		(__NR_PAGEFLAGS + 1)
+#define ion_page_order(page)	(page)->private
+#define ion_set_from_pool(page)	set_bit(PG_ion_frompool, &(page)->flags)
+#define ion_get_from_pool(page)	test_bit(PG_ion_frompool, &(page)->flags)
+#define ion_clear_from_pool(page)	clear_bit(PG_ion_frompool, &(page)->flags)
+
 static int order_to_index(unsigned int order)
 {
 	int i;
@@ -53,12 +59,6 @@ struct ion_system_heap {
 	struct ion_page_pool **pools;
 };
 
-struct page_info {
-	struct page *page;
-	unsigned int order;
-	struct list_head list;
-};
-
 static struct page *alloc_buffer_page(struct ion_system_heap *heap,
 				      struct ion_buffer *buffer,
 				      unsigned long order)
@@ -73,14 +73,9 @@ static struct page *alloc_buffer_page(struct ion_system_heap *heap,
 	} else {
 		gfp_t gfp_flags = low_order_gfp_flags;
 
-		if (order > 4)
+		if (order > 0)
 			gfp_flags = high_order_gfp_flags;
 		page = alloc_pages(gfp_flags, order);
-		if (!page)
-			return 0;
-		if (split_pages)
-			__dma_page_cpu_to_dev(page, 0, PAGE_SIZE << order,
-					      DMA_BIDIRECTIONAL);
 	}
 	if (!page)
 		return 0;
@@ -110,14 +105,15 @@ static void free_buffer_page(struct ion_system_heap *heap,
 }
 
 
-static struct page_info *alloc_largest_available(struct ion_system_heap *heap,
+static struct page *alloc_largest_available(struct ion_system_heap *heap,
 						 struct ion_buffer *buffer,
 						 unsigned long size,
 						 unsigned int max_order)
 {
 	struct page *page;
-	struct page_info *info;
+	struct ion_page_pool *pool;
 	int i;
+	bool from_pool = false;
 
 	for (i = 0; i < num_orders; i++) {
 		if (size < order_to_size(orders[i]))
@@ -125,14 +121,23 @@ static struct page_info *alloc_largest_available(struct ion_system_heap *heap,
 		if (max_order < orders[i])
 			continue;
 
+		if (!ion_buffer_cached(buffer)) {
+			pool = heap->pools[order_to_index(orders[i])];
+			mutex_lock(&pool->mutex);
+			if ((pool->high_count > 0) || (pool->low_count > 0))
+				from_pool = true;
+			mutex_unlock(&pool->mutex);
+		}
+
 		page = alloc_buffer_page(heap, buffer, orders[i]);
 		if (!page)
 			continue;
 
-		info = kmalloc(sizeof(struct page_info), GFP_KERNEL);
-		info->page = page;
-		info->order = orders[i];
-		return info;
+		ion_page_order(page) = orders[i];
+		if (from_pool)
+			ion_set_from_pool(page);
+
+		return page;
 	}
 	return NULL;
 }
@@ -149,20 +154,21 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 	struct scatterlist *sg;
 	int ret;
 	struct list_head pages;
-	struct page_info *info, *tmp_info;
+	struct page *page, *tmp_page;
 	int i = 0;
 	long size_remaining = PAGE_ALIGN(size);
 	unsigned int max_order = orders[0];
+	bool all_pages_from_pool = true;
 	bool split_pages = ion_buffer_fault_user_mappings(buffer);
 
 	INIT_LIST_HEAD(&pages);
 	while (size_remaining > 0) {
-		info = alloc_largest_available(sys_heap, buffer, size_remaining, max_order);
-		if (!info)
+		page = alloc_largest_available(sys_heap, buffer, size_remaining, max_order);
+		if (!page)
 			goto err;
-		list_add_tail(&info->list, &pages);
-		size_remaining -= (1 << info->order) * PAGE_SIZE;
-		max_order = info->order;
+		list_add_tail(&page->lru, &pages);
+		size_remaining -= (1 << ion_page_order(page)) * PAGE_SIZE;
+		max_order = ion_page_order(page);
 		i++;
 	}
 
@@ -180,30 +186,38 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 		goto err1;
 
 	sg = table->sgl;
-	list_for_each_entry_safe(info, tmp_info, &pages, list) {
-		struct page *page = info->page;
+	list_for_each_entry_safe(page, tmp_page, &pages, lru) {
 		if (split_pages) {
-			for (i = 0; i < (1 << info->order); i++) {
+			for (i = 0; i < (1 << ion_page_order(page)); i++) {
 				sg_set_page(sg, page + i, PAGE_SIZE, 0);
 				sg = sg_next(sg);
 			}
 		} else {
-			sg_set_page(sg, page, (1 << info->order) * PAGE_SIZE,
-				    0);
+			sg_set_page(sg, page, (1 << ion_page_order(page))
+								* PAGE_SIZE, 0);
 			sg = sg_next(sg);
 		}
-		list_del(&info->list);
-		kfree(info);
+		if (all_pages_from_pool && !ion_get_from_pool(page))
+			all_pages_from_pool = false;
+		list_del(&page->lru);
+		ion_clear_from_pool(page);
+		ion_page_order(page) = 0;
 	}
+
+	if (all_pages_from_pool)
+		ion_buffer_set_ready(buffer);
 
 	buffer->priv_virt = table;
 	return 0;
 err1:
 	kfree(table);
 err:
-	list_for_each_entry(info, &pages, list) {
-		free_buffer_page(sys_heap, buffer, info->page, info->order);
-		kfree(info);
+	list_for_each_entry_safe(page, tmp_page, &pages, lru) {
+		int order = ion_page_order(page);
+		list_del(&page->lru);
+		ion_page_order(page) = 0;
+		ion_clear_from_pool(page);
+		free_buffer_page(sys_heap, buffer, page, order);
 	}
 	return -ENOMEM;
 }
@@ -222,7 +236,7 @@ void ion_system_heap_free(struct ion_buffer *buffer)
 
 	/* uncached pages come from the page pools, zero them before returning
 	   for security purposes (other allocations are zerod at alloc time */
-	if (!cached)
+	if (!cached && !(buffer->flags & ION_FLAG_NOZEROED))
 		ion_heap_buffer_zero(buffer);
 
 	for_each_sg(table->sgl, sg, table->nents, i)
@@ -284,7 +298,6 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 		return ERR_PTR(-ENOMEM);
 	heap->heap.ops = &system_heap_ops;
 	heap->heap.type = ION_HEAP_TYPE_SYSTEM;
-	heap->heap.flags = ION_HEAP_FLAG_DEFER_FREE;
 	heap->pools = kzalloc(sizeof(struct ion_page_pool *) * num_orders,
 			      GFP_KERNEL);
 	if (!heap->pools)
@@ -293,13 +306,14 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 		struct ion_page_pool *pool;
 		gfp_t gfp_flags = low_order_gfp_flags;
 
-		if (orders[i] > 4)
+		if (orders[i] > 0)
 			gfp_flags = high_order_gfp_flags;
 		pool = ion_page_pool_create(gfp_flags, orders[i]);
 		if (!pool)
 			goto err_create_pool;
 		heap->pools[i] = pool;
 	}
+
 	heap->heap.debug_show = ion_system_heap_debug_show;
 	return &heap->heap;
 err_create_pool:

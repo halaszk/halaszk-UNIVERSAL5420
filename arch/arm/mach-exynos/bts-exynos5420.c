@@ -684,7 +684,7 @@ static unsigned int read_clusterid(void)
 
 void bts_drex_initialize(void)
 {
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	__raw_writel(0x0, EXYNOS5_DREXI_0_QOSCONTROL15);
 	__raw_writel(0x80, EXYNOS5_DREXI_0_QOSCONTROL12);
 	__raw_writel(0x80, EXYNOS5_DREXI_0_QOSCONTROL8);
@@ -834,9 +834,11 @@ static void set_bts_g3d_table(bool mode)
 
 void bts_change_g3d_state(unsigned int freq)
 {
-	bool g3d_on = exynos5_bts[BTS_IDX_G3D0].on;
+	bool g3d_on;
 
 	spin_lock(&bts_lock);
+
+	g3d_on = exynos5_bts[BTS_IDX_G3D0].on;
 
 	BTS_DBG("[BTS] g3d freq changed %d\n", freq);
 

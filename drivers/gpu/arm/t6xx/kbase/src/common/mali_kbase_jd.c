@@ -29,6 +29,8 @@
 #include <linux/ump.h>
 #endif				/* CONFIG_UMP */
 
+#include <linux/exynos_ion.h>
+
 #define beenthere(f, a...)  KBASE_DEBUG_PRINT_INFO(KBASE_JD, "%s:" f, __func__, ##a)
 
 /*
@@ -199,6 +201,7 @@ static mali_error kbase_jd_umm_map(kbase_context *kctx, struct kbase_va_region *
 
 	if (MALI_ERROR_NONE != err) {
 		dma_buf_unmap_attachment(reg->imported_metadata.umm.dma_attachment, reg->imported_metadata.umm.st, DMA_BIDIRECTIONAL);
+		exynos_ion_sync_dmabuf_for_device(kctx->kbdev->osdev.dev, reg->imported_metadata.umm.dma_buf, reg->imported_metadata.umm.dma_buf->size, DMA_BIDIRECTIONAL);
 		reg->imported_metadata.umm.st = NULL;
 	}
 

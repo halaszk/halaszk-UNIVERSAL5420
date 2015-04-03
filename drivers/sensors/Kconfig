@@ -53,6 +53,27 @@ config SENSORS_CM3323
 
 	  Say N here if you do not use cm3323.
 
+config SENSORS_TMD3782
+	depends on I2C
+	tristate "TMD3782 driver"
+	default n
+	help
+	  Say Y here if you use tmd3782.
+	  This option enables light & proximity sensors using
+	  AMS tmd3782 device driver.
+
+	  Say N here if you do not use tmd3782.
+
+config SENSORS_ESD_DEFENCE
+	depends on I2C
+	tristate "ESD Defence"
+	default n
+	help
+	  Say Y here if you use ESD defence.
+	  This option enables ESD defence code.
+
+	  Say N here if you do not use ESD defence.
+
 config SENSORS_SX9500
 	depends on I2C
 	tristate "SX9500 driver"

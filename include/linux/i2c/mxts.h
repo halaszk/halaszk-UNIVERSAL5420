@@ -310,7 +310,7 @@ enum {
 #define MXT_REVISION_I	1	/* Support hovering */
 
 /************** Feature + **************/
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined (CONFIG_N2A)
 #ifdef CONFIG_INPUT_BOOSTER
 #define TSP_BOOSTER				0
 #define TOUCHKEY_BOOSTER		0
@@ -327,7 +327,7 @@ enum {
 #define TSP_USE_PALM_FLAG		1
 #define TSP_CHANGE_CONFIG_FOR_INPUT    1
 #define USE_FOR_SUFACE			1
-#elif defined(CONFIG_N1A) || defined (CONFIG_N2A)
+#elif defined(CONFIG_N1A)
 #define TSP_BOOSTER			1
 #define TSP_SEC_FACTORY			1
 #define TSP_INFORM_CHARGER		1

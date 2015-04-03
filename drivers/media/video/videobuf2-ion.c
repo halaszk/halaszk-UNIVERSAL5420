@@ -25,8 +25,6 @@
 #include <media/videobuf2-memops.h>
 #include <media/videobuf2-ion.h>
 
-#include <asm/cacheflush.h>
-
 #include <plat/iovmm.h>
 #include <plat/cpu.h>
 
@@ -54,6 +52,7 @@ struct vb2_ion_buf {
 	unsigned long			size;
 	atomic_t			ref;
 	bool				cached;
+	bool				ion;
 	struct vb2_ion_cookie		cookie;
 };
 
@@ -187,7 +186,8 @@ void *vb2_ion_private_alloc(void *alloc_ctx, size_t size, int write, int plane)
 
 	size = PAGE_ALIGN(size);
 
-	flags |= ctx_cached(ctx) ? ION_FLAG_CACHED : 0;
+	flags |= ctx_cached(ctx) ?
+		ION_FLAG_CACHED | ION_FLAG_CACHED_NEEDS_SYNC : 0;
 	buf->handle = ion_alloc(ctx->client, size, ctx->alignment,
 				heapflags, flags);
 	if (IS_ERR(buf->handle)) {
@@ -195,11 +195,29 @@ void *vb2_ion_private_alloc(void *alloc_ctx, size_t size, int write, int plane)
 		goto err_alloc;
 	}
 
-	buf->cookie.sgt = ion_sg_table(ctx->client, buf->handle);
+	buf->dma_buf = ion_share_dma_buf(ctx->client, buf->handle);
+	if (IS_ERR(buf->dma_buf)) {
+		ret = PTR_ERR(buf->dma_buf);
+		goto err_share;
+	}
+
+	buf->attachment = dma_buf_attach(buf->dma_buf, ctx->dev);
+	if (IS_ERR(buf->attachment)) {
+		ret = PTR_ERR(buf->attachment);
+		goto err_attach;
+	}
+
+	buf->cookie.sgt = dma_buf_map_attachment(
+				buf->attachment, DMA_BIDIRECTIONAL);
+	if (IS_ERR(buf->cookie.sgt)) {
+		ret = PTR_ERR(buf->cookie.sgt);
+		goto err_map_dmabuf;
+	}
 
 	buf->ctx = ctx;
 	buf->size = size;
 	buf->cached = ctx_cached(ctx);
+	buf->ion = true;
 	buf->direction = write ? DMA_FROM_DEVICE: DMA_TO_DEVICE;
 
 	if (need_kaddr(ctx, size, buf->cached)) {
@@ -213,8 +231,7 @@ void *vb2_ion_private_alloc(void *alloc_ctx, size_t size, int write, int plane)
 
 	mutex_lock(&ctx->lock);
 	if (ctx_iommu(ctx) && !ctx->protected) {
-		buf->cookie.ioaddr = iovmm_map(ctx->dev,
-					       buf->cookie.sgt->sgl, 0,
+		buf->cookie.ioaddr = ion_iovmm_map(buf->attachment, 0,
 					       buf->size, buf->direction, plane);
 		if (IS_ERR_VALUE(buf->cookie.ioaddr)) {
 			ret = (int)buf->cookie.ioaddr;
@@ -230,6 +247,13 @@ err_ion_map_io:
 	if (buf->kva)
 		ion_unmap_kernel(ctx->client, buf->handle);
 err_map_kernel:
+	dma_buf_unmap_attachment(buf->attachment, buf->cookie.sgt,
+				DMA_BIDIRECTIONAL);
+err_map_dmabuf:
+	dma_buf_detach(buf->dma_buf, buf->attachment);
+err_attach:
+	dma_buf_put(buf->dma_buf);
+err_share:
 	ion_free(ctx->client, buf->handle);
 err_alloc:
 	kfree(buf);
@@ -250,8 +274,13 @@ void vb2_ion_private_free(void *cookie)
 	ctx = buf->ctx;
 	mutex_lock(&ctx->lock);
 	if (ctx_iommu(ctx) && !ctx->protected)
-		iovmm_unmap(ctx->dev, buf->cookie.ioaddr);
+		ion_iovmm_unmap(buf->attachment, buf->cookie.ioaddr);
 	mutex_unlock(&ctx->lock);
+
+	dma_buf_unmap_attachment(buf->attachment, buf->cookie.sgt,
+				DMA_BIDIRECTIONAL);
+	dma_buf_detach(buf->dma_buf, buf->attachment);
+	dma_buf_put(buf->dma_buf);
 
 	if (buf->kva)
 		ion_unmap_kernel(ctx->client, buf->handle);
@@ -420,13 +449,14 @@ static int vb2_ion_map_dmabuf(void *mem_priv, int plane)
 		return -EINVAL;
 	}
 
+	vb2_ion_sync_for_device((void *) &buf->cookie, 0, buf->size, buf->direction);
+
 	buf->cookie.offset = 0;
 	/* buf->kva = NULL; */
 
 	mutex_lock(&ctx->lock);
 	if (ctx_iommu(ctx) && !ctx->protected && buf->cookie.ioaddr == 0) {
-		buf->cookie.ioaddr = iovmm_map(ctx->dev,
-				       buf->cookie.sgt->sgl, 0, buf->size,
+		buf->cookie.ioaddr = ion_iovmm_map(buf->attachment, 0, buf->size,
 				       buf->direction, plane);
 		if (IS_ERR_VALUE(buf->cookie.ioaddr)) {
 			pr_err("buf->cookie.ioaddr is error: %d\n",
@@ -458,6 +488,9 @@ static void vb2_ion_unmap_dmabuf(void *mem_priv)
 
 	dma_buf_unmap_attachment(buf->attachment,
 		buf->cookie.sgt, buf->direction);
+
+	vb2_ion_sync_for_cpu((void *) &buf->cookie, 0, buf->size, buf->direction);
+
 	buf->cookie.sgt = NULL;
 }
 
@@ -468,7 +501,7 @@ static void vb2_ion_detach_dmabuf(void *mem_priv)
 
 	mutex_lock(&ctx->lock);
 	if (buf->cookie.ioaddr && ctx_iommu(ctx) && !ctx->protected ) {
-		iovmm_unmap(ctx->dev, buf->cookie.ioaddr);
+		ion_iovmm_unmap(buf->attachment, buf->cookie.ioaddr);
 		buf->cookie.ioaddr = 0;
 	}
 	mutex_unlock(&ctx->lock);
@@ -490,7 +523,7 @@ static void *vb2_ion_attach_dmabuf(void *alloc_ctx, struct dma_buf *dbuf,
 	struct dma_buf_attachment *attachment;
 
 	if (dbuf->size < size) {
-		pr_err("dbuf->size(%d) is smaller than size(%ld)\n",
+		WARN(1, "dbuf->size(%d) is smaller than size(%ld)\n",
 				dbuf->size, size);
 		return ERR_PTR(-EFAULT);
 	}
@@ -513,6 +546,7 @@ static void *vb2_ion_attach_dmabuf(void *alloc_ctx, struct dma_buf *dbuf,
 	buf->direction = write ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
 	buf->size = size;
 	buf->dma_buf = dbuf;
+	buf->ion = true;
 	buf->attachment = attachment;
 
 	return buf;
@@ -767,17 +801,21 @@ static struct dma_buf *vb2_ion_get_user_pages(unsigned long start,
 		sg_set_page(sgl, pages[0],
 				(nr_pages == 1) ? len : PAGE_SIZE - start_off,
 				start_off);
+		sg_dma_address(sgl) = page_to_phys(sg_page(sgl));
 
 		sgl = sg_next(sgl);
 
 		/* nr_pages == 1 if sgl == NULL here */
 		for (i = 1; i < (nr_pages - 1); i++) {
 			sg_set_page(sgl, pages[i], PAGE_SIZE, 0);
+			sg_dma_address(sgl) = page_to_phys(sg_page(sgl));
 			sgl = sg_next(sgl);
 		}
 
-		if (sgl)
+		if (sgl) {
 			sg_set_page(sgl, pages[i], last_size, 0);
+			sg_dma_address(sgl) = page_to_phys(sg_page(sgl));
+		}
 
 		priv->is_pfnmap = false;
 	}
@@ -838,6 +876,7 @@ static void *vb2_ion_get_userptr(void *alloc_ctx, unsigned long vaddr,
 		buf->dma_buf = vma->vm_file->private_data; /* ad-hoc */
 		buf->cookie.offset = vaddr - vma->vm_start;
 		get_dma_buf(buf->dma_buf);
+		buf->ion = true;
 	}
 
 	buf->ctx = ctx;
@@ -892,37 +931,8 @@ static void *vb2_ion_get_userptr(void *alloc_ctx, unsigned long vaddr,
 	else
 		buf->cached = true;
 
-	if (need_kaddr(ctx, size, buf->cached)) {
-		 /* ION maps entire buffer at once in the kernel space */
-		p_ret = (void *)dma_buf_begin_cpu_access(buf->dma_buf,
-				buf->cookie.offset, size, DMA_FROM_DEVICE);
-		if (p_ret) {
-			dev_err(ctx->dev,
-			"%s: No kernel mapping for user buffer @ %#lx/%#lx\n",
-				__func__, vaddr, size);
-			goto err_begin_cpu;
-		}
-
-		buf->kva = dma_buf_kmap(buf->dma_buf,
-					buf->cookie.offset / PAGE_SIZE);
-		if (!buf->kva) {
-			dev_err(ctx->dev,
-			"%s: No space in kernel for user buffer @ %#lx/%#lx\n",
-				__func__, vaddr, size);
-			p_ret = ERR_PTR(-ENOMEM);
-			goto err_kmap;
-		}
-
-		buf->kva += buf->cookie.offset & ~PAGE_MASK;
-	}
-
 	return buf;
-err_kmap:
-	dma_buf_end_cpu_access(buf->dma_buf, buf->cookie.offset, size,
-					DMA_FROM_DEVICE);
-err_begin_cpu:
-	if (ctx_iommu(ctx))
-		iovmm_unmap(ctx->dev, buf->cookie.ioaddr);
+
 err_iovmm:
 	dma_buf_unmap_attachment(buf->attachment, buf->cookie.sgt,
 				buf->direction);
@@ -976,249 +986,71 @@ const struct vb2_mem_ops vb2_ion_memops = {
 };
 EXPORT_SYMBOL_GPL(vb2_ion_memops);
 
-typedef void (*dma_sync_func)(struct device *, struct scatterlist *, int,
-				   enum dma_data_direction);
-
-static void vb2_ion_sync_bufs(struct vb2_ion_buf *buf,
-				enum dma_data_direction dir,
-				dma_sync_func func)
-{
-	struct scatterlist *sg = buf->cookie.sgt->sgl;
-	int nents = buf->cookie.sgt->nents;
-	off_t offset = buf->cookie.offset;
-	struct scatterlist sg_tmp[2];
-
-	while (offset >= sg_dma_len(sg)) {
-		offset -= sg_dma_len(sg);
-		nents--;
-		sg = sg_next(sg);
-		if (!sg)
-			return;
-	}
-
-	sg_init_table(sg_tmp, 2);
-	memcpy(sg_tmp, sg, sizeof(*sg));
-
-	if (nents == 1)
-		sg_mark_end(sg_tmp);
-	else
-		sg_chain(sg_tmp, 2, sg_next(sg));
-
-	if ((offset + sg_tmp[0].offset) >= PAGE_SIZE) {
-		struct page *page = sg_page(sg_tmp);
-		unsigned int len = sg_dma_len(sg_tmp);
-		offset += sg_tmp[0].offset;
-		page += offset >> PAGE_SHIFT;
-		len -= offset & PAGE_MASK;
-		offset &= ~PAGE_MASK;
-		sg_set_page(sg_tmp, page, len, offset);
-	} else {
-		sg_tmp[0].length -= offset;
-		sg_tmp[0].offset += offset;
-	}
-
-	func(buf->ctx->dev, sg_tmp, nents, dir);
-}
-
 void vb2_ion_sync_for_device(void *cookie, off_t offset, size_t size,
 						enum dma_data_direction dir)
 {
-	struct vb2_ion_buf *buf =
-			container_of(cookie, struct vb2_ion_buf, cookie);
+	struct vb2_ion_buf *buf = container_of(cookie,
+					struct vb2_ion_buf, cookie);
 
-	if ((offset + size) > buf->size)
-		size -= offset + size - buf->size;
+	dev_dbg(buf->ctx->dev, "syncing for device, dmabuf: %p, kva: %p, "
+		"size: %d, dir: %d\n", buf->dma_buf, buf->kva, size, dir);
 
-	if (!buf->kva) {
-		if (size <= DMA_SYNC_SIZE) {
-			vb2_ion_sync_bufs(buf, dir, dma_sync_sg_for_device);
-			return;
-		}
-
-		flush_all_cpu_caches();
+	if (buf->kva) {
+		if ((offset + size) > buf->size)
+			size -= (offset + size) - buf->size;
+		exynos_ion_sync_vaddr_for_device(buf->ctx->dev,
+						buf->kva, size, offset, dir);
+	} else if (buf->dma_buf && buf->ion) {
+		exynos_ion_sync_dmabuf_for_device(buf->ctx->dev,
+						buf->dma_buf, size, dir);
 	} else {
-		dmac_map_area(buf->kva + offset, size, dir);
+		if (buf->cached)
+			exynos_ion_sync_sg_for_device(buf->ctx->dev,
+						buf->cookie.sgt, dir);
 	}
-
-#ifdef CONFIG_OUTER_CACHE
-	if (size > OUTER_FLUSH_ALL_SIZE) {
-		outer_flush_all();
-	} else {
-		struct scatterlist *sg;
-		struct vb2_ion_cookie *vb2cookie = cookie;
-
-		offset += vb2cookie->offset;
-
-		/* finding first sg that offset become smaller */
-		for (sg = vb2cookie->sgt->sgl;
-			(sg != NULL) && (sg_dma_len(sg) <= offset);
-				sg = sg_next(sg))
-			offset -= sg_dma_len(sg);
-
-		while ((size != 0) && (sg != NULL)) {
-			size_t sg_size;
-
-			sg_size = min_t(size_t, size, sg_dma_len(sg) - offset);
-			if (dir == DMA_FROM_DEVICE)
-				outer_inv_range(sg_phys(sg) + offset,
-						sg_phys(sg) + offset + sg_size);
-			else
-				outer_clean_range(sg_phys(sg) + offset,
-						sg_phys(sg) + offset + sg_size);
-
-			size -= sg_size;
-			offset = 0;
-			sg = sg_next(sg);
-		}
-	}
-#endif
 }
 EXPORT_SYMBOL_GPL(vb2_ion_sync_for_device);
 
 void vb2_ion_sync_for_cpu(void *cookie, off_t offset, size_t size,
 						enum dma_data_direction dir)
 {
-	struct vb2_ion_buf *buf =
-			container_of(cookie, struct vb2_ion_buf, cookie);
+	struct vb2_ion_buf *buf = container_of(cookie,
+					struct vb2_ion_buf, cookie);
 
-	if ((offset + size) > buf->size)
-		size -= offset + size - buf->size;
+	dev_dbg(buf->ctx->dev, "syncing for cpu, dmabuf: %p, kva: %p, "
+		"size: %d, dir: %d\n", buf->dma_buf, buf->kva, size, dir);
 
-	if (!buf->kva) {
-		if (size <= DMA_SYNC_SIZE) {
-			vb2_ion_sync_bufs(buf, dir, dma_sync_sg_for_cpu);
-			return;
-		}
-
-		flush_all_cpu_caches();
+	if (buf->kva) {
+		if ((offset + size) > buf->size)
+			size -= (offset + size) - buf->size;
+		exynos_ion_sync_vaddr_for_cpu(buf->ctx->dev,
+						buf->kva, size, offset, dir);
+	} else if (buf->dma_buf && buf->ion) {
+		exynos_ion_sync_dmabuf_for_cpu(buf->ctx->dev,
+						buf->dma_buf, size, dir);
 	} else {
-		dmac_unmap_area(buf->kva + offset, size, dir);
+		dma_sync_sg_for_cpu(buf->ctx->dev, buf->cookie.sgt->sgl,
+				buf->cookie.sgt->orig_nents, dir);
 	}
-
-#ifdef CONFIG_OUTER_CACHE
-	if (dir == DMA_TO_DEVICE) {
-		return;
-	} else if (size > OUTER_FLUSH_ALL_SIZE) {
-		outer_flush_all();
-	} else {
-		struct scatterlist *sg;
-		struct vb2_ion_cookie *vb2cookie = cookie;
-
-		offset += vb2cookie->offset;
-
-		/* finding first sg that offset become smaller */
-		for (sg = vb2cookie->sgt->sgl;
-			(sg != NULL) && (sg_dma_len(sg) <= offset);
-				sg = sg_next(sg))
-			offset -= sg_dma_len(sg);
-
-		while ((size != 0) && (sg != NULL)) {
-			size_t sg_size;
-
-			sg_size = min_t(size_t, size, sg_dma_len(sg) - offset);
-			outer_inv_range(sg_phys(sg) + offset,
-						sg_phys(sg) + offset + sg_size);
-
-			size -= sg_size;
-			offset = 0;
-			sg = sg_next(sg);
-		}
-	}
-#endif
 }
 EXPORT_SYMBOL_GPL(vb2_ion_sync_for_cpu);
 
 int vb2_ion_buf_prepare(struct vb2_buffer *vb)
 {
 	int i;
-	size_t size = 0;
 	enum dma_data_direction dir;
-	bool nokaddr = false;
 
 	dir = V4L2_TYPE_IS_OUTPUT(vb->v4l2_buf.type) ?
 					DMA_TO_DEVICE : DMA_FROM_DEVICE;
 
 	for (i = 0; i < vb->num_planes; i++) {
 		struct vb2_ion_buf *buf = vb->planes[i].mem_priv;
-
-		if (buf->attachment && !buf->vma) /* dma-buf type */
+		if (buf->dma_buf && !buf->vma) /* dmabuf type */
 			return 0;
-
-		if (!buf->cached)
-			continue;
-
-		if (!buf->kva)
-			nokaddr = true;
-
-		size += buf->size;
+		vb2_ion_sync_for_device((void *) &buf->cookie, 0,
+							buf->size, dir);
 	}
 
-	if ((nokaddr && (size > DMA_SYNC_SIZE)) ||
-			(size >= CACHE_FLUSH_ALL_SIZE)) {
-		flush_all_cpu_caches();
-		goto outercache;
-	}
-
-	for (i = 0; i < vb->num_planes; i++) {
-		struct vb2_ion_buf *buf = vb->planes[i].mem_priv;
-
-		if (!buf->cached)
-			continue;
-
-		if (!buf->kva)
-			vb2_ion_sync_bufs(buf, dir, dma_sync_sg_for_device);
-		else
-			dmac_map_area(buf->kva, buf->size, dir);
-	}
-
-	if (nokaddr) /* vb2_ion_sync_bufs() operates on the outer cache also */
-		return 0;
-
-outercache:
-#ifdef CONFIG_OUTER_CACHE
-	if (size > OUTER_FLUSH_ALL_SIZE) { /* L2 cache size of Exynos4 */
-		outer_flush_all();
-		return 0;
-	}
-
-	for (i = 0; i < vb->num_planes; i++) {
-		int j;
-		struct vb2_ion_buf *buf;
-		struct scatterlist *sg;
-		off_t offset;
-
-		buf = vb->planes[i].mem_priv;
-		if (!buf->cached)
-			continue;
-
-		offset = buf->cookie.offset;
-
-		for_each_sg(buf->cookie.sgt->sgl,
-					sg, buf->cookie.sgt->nents, j) {
-			phys_addr_t phys;
-			size_t sz_op;
-
-			if (offset >= sg_dma_len(sg)) {
-				offset -= sg_dma_len(sg);
-				continue;
-			}
-
-			phys = sg_phys(sg) + offset;
-			sz_op = min_t(size_t, sg_dma_len(sg) - offset, size);
-
-			if (dir == DMA_FROM_DEVICE)
-				outer_inv_range(phys, phys + sz_op);
-			else
-				outer_clean_range(phys, phys + sz_op);
-
-			offset = 0;
-			size -= sz_op;
-
-			if (size == 0)
-				break;
-		}
-	}
-#endif
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vb2_ion_buf_prepare);
@@ -1226,94 +1058,19 @@ EXPORT_SYMBOL_GPL(vb2_ion_buf_prepare);
 int vb2_ion_buf_finish(struct vb2_buffer *vb)
 {
 	int i;
-	size_t size = 0;
 	enum dma_data_direction dir;
-	bool nokaddr = false;
 
 	dir = V4L2_TYPE_IS_OUTPUT(vb->v4l2_buf.type) ?
 					DMA_TO_DEVICE : DMA_FROM_DEVICE;
 
-	if (dir == DMA_TO_DEVICE)
-		return 0;
-
 	for (i = 0; i < vb->num_planes; i++) {
 		struct vb2_ion_buf *buf = vb->planes[i].mem_priv;
-
-		if (buf->attachment && !buf->vma) /* dma-buf type */
+		if (buf->dma_buf && !buf->vma) /* dmabuf type */
 			return 0;
-
-		if (!buf->cached)
-			continue;
-
-		if (!buf->kva)
-			nokaddr = true;
-
-		size += buf->size;
+		vb2_ion_sync_for_cpu((void *) &buf->cookie, 0,
+						buf->size, dir);
 	}
 
-	if ((nokaddr && (size > DMA_SYNC_SIZE)) ||
-			(size >= CACHE_FLUSH_ALL_SIZE)) {
-		flush_all_cpu_caches();
-		goto outercache;
-	}
-
-	for (i = 0; i < vb->num_planes; i++) {
-		struct vb2_ion_buf *buf = vb->planes[i].mem_priv;
-
-		if (!buf->cached)
-			continue;
-
-		if (!buf->kva)
-			vb2_ion_sync_bufs(buf, dir, dma_sync_sg_for_cpu);
-		else
-			dmac_unmap_area(buf->kva, buf->size, dir);
-	}
-
-	if (nokaddr) /* vb2_ion_sync_bufs() operates on the outer cache also */
-		return 0;
-
-outercache:
-#ifdef CONFIG_OUTER_CACHE
-	if (size > OUTER_FLUSH_ALL_SIZE) { /* L2 cache size of Exynos4 */
-		outer_flush_all();
-		return 0;
-	}
-
-	for (i = 0; i < vb->num_planes; i++) {
-		int j;
-		struct vb2_ion_buf *buf;
-		struct scatterlist *sg;
-		off_t offset;
-
-		buf = vb->planes[i].mem_priv;
-		if (!buf->cached)
-			continue;
-
-		offset = buf->cookie.offset;
-
-		for_each_sg(buf->cookie.sgt->sgl,
-					sg, buf->cookie.sgt->nents, j) {
-			phys_addr_t phys;
-			size_t sz_op;
-
-			if (offset >= sg_dma_len(sg)) {
-				offset -= sg_dma_len(sg);
-				continue;
-			}
-
-			phys = sg_phys(sg) + offset;
-			sz_op = min_t(size_t, sg_dma_len(sg) - offset, size);
-
-			outer_inv_range(phys, sz_op);
-
-			offset = 0;
-			size -= sz_op;
-
-			if (size == 0)
-				break;
-		}
-	}
-#endif
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vb2_ion_buf_finish);
@@ -1353,6 +1110,7 @@ int vb2_ion_attach_iommu(void *alloc_ctx)
 }
 EXPORT_SYMBOL_GPL(vb2_ion_attach_iommu);
 
-MODULE_AUTHOR("Jonghun,	Han <jonghun.han@samsung.com>");
+MODULE_AUTHOR("Cho KyongHo <pullip.cho@samsung.com>");
+MODULE_AUTHOR("Jinsung Yang <jsgood.yang@samsung.com>");
 MODULE_DESCRIPTION("Android ION allocator handling routines for videobuf2");
 MODULE_LICENSE("GPL");

@@ -1791,6 +1791,10 @@ static int s5p_dp_set_power(struct lcd_device *lcd, int power)
 #endif
 
 	if (power == FB_BLANK_UNBLANK) {
+		if(dp->enabled) {
+			dev_info(dp->dev, "%s already enabled\n", __func__);
+			return 0;
+		}
 		retval = s5p_dp_enable(dp);
 		if (retval < 0)
 			return retval;

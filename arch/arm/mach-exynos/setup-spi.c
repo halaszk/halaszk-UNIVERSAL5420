@@ -193,7 +193,7 @@ struct s3c64xx_spi_info s3c64xx_spi2_pdata __initdata = {
 	.high_speed	= 1,
 	.clk_from_cmu	= true,
 	.tx_st_done	= 25,
-	.dma_mode	= HYBRID_MODE,
+	.dma_mode	= PIO_MODE,
 };
 
 int s3c64xx_spi2_cfg_gpio(struct platform_device *dev)

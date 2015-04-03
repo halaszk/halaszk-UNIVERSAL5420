@@ -367,7 +367,6 @@ struct wacom_i2c {
 #endif
 	int pen_pdct;
 	int gpio;
-	int irq_flag;
 	int pen_prox;
 	int pen_pressed;
 	int side_pressed;

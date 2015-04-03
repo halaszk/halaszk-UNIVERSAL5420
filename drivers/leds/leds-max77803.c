@@ -224,9 +224,6 @@ static int max77803_led_setup(struct max77803_led_data *led_data)
 	ret |= max77803_write_reg(led_data->i2c, MAX77803_CHG_REG_CHG_CNFG_11, 0x2C);
 
 	ret |= max77803_write_reg(led_data->i2c,
-				MAX77803_LED_REG_MAX_FLASH1, 0xBC);
-
-	ret |= max77803_write_reg(led_data->i2c,
 				MAX77803_LED_REG_MAX_FLASH2, 0x00);
 
 	value = max77803_led_get_en_value(led_data, 0);
@@ -243,6 +240,8 @@ static int max77803_led_setup(struct max77803_led_data *led_data)
 		ret |= max77803_write_reg(led_data->i2c, reg_led_timer[id],
 					0xC0);
 	}
+
+	pr_err("%s: %s, 0x%x\n", __func__, led_data->led.name, led_data->brightness);
 
 	/* Set current */
 	ret |= max77803_set_bits(led_data->i2c, reg_led_current[id],

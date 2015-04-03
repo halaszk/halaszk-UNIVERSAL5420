@@ -20,6 +20,7 @@ void exynos4_init_irq(void);
 void exynos5_init_irq(void);
 void exynos4_restart(char mode, const char *cmd);
 void exynos5_restart(char mode, const char *cmd);
+int exynos_is_finish_map_io(void);
 
 #ifdef CONFIG_ARCH_EXYNOS4
 void exynos4_register_clocks(void);

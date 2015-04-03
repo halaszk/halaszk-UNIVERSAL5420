@@ -94,7 +94,7 @@ static void gpio_keys_fake_off_check(unsigned long _data)
 	if (fake_pressed == false)
 		return ;
 
-	printk(KERN_DEBUG"[Keys] make event\n");
+	printk(KERN_DEBUG"keys: make event\n");
 	fake_shut_down = false;
 	raw_notifier_call_chain(&fsd_notifier_list,
 			FAKE_SHUT_DOWN_CMD_OFF, NULL);
@@ -453,7 +453,6 @@ static ssize_t hall_detect_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct gpio_keys_drvdata *ddata = dev_get_drvdata(dev);
-	pr_info("COVER ACT 0 %s\n", __func__);
 
 	if (ddata->flip_cover)
 		sprintf(buf, "OPEN");
@@ -607,14 +606,14 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 		if (fake_shut_down || fake_pressed) {
 			if (button->code == KEY_POWER) {
 				if (!!state) {
-					printk(KERN_DEBUG"[Keys] start fake check\n");
+					printk(KERN_DEBUG"keys: start fake check\n");
 					fake_pressed = true;
 					if (!wake_lock_active(&fake_lock))
 						wake_lock(&fake_lock);
 					mod_timer(&fake_timer,
 						jiffies + msecs_to_jiffies(500));
 				} else {
-					printk(KERN_DEBUG"[Keys] end fake checkPwr 0\n");
+					printk(KERN_DEBUG"keys: end fake checkPwr 0\n");
 					fake_pressed = false;
 					if (wake_lock_active(&fake_lock))
 						wake_unlock(&fake_lock);
@@ -1111,7 +1110,7 @@ static void init_hall_ic_irq(struct input_dev *input)
 		request_threaded_irq(
 		irq, NULL,
 		flip_cover_detect,
-		IRQF_DISABLED | IRQF_TRIGGER_RISING |
+		IRQF_NO_SUSPEND | IRQF_DISABLED | IRQF_TRIGGER_RISING |
 		IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 		"flip_cover", ddata);
 	if (ret < 0) {
@@ -1355,6 +1354,10 @@ static int gpio_keys_resume(struct device *dev)
 		if (gpio_is_valid(bdata->button->gpio))
 			gpio_keys_report_event(bdata);
 	}
+
+	ddata->flip_cover = gpio_get_value(ddata->gpio_flip_cover);
+	input_report_switch(ddata->input, SW_FLIP, ddata->flip_cover);
+
 	input_sync(ddata->input);
 
 	return 0;

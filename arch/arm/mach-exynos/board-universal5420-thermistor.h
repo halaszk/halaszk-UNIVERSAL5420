@@ -21,6 +21,8 @@ extern void board_h_thermistor_init(void);
 extern void board_v1_thermistor_init(void);
 #elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 extern void board_n1_thermistor_init(void);
+#elif defined(CONFIG_KLIMT)
+extern void board_klimt_thermistor_init(void);
 #endif
 
 void __init exynos5_universal5420_thermistor_init(void)
@@ -31,6 +33,8 @@ void __init exynos5_universal5420_thermistor_init(void)
 	board_v1_thermistor_init();
 #elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
 	board_n1_thermistor_init();
+#elif defined(CONFIG_KLIMT)
+	board_klimt_thermistor_init();
 #endif
 }
 

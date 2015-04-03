@@ -883,12 +883,6 @@ static void fimc_is_sensor_dtp(unsigned long data)
 		return;
 	}
 
-	ischain = device->ischain;
-	if (!ischain) {
-		err("ischain is NULL");
-		return;
-	}
-
 	queue = GET_DST_QUEUE(vctx);
 	framemgr = &queue->framemgr;
 	if ((framemgr->frame_cnt == 0) || (framemgr->frame_cnt >= FRAMEMGR_MAX_REQUEST)) {
@@ -897,9 +891,14 @@ static void fimc_is_sensor_dtp(unsigned long data)
 	}
 
 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
-	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_3ax.state);
-	set_bit(FIMC_IS_GROUP_FORCE_STOP, &ischain->group_isp.state);
-	up(&ischain->group_3ax.smp_trigger);
+	set_bit(FIMC_IS_SENSOR_FRONT_DTP_STOP, &device->state);
+
+	if (device->ischain) {
+		set_bit(FIMC_IS_GROUP_FORCE_STOP, &device->ischain->group_3ax.state);
+		set_bit(FIMC_IS_GROUP_FORCE_STOP, &device->ischain->group_isp.state);
+		if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &device->ischain->group_3ax.state))
+			up(&device->ischain->group_3ax.smp_trigger);
+	}
 
 	framemgr_e_barrier_irqs(framemgr, 0, flags);
 
@@ -945,6 +944,7 @@ static void fimc_is_sensor_instanton(struct work_struct *data)
 	}
 
 	clear_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
+	set_bit(FIMC_IS_SENSOR_FRONT_START, &device->state);
 
 #ifdef ENABLE_DTP
 	if (device->dtp_check) {
@@ -1000,6 +1000,7 @@ int fimc_is_sensor_probe(struct fimc_is_device_sensor *device,
 	clear_bit(FIMC_IS_SENSOR_FRONT_START, &device->state);
 	clear_bit(FIMC_IS_SENSOR_BACK_START, &device->state);
 	clear_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
+	clear_bit(FIMC_IS_SENSOR_FRONT_DTP_STOP, &device->state);
 	spin_lock_init(&device->slock_state);
 
 	ret = fimc_is_flite_probe(&device->flite, (u32)device);
@@ -1347,6 +1348,7 @@ int fimc_is_sensor_open(struct fimc_is_device_sensor *device,
 
 	clear_bit(FIMC_IS_SENSOR_FRONT_START, &device->state);
 	clear_bit(FIMC_IS_SENSOR_BACK_START, &device->state);
+	clear_bit(FIMC_IS_SENSOR_FRONT_DTP_STOP, &device->state);
 	set_bit(FIMC_IS_SENSOR_BACK_NOWAIT_STOP, &device->state);
 	device->vctx = vctx;
 	device->instant_cnt = 0;
@@ -1722,7 +1724,7 @@ int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device,
 
 	dbg_front("%s\n", __func__);
 
-	if (testnset_state(device, FIMC_IS_SENSOR_FRONT_START)) {
+	if (test_bit(FIMC_IS_SENSOR_FRONT_START, &device->state)) {
 		merr("already front start", device);
 		ret = -EINVAL;
 		goto p_err;
@@ -1735,6 +1737,7 @@ int fimc_is_sensor_front_start(struct fimc_is_device_sensor *device,
 	frame.offs_v = 0;
 	frame.width = device->width;
 	frame.height = device->height;
+	clear_bit(FIMC_IS_SENSOR_FRONT_DTP_STOP, &device->state);
 
 	start_mipi_csi(device->active_sensor->csi_ch,
 		device->active_sensor->settle_table,

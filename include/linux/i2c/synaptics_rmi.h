@@ -20,7 +20,7 @@
 #ifndef _SYNAPTICS_RMI4_GENERIC_H_
 #define _SYNAPTICS_RMI4_GENERIC_H_
 
-#ifndef CONFIG_KEYBOARD_CYPRESS_TOUCH
+#if !(defined(CONFIG_KEYBOARD_CYPRESS_TOUCH) || defined(CONFIG_KEYBOARD_TC300K))
 #define NO_0D_WHILE_2D
 #endif
 
@@ -29,15 +29,17 @@ struct synaptics_rmi_f1a_button_map {
 	unsigned char *map;
 };
 
+#ifdef CONFIG_HA
 #define SYNAPTICS_RMI_INFORM_CHARGER
+/* This define might be removed not so far */
+#define SYNAPTICS_WORKAROUND_FOR_H_PROJECT
+#endif
+
 #ifdef SYNAPTICS_RMI_INFORM_CHARGER
 struct synaptics_rmi_callbacks {
 	void (*inform_charger)(struct synaptics_rmi_callbacks *, int);
 };
 #endif
-
-/* This define might be removed not so far */
-#define SYNAPTICS_WORKAROUND_FOR_H_PROJECT
 
 /**
  * struct synaptics_rmi4_platform_data - rmi4 platform data
@@ -55,13 +57,19 @@ struct synaptics_rmi4_platform_data {
 	bool y_flip;
 	unsigned int sensor_max_x;
 	unsigned int sensor_max_y;
+	unsigned int num_of_rx;
+	unsigned int num_of_tx;
 	unsigned char max_touch_width;
 	unsigned char panel_revision;	/* to identify panel info */
 	bool regulator_en;
 	unsigned gpio;
 	int irq_type;
 	int (*gpio_config)(unsigned interrupt_gpio, bool configure);
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX
+	int (*power)(void *data, bool on);
+#else
 	int (*power)(bool on);
+#endif
 #ifdef NO_0D_WHILE_2D
 	int (*led_power_on) (bool);
 #endif
@@ -70,13 +78,15 @@ struct synaptics_rmi4_platform_data {
 	const char *firmware_name;
 	const char *fac_firmware_name;
 	const char *project_name;
-    int num_of_rx;
-    int num_of_tx;
+	const char *model_name;
 #ifdef SYNAPTICS_RMI_INFORM_CHARGER
 	void (*register_cb)(struct synaptics_rmi_callbacks *);
 #endif
 	bool charger_noti_type;
 	struct synaptics_rmi_f1a_button_map *f1a_button_map;
+
+	const char *regulator_dvdd;
+	const char *regulator_avdd;
 };
 
 extern unsigned int lcdtype;

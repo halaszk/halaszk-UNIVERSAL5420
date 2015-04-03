@@ -7,72 +7,6 @@
 #define AID_PARAM_SIZE	ARRAY_SIZE(SEQ_AOR_CONTROL)
 #define ELVSS_TABLE_NUM 2
 
-enum {
-	GAMMA_2CD,
-	GAMMA_3CD,
-	GAMMA_4CD,
-	GAMMA_5CD,
-	GAMMA_6CD,
-	GAMMA_7CD,
-	GAMMA_8CD,
-	GAMMA_9CD,
-	GAMMA_10CD,
-	GAMMA_11CD,
-	GAMMA_12CD,
-	GAMMA_13CD,
-	GAMMA_14CD,
-	GAMMA_15CD,
-	GAMMA_16CD,
-	GAMMA_17CD,
-	GAMMA_19CD,
-	GAMMA_20CD,
-	GAMMA_21CD,
-	GAMMA_22CD,
-	GAMMA_24CD,
-	GAMMA_25CD,
-	GAMMA_27CD,
-	GAMMA_29CD,
-	GAMMA_30CD,
-	GAMMA_32CD,
-	GAMMA_34CD,
-	GAMMA_37CD,
-	GAMMA_39CD,
-	GAMMA_41CD,
-	GAMMA_44CD,
-	GAMMA_47CD,
-	GAMMA_50CD,
-	GAMMA_53CD,
-	GAMMA_56CD,
-	GAMMA_60CD,
-	GAMMA_64CD,
-	GAMMA_68CD,
-	GAMMA_72CD,
-	GAMMA_77CD,
-	GAMMA_82CD,
-	GAMMA_87CD,
-	GAMMA_93CD,
-	GAMMA_98CD,
-	GAMMA_105CD,
-	GAMMA_111CD,
-	GAMMA_119CD,
-	GAMMA_126CD,
-	GAMMA_134CD,
-	GAMMA_143CD,
-	GAMMA_152CD,
-	GAMMA_162CD,
-	GAMMA_172CD,
-	GAMMA_183CD,
-	GAMMA_195CD,
-	GAMMA_207CD,
-	GAMMA_220CD,
-	GAMMA_234CD,
-	GAMMA_249CD,
-	GAMMA_265CD,
-	GAMMA_282CD,
-	GAMMA_300CD,
-	GAMMA_HBM,
-	GAMMA_MAX
-};
 
 static const unsigned char SEQ_READ_ID[] = {
 	0x04,
@@ -176,7 +110,7 @@ static const unsigned char SEQ_GLOBAL_PARAM_47RD[] = {
 
 static const unsigned char SEQ_GLOBAL_PARAM_53RD[] = {
 	0xB0,
-	0x19,
+	0x34,
 };
 
 static const unsigned char SEQ_SLEEP_OUT[] = {
@@ -275,9 +209,24 @@ static const unsigned char SEQ_TSET[] = {
 	0x19,
 };
 
-static const unsigned char SEQ_GLOBAL_PARAM_HBM[] = {
+static const unsigned char SEQ_GLOBAL_PARAM_ELVSSHBM[] = {
 	0xB0,
-	0x10,
+	0x35,
+};
+
+static const unsigned char SEQ_GLOBAL_PARAM_ACL[] = {
+	0xB0,
+	0x45,
+};
+
+static const unsigned char SEQ_GLOBAL_PARAM_OPRAVR_CAL[] = {
+	0xB0,
+	0x4A,
+};
+
+static const unsigned char SEQ_GLOBAL_PARAM_ACLUPDATE[] = {
+	0xB0,
+	0x2E,
 };
 
 static const unsigned char SEQ_TE_ON[] = {
@@ -357,173 +306,7 @@ static const unsigned char TSET_TABLE[TSET_STATUS_MAX] = {
 	0x94,	/* -20 degree */
 };
 
-#define LDI_FPS_OFFSET_MAX 33
-static int ldi_fps_offset[LDI_FPS_OFFSET_MAX][2] = {
-	{57260, -17},
-	{57410, -16},
-	{57610, -15},
-	{57810, -14},
-	{57970, -13},
-	{58170, -12},
-	{58370, -11},
-	{58530, -10},
-	{58730, -9},
-	{58920, -8},
-	{59080, -7},
-	{59280, -6},
-	{59480, -5},
-	{59640, -4},
-	{59840, -3},
-	{60040, -2},
-	{60200, -1},
-	{60390, 0},
-	{60590, 1},
-	{60790, 2},
-	{60950, 3},
-	{61150, 4},
-	{61350, 5},
-	{61510, 6},
-	{61710, 7},
-	{61900, 8},
-	{62060, 9},
-	{62260, 10},
-	{62460, 11},
-	{62620, 12},
-	{62820, 13},
-	{63020, 14},
-	{63180, 15},
-};
 
-static int ldi_vddm_lut[][2] = {
-	{0, 13},
-	{1, 13},
-	{2, 14},
-	{3, 15},
-	{4, 16},
-	{5, 17},
-	{6, 18},
-	{7, 19},
-	{8, 20},
-	{9, 21},
-	{10, 22},
-	{11, 23},
-	{12, 24},
-	{13, 25},
-	{14, 26},
-	{15, 27},
-	{16, 28},
-	{17, 29},
-	{18, 30},
-	{19, 31},
-	{20, 32},
-	{21, 33},
-	{22, 34},
-	{23, 35},
-	{24, 36},
-	{25, 37},
-	{26, 38},
-	{27, 39},
-	{28, 40},
-	{29, 41},
-	{30, 42},
-	{31, 43},
-	{32, 44},
-	{33, 45},
-	{34, 46},
-	{35, 47},
-	{36, 48},
-	{37, 49},
-	{38, 50},
-	{39, 51},
-	{40, 52},
-	{41, 53},
-	{42, 54},
-	{43, 55},
-	{44, 56},
-	{45, 57},
-	{46, 58},
-	{47, 59},
-	{48, 60},
-	{49, 61},
-	{50, 62},
-	{51, 63},
-	{52, 63},
-	{53, 63},
-	{54, 63},
-	{55, 63},
-	{56, 63},
-	{57, 63},
-	{58, 63},
-	{59, 63},
-	{60, 63},
-	{61, 63},
-	{62, 63},
-	{63, 63},
-	{64, 12},
-	{65, 11},
-	{66, 10},
-	{67, 9},
-	{68, 8},
-	{69, 7},
-	{70, 6},
-	{71, 5},
-	{72, 4},
-	{73, 3},
-	{74, 2},
-	{75, 1},
-	{76, 64},
-	{77, 65},
-	{78, 66},
-	{79, 67},
-	{80, 68},
-	{81, 69},
-	{82, 70},
-	{83, 71},
-	{84, 72},
-	{85, 73},
-	{86, 74},
-	{87, 75},
-	{88, 76},
-	{89, 77},
-	{90, 78},
-	{91, 79},
-	{92, 80},
-	{93, 81},
-	{94, 82},
-	{95, 83},
-	{96, 84},
-	{97, 85},
-	{98, 86},
-	{99, 87},
-	{100, 88},
-	{101, 89},
-	{102, 90},
-	{103, 91},
-	{104, 92},
-	{105, 93},
-	{106, 94},
-	{107, 95},
-	{108, 96},
-	{109, 97},
-	{110, 98},
-	{111, 99},
-	{112, 100},
-	{113, 101},
-	{114, 102},
-	{115, 103},
-	{116, 104},
-	{117, 105},
-	{118, 106},
-	{119, 107},
-	{120, 108},
-	{121, 109},
-	{122, 110},
-	{123, 111},
-	{124, 112},
-	{125, 113},
-	{126, 114},
-	{127, 115},
-};
 
 enum {
 	ELVSS_STATUS_105,
@@ -544,12 +327,18 @@ enum {
 	ELVSS_STATUS_265,
 	ELVSS_STATUS_282,
 	ELVSS_STATUS_300,
-	ELVSS_STATUS_HBM = ELVSS_STATUS_300,
+	ELVSS_STATUS_HBM,
 	ELVSS_STATUS_MAX
 };
 
+static const unsigned int ELVSS_DIM_TABLE[ELVSS_STATUS_MAX] = {
+	105,111,119,126,134,143,152,162,172,183,195,207,220,234,249,265,282,300,400	
+};
 
-static const unsigned char ELVSS_TABLE[ELVSS_STATUS_MAX][ELVSS_TABLE_NUM] = {
+
+
+static const int  ELVSS_DELTA_RevD = 8;
+static const unsigned char ELVSS_TABLE_RevD[ELVSS_STATUS_MAX][ELVSS_TABLE_NUM] = {
 	{0x1F, 0x1F},
 	{0x1F, 0x1F},
 	{0x1F, 0x1F},
@@ -568,15 +357,61 @@ static const unsigned char ELVSS_TABLE[ELVSS_STATUS_MAX][ELVSS_TABLE_NUM] = {
 	{0x1B, 0x1E},
 	{0x1A, 0x1D},
 	{0x19, 0x1C},
-
+	{0x19, 0x19},//hbm
 };
 
+static const unsigned char ELVSS_TABLE_RevF[ELVSS_STATUS_MAX][ELVSS_TABLE_NUM] = {
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1E, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1C, 0x1F},
+	{0x1B, 0x1E},
+	{0x1A, 0x1D},
+	{0x19, 0x1C},
+	{0x19, 0x19},//hbm
+};
+
+static const int  ELVSS_DELTA = 11;
+static const unsigned char ELVSS_TABLE[ELVSS_STATUS_MAX][ELVSS_TABLE_NUM] = {
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1F, 0x1F},
+	{0x1E, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1D, 0x1F},
+	{0x1C, 0x1E},
+	{0x1B, 0x1D},
+	{0x1A, 0x1C},
+	{0x19, 0x1B},
+	{0x19, 0x19},//hbm
+};
+
+
 const unsigned char (*pELVSS_TABLE)[ELVSS_TABLE_NUM] = ELVSS_TABLE;
+const int *pelvss_delta = &ELVSS_DELTA;
 
 enum {
 	ACL_STATUS_0P,
-	ACL_STATUS_25P,
-	ACL_STATUS_25P_RE_LOW,
+	ACL_STATUS_15P,
 	ACL_STATUS_MAX
 };
 
@@ -585,19 +420,25 @@ static const unsigned char SEQ_ACL_OFF[] = {
 	0x10
 };
 
-static const unsigned char SEQ_ACL_25[] = {
+static const unsigned char SEQ_ACL_15[] = {
 	0xBB,
-	0x11,
+	0x12,
 };
 
-static const unsigned char SEQ_ACL_25_RE_LOW[] = {
+
+static const unsigned char SEQ_ACL_OPR_AVR_CAL[] = {
 	0xBB,
-	0x42,
+	0x1A,
 };
+
+static const unsigned char SEQ_ACL_UPDATE[] = {
+	0xBB,
+	0x01,
+};
+
 
 static const unsigned char *ACL_CUTOFF_TABLE[ACL_STATUS_MAX] = {
 	SEQ_ACL_OFF,
-	SEQ_ACL_25,
-	SEQ_ACL_25_RE_LOW,
+	SEQ_ACL_15,
 };
 #endif /* __S6E3FA0_PARAM_H__ */

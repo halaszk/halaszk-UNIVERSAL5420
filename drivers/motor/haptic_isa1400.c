@@ -44,9 +44,9 @@ static int isa1400_i2c_write(struct i2c_client *client,
 	if (error)
 		printk(KERN_ERR "[VIB] Failed to write addr=[0x%x], val=[0x%x]\n",
 				addr, val);
-#if defined(ISA1400_DEBUG_LOG)
+#if 0	/* defined(ISA1400_DEBUG_LOG) */
 	else
-		printk(KERN_ERR "[VIB] addr=[0x%x], val=[0x%x]\n",
+		printk(KERN_DEBUG "[VIB] addr=[0x%x], val=[0x%x]\n",
 				addr, val);
 #endif
 
@@ -162,6 +162,10 @@ static struct isa1400_drvdata	*isa1400_ddata;
 void isa1400_set_force(u8 index, int duty)
 {
 	int motor_index = 0;
+#if defined(ISA1400_DEBUG_LOG)
+	static u8 pre_index;
+	static int pre_duty;
+#endif
 
 	if (NULL == isa1400_ddata) {
 		printk(KERN_ERR "[VIB] driver is not ready\n");
@@ -172,6 +176,14 @@ void isa1400_set_force(u8 index, int duty)
 		printk(KERN_ERR "[VIB] index is wrong : %d\n", index);
 		return ;
 	}
+
+#if defined(ISA1400_DEBUG_LOG)
+	if ((index != pre_index) || (duty != pre_duty)) {
+		pre_index = index;
+		pre_duty = duty;
+		printk(KERN_DEBUG "[VIB] index[%d] : %d\n", index, duty);
+	}
+#endif
 
 	motor_index = isa1400_ddata->pdata->actuator[index];
 
@@ -194,19 +206,20 @@ void isa1400_chip_enable(bool en)
 		printk(KERN_ERR "[VIB] driver is not ready\n");
 		return ;
 	}
-	isa1400_ddata->pdata->gpio_en(en ? true : false);
 
-	if (en) {
-		if (isa1400_ddata->power_en)
-			return ;
-		isa1400_ddata->power_en = true;
+	if (isa1400_ddata->power_en == en)
+		return ;
+
+#if defined(ISA1400_DEBUG_LOG)
+	printk(KERN_DEBUG "[VIB] %s : %s\n", __func__, en ? "on" : "off");
+#endif
+
+	isa1400_ddata->power_en = en;
+
+	if (en)
 		isa1400_hw_init(isa1400_ddata);
-	} else {
-		if (!isa1400_ddata->power_en)
-			return ;
-		isa1400_ddata->power_en = false;
+	else
 		isa1400_on(isa1400_ddata);
-	}
 }
 #endif	/* CONFIG_HAPTIC */
 
@@ -285,7 +298,6 @@ static int isa1400_suspend(struct i2c_client *client, pm_message_t mesg)
 static int isa1400_resume(struct i2c_client *client)
 {
 	struct isa1400_drvdata *ddata  = i2c_get_clientdata(client);
-	ddata->pdata->gpio_en(true);
 	isa1400_hw_init(ddata);
 	return 0;
 }

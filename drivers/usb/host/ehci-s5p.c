@@ -24,9 +24,26 @@
 
 #include <mach/regs-pmu.h>
 #include <mach/regs-usb-host.h>
-#if defined(CONFIG_LINK_DEVICE_HSIC)
-#include <mach/sec_modem.h>
+
+#if defined(CONFIG_MDM_HSIC_PM)
+//#include <mach/subsystem_restart.h>
+#include <linux/mdm_hsic_pm.h>
 #endif
+
+#include <linux/cpu.h>
+#include <linux/cpumask.h>
+#include <linux/atomic.h>
+#include <linux/netdevice.h>
+#include <linux/pm_qos.h>
+
+int irq_select_affinity_usr(unsigned int irq, struct cpumask *mask);
+static int set_cpu_core_from_usb_irq(int enable);
+
+static struct notifier_block rndis_notifier;
+static struct notifier_block ehci_cpu_notifier;
+static atomic_t use_rndis;
+static int g_ehci_irq;
+static int g_ehci_cpu_core = 0;
 
 static struct pm_qos_request s5p_ehci_mif_qos;
 
@@ -92,22 +109,6 @@ static int s5p_ehci_configurate(struct usb_hcd *hcd)
 	return 0;
 }
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
-int s5p_ehci_port_control(struct platform_device *pdev, int port, int enable)
-{
-	struct s5p_ehci_hcd *s5p_ehci = platform_get_drvdata(pdev);
-	struct usb_hcd *hcd = s5p_ehci->hcd;
-	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
-
-	(void) ehci_hub_control(hcd,
-			enable ? SetPortFeature : ClearPortFeature,
-			USB_PORT_FEAT_POWER,
-			port, NULL, 0);
-	/* Flush those writes */
-	ehci_readl(ehci, &ehci->regs->command);
-	return 0;
-}
-#endif
 static void s5p_ehci_phy_init(struct platform_device *pdev)
 {
 	struct s5p_ehci_platdata *pdata = pdev->dev.platform_data;
@@ -132,9 +133,29 @@ static int s5p_ehci_suspend(struct device *dev)
 	unsigned long flags;
 	int rc = 0;
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	/*
+	 * check suspend returns 1 if it is possible to suspend
+	 * otherwise, it returns 0 impossible or returns some error
+	 */
+	rc = check_udev_suspend_allowed();
+	if (rc > 0) {
+		int ret = usb2phy_notifier(STATE_HSIC_SUSPEND, NULL);
+		if ((ret != NOTIFY_DONE) && (ret != NOTIFY_OK)) {
+			pr_info("%s: \n", __func__);
+			return -EBUSY;
+		}
+	} else if (rc == -ENODEV) {
+		/* no hsic pm driver loaded, proceed suspend */
+		pr_debug("%s: suspend without hsic pm\n", __func__);
+	} else {
+		pm_runtime_resume(&pdev->dev);
+		return -EBUSY;
+	}
+	rc = 0;
+#endif
 #if defined(CONFIG_LINK_DEVICE_HSIC)
-	rc = get_hostwake_state();
-	if (rc) {
+	if (is_cp_wait_for_resume()) {
 		pr_info("%s: suspend fail by host wakeup irq\n", __func__);
 		pm_runtime_resume(&pdev->dev);
 		return -EBUSY;
@@ -166,9 +187,6 @@ static int s5p_ehci_suspend(struct device *dev)
 
 	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_HOST);
-#if defined(CONFIG_LINK_DEVICE_HSIC)
-	set_host_states(0);
-#endif
 
 	clk_disable(s5p_ehci->clk);
 
@@ -231,7 +249,10 @@ static int s5p_ehci_resume(struct device *dev)
 	/* Prevent device from runtime suspend during resume time */
 	pm_runtime_get_sync(dev);
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_MDM_HSIC_PM)
+	usb2phy_notifier(STATE_HSIC_RESUME, NULL);
+#endif
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 	pm_runtime_mark_last_busy(&hcd->self.root_hub->dev);
 #endif
 	return 0;
@@ -274,7 +295,10 @@ static int s5p_ehci_runtime_suspend(struct device *dev)
 	if (pdata && pdata->phy_suspend)
 		pdata->phy_suspend(pdev, S5P_USB_PHY_HOST);
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_MDM_HSIC_PM)
+	request_active_lock_release();
+#endif
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 	pr_info("%s: usage=%d, child=%d\n", __func__,
 					atomic_read(&dev->power.usage_count),
 					atomic_read(&dev->power.child_count));
@@ -300,6 +324,9 @@ static int s5p_ehci_runtime_resume(struct device *dev)
 	if (dev->power.is_suspended)
 		return 0;
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	request_active_lock_set();
+#endif
 	if (pm_qos_request_active(&s5p_ehci_mif_qos))
 		pm_qos_update_request(&s5p_ehci_mif_qos, 266000);
 	else
@@ -329,8 +356,12 @@ static int s5p_ehci_runtime_resume(struct device *dev)
 		ehci_port_power(ehci, 1);
 
 		ehci->rh_state = EHCI_RH_SUSPENDED;
+#if defined(CONFIG_MDM_HSIC_PM)
+		pr_info("%s: %d\n", __func__, __LINE__);
+		usb2phy_notifier(STATE_HSIC_RESUME, NULL);
+#endif
 	}
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 	pr_info("%s: usage=%d, child=%d\n", __func__,
 					atomic_read(&dev->power.usage_count),
 					atomic_read(&dev->power.child_count));
@@ -457,16 +488,122 @@ exit:
 static DEVICE_ATTR(ehci_power, S_IWUSR | S_IWGRP | S_IRUSR | S_IRGRP,
 	show_ehci_power, store_ehci_power);
 
-static inline int create_ehci_sys_file(struct ehci_hcd *ehci)
+static ssize_t store_ehci_cpu_core(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
 {
-	return device_create_file(ehci_to_hcd(ehci)->self.controller,
+	int ehci_cpu_core;
+	int err;
+
+	err = sscanf(buf,"%1d", &ehci_cpu_core);
+	if (err < 0 || err > 4) {
+		pr_err("set ehci cpu fail");
+		return count;
+	}
+
+	g_ehci_cpu_core	= ehci_cpu_core;
+	set_cpu_core_from_usb_irq(true);
+	printk(KERN_DEBUG "%s: EHCI core move to %d\n", __func__,g_ehci_cpu_core);
+
+	return count;
+}
+
+static DEVICE_ATTR(ehci_cpu_core, S_IWUSR | S_IWGRP | S_IRUSR | S_IRGRP,
+	NULL, store_ehci_cpu_core);
+
+static inline void create_ehci_sys_file(struct ehci_hcd *ehci)
+{
+	device_create_file(ehci_to_hcd(ehci)->self.controller,
 			&dev_attr_ehci_power);
+	device_create_file(ehci_to_hcd(ehci)->self.controller,
+			&dev_attr_ehci_cpu_core);
 }
 
 static inline void remove_ehci_sys_file(struct ehci_hcd *ehci)
 {
 	device_remove_file(ehci_to_hcd(ehci)->self.controller,
 			&dev_attr_ehci_power);
+	device_remove_file(ehci_to_hcd(ehci)->self.controller,
+			&dev_attr_ehci_cpu_core);
+}
+
+static int set_cpu_core_from_usb_irq(int enable)
+{
+	int err = 0;
+	unsigned int irq = g_ehci_irq;
+	cpumask_var_t new_value;
+
+	if (!irq_can_set_affinity(irq))
+		return -EIO;
+
+	if (enable) {
+		err = irq_set_affinity(irq, cpumask_of(g_ehci_cpu_core));
+	} else {
+
+		if (!alloc_cpumask_var(&new_value, GFP_KERNEL))
+			return -ENOMEM;
+
+		cpumask_setall(new_value);
+
+		if (!cpumask_intersects(new_value, cpu_online_mask))
+			err = irq_select_affinity_usr(irq, new_value);
+		else
+			err = irq_set_affinity(irq, new_value);
+
+		free_cpumask_var(new_value);
+	}
+
+	return err;
+}
+
+static int __cpuinit s5p_ehci_cpu_notify(struct notifier_block *self,
+				unsigned long action, void *hcpu)
+{
+	int cpu = (unsigned long)hcpu;
+
+	if (!g_ehci_irq || cpu != g_ehci_cpu_core)
+		goto exit;
+
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_DOWN_FAILED:
+	case CPU_ONLINE_FROZEN:
+		set_cpu_core_from_usb_irq(true);
+		pr_info("%s: set ehci irq to cpu%d\n", __func__, cpu);
+		break;
+	case CPU_DOWN_PREPARE:
+	case CPU_DOWN_PREPARE_FROZEN:
+		set_cpu_core_from_usb_irq(false);
+		pr_info("%s: set ehci irq to cpu%d\n", __func__, 0);
+		break;
+	default:
+		break;
+	}
+exit:
+	return NOTIFY_OK;
+}
+
+static int rndis_notify_callback(struct notifier_block *this,
+				unsigned long event, void *ptr)
+{
+	struct net_device *dev = ptr;
+
+	if (!net_eq(dev_net(dev), &init_net))
+		return NOTIFY_DONE;
+
+	if (!strncmp(dev->name, "rndis", 5)) {
+		switch (event) {
+		case NETDEV_UP:
+			atomic_inc(&use_rndis);
+			set_cpu_core_from_usb_irq(true);
+			break;
+		case NETDEV_DOWN:
+			set_cpu_core_from_usb_irq(false);
+			atomic_dec(&use_rndis);
+			break;
+		}
+	}
+	return NOTIFY_DONE;
 }
 
 static int __devinit s5p_ehci_probe(struct platform_device *pdev)
@@ -537,6 +674,14 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, s5p_ehci);
 
+	if (num_possible_cpus() > 1) {
+		atomic_set(&use_rndis, 0);
+		g_ehci_irq = irq;
+		rndis_notifier.notifier_call = rndis_notify_callback;
+		register_netdevice_notifier(&rndis_notifier);
+		ehci_cpu_notifier.notifier_call = s5p_ehci_cpu_notify;
+		register_cpu_notifier(&ehci_cpu_notifier);
+	}
 	s5p_ehci_phy_init(pdev);
 
 	ehci = hcd_to_ehci(hcd);
@@ -570,6 +715,12 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_get(hcd->self.controller);
 #endif
+#if defined(CONFIG_MDM_HSIC_PM)
+	if (pdev->dev.power.disable_depth > 0)
+		pm_runtime_enable(&pdev->dev);
+	pm_runtime_set_autosuspend_delay(&hcd->self.root_hub->dev, 10);
+	pm_runtime_forbid(&pdev->dev);
+#endif
 	return 0;
 
 fail:
@@ -593,11 +744,20 @@ static int __devexit s5p_ehci_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_USB_SUSPEND
 	pm_runtime_put(hcd->self.controller);
+#if !defined(CONFIG_MDM_HSIC_PM)
 	pm_runtime_disable(&pdev->dev);
+#endif
 #endif
 	s5p_ehci->power_on = 0;
 	remove_ehci_sys_file(hcd_to_ehci(hcd));
 	usb_remove_hcd(hcd);
+
+	if (num_possible_cpus() > 1) {
+		atomic_set(&use_rndis, 0);
+		g_ehci_irq = 0;
+		unregister_netdevice_notifier(&rndis_notifier);
+		unregister_cpu_notifier(&ehci_cpu_notifier);
+	}
 
 	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_HOST);

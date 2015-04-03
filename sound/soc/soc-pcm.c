@@ -369,8 +369,9 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 		platform->driver->ops->close(substream);
 	cpu_dai->runtime = NULL;
 
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
-		!codec_dai->playback_active) {
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		if (codec_dai->playback_active)
+			goto out;
 		if (!rtd->pmdown_time || codec->ignore_pmdown_time ||
 		    rtd->dai_link->ignore_pmdown_time) {
 			/* powered down playback stream now */
@@ -389,7 +390,7 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 		snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_CAPTURE,
 				  codec_dai, SND_SOC_DAPM_STREAM_STOP);
 	}
-
+out:
 	mutex_unlock(&rtd->pcm_mutex);
 
 	pm_runtime_put(platform->dev);

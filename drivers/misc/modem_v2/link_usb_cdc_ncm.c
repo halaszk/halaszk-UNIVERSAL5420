@@ -53,7 +53,7 @@
 #include <linux/usb/cdc.h>
 #include <linux/rtc.h>
 
-#include <linux/platform_data/modem.h>
+#include <linux/platform_data/modem_v2.h>
 #include <linux/wakelock.h>
 #include "modem_prj.h"
 #include "modem_utils.h"
@@ -336,6 +336,7 @@ size_err:
 						CDC_NCM_NTB_MAX_SIZE_TX);
 		ctx->tx_max = CDC_NCM_NTB_MAX_SIZE_TX;
 	}
+	ctx->tx_max_setup = ctx->tx_max;
 
 	/*
 	 * verify that the structure alignment is:
@@ -752,24 +753,23 @@ cdc_ncm_fill_tx_frame(struct if_usb_devdata *pipe_data, struct sk_buff *skb)
 		n = ctx->tx_curr_frame_num;
 
 	} else {
-#if 0
-		skb_out = mif_skb_pool_alloc(devdata->ntb_pool);
-		if (!skb_out) {
-			mif_err("pool: get skb pool fail\n");
-			if (skb)
-				dev_kfree_skb_any(skb);
-			goto exit_no_skb;
-		}
-#else
-/* original code, we should compare and add to exception case
- reset variables */
+		/* restore tx_max */
+		ctx->tx_max = (ctx->tx_max_setup & 0xFFF)
+			? ctx->tx_max_setup : ctx->tx_max_setup - 512;
+retry_alloc:
 		skb_out = alloc_skb((ctx->tx_max + 1), GFP_ATOMIC);
 		if (skb_out == NULL) {
+			ctx->tx_max = ctx->tx_max / 2 - 256 ;
+			if (ctx->tx_max >= PAGE_SIZE - 512) {
+				mif_err("re-try to alloc %d\n", ctx->tx_max);
+				goto retry_alloc;
+			}
+
 			if (skb != NULL)
 				dev_kfree_skb_any(skb);
 			goto exit_no_skb;
 		}
-#endif
+
 		/* make room for NTH and NDP */
 		offset = ALIGN(sizeof(struct usb_cdc_ncm_nth16),
 					ctx->tx_ndp_modulus) +
@@ -945,7 +945,6 @@ cdc_ncm_fill_tx_frame(struct if_usb_devdata *pipe_data, struct sk_buff *skb)
 
 	/* return skb */
 	ctx->tx_curr_skb = NULL;
-	pipe_data->iod->ndev->stats.tx_packets += ctx->tx_curr_frame_num;
 	return skb_out;
 
 exit_no_skb:
@@ -1025,7 +1024,8 @@ error:
 	return NULL;
 }
 
-int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
+static int __cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data,
+					struct sk_buff *skb_in, bool copy)
 {
 	int err = -EINVAL;
 	struct sk_buff *skb;
@@ -1043,21 +1043,21 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 
 	if (skb_in->len < (sizeof(struct usb_cdc_ncm_nth16) +
 					sizeof(struct usb_cdc_ncm_ndp16))) {
-		pr_debug("frame too short\n");
+		mif_err("frame too short\n");
 		goto error;
 	}
 
 	nth16 = (struct usb_cdc_ncm_nth16 *)skb_in->data;
 
 	if (le32_to_cpu(nth16->dwSignature) != USB_CDC_NCM_NTH16_SIGN) {
-		pr_debug("invalid NTH16 signature <%u>\n",
+		mif_err("invalid NTH16 signature <%u>\n",
 					le32_to_cpu(nth16->dwSignature));
 		goto error;
 	}
 
 	len = le16_to_cpu(nth16->wBlockLength);
 	if (len > ctx->rx_max) {
-		pr_debug("unsupported NTB block length %u/%u\n", len,
+		mif_err("unsupported NTB block length %u/%u\n", len,
 								ctx->rx_max);
 		goto error;
 	}
@@ -1065,14 +1065,14 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 	if ((ctx->rx_seq + 1) != le16_to_cpu(nth16->wSequence) &&
 		(ctx->rx_seq || le16_to_cpu(nth16->wSequence)) &&
 		!((ctx->rx_seq == 0xffff) && !le16_to_cpu(nth16->wSequence))) {
-		pr_debug("sequence number glitch prev=%d curr=%d\n",
+		mif_err("sequence number glitch prev=%d curr=%d\n",
 				ctx->rx_seq, le16_to_cpu(nth16->wSequence));
 	}
 	ctx->rx_seq = le16_to_cpu(nth16->wSequence);
 
 	len = le16_to_cpu(nth16->wNdpIndex);
 	if ((len + sizeof(struct usb_cdc_ncm_ndp16)) > skb_in->len) {
-		pr_debug("invalid DPT16 index <%u>\n",
+		mif_err("invalid DPT16 index <%u>\n",
 					le16_to_cpu(nth16->wNdpIndex));
 		goto error;
 	}
@@ -1080,13 +1080,13 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 	ndp16 = (struct usb_cdc_ncm_ndp16 *)(((u8 *)skb_in->data) + len);
 
 	if (le32_to_cpu(ndp16->dwSignature) != USB_CDC_NCM_NDP16_NOCRC_SIGN) {
-		pr_debug("invalid DPT16 signature <%u>\n",
+		mif_err("invalid DPT16 signature <%u>\n",
 					le32_to_cpu(ndp16->dwSignature));
 		goto error;
 	}
 
 	if (le16_to_cpu(ndp16->wLength) < USB_CDC_NCM_NDP16_LENGTH_MIN) {
-		pr_debug("invalid DPT16 length <%u>\n",
+		mif_err("invalid DPT16 length <%u>\n",
 					le32_to_cpu(ndp16->dwSignature));
 		goto error;
 	}
@@ -1100,7 +1100,7 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 
 	if ((len + nframes * (sizeof(struct usb_cdc_ncm_dpe16))) >
 								skb_in->len) {
-		pr_debug("Invalid nframes = %d\n", nframes);
+		mif_err("Invalid nframes = %d\n", nframes);
 		goto error;
 	}
 
@@ -1131,15 +1131,25 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 			break;
 
 		} else {
-			skb = skb_clone(skb_in, GFP_ATOMIC);
-			if (!skb)
-				goto error;
-			skb->len = len;
-			skb->truesize = SKB_TRUESIZE(len); /* tcp_rmem */
-			skb->data = ((u8 *)skb_in->data) + offset;
-			skb_set_tail_pointer(skb, len);
+			if (copy) {
+				skb = alloc_skb(len + 2, GFP_ATOMIC);
+				if (unlikely(!skb)) {
+					mif_err("fragHeader skb alloc fail\n");
+					goto error;
+				}
+				skb_reserve(skb, 2);
+				memcpy(skb_put(skb, len),
+					(u8 *)skb_in->data + offset, len);
+			} else {
+				skb = skb_clone(skb_in, GFP_ATOMIC);
+				if (!skb)
+					goto error;
+				skb->len = len;
+				skb->truesize = SKB_TRUESIZE(len); /*tcp_rmem*/
+				skb->data = ((u8 *)skb_in->data) + offset;
+				skb_set_tail_pointer(skb, len);
+			}
 			cdc_ncm_pre_rx_framing(skb);
-			skbpriv(skb)->real_iod = pipe_data->iod;
 			skbpriv(skb)->iod = pipe_data->iod;
 
 			err = pipe_data->iod->recv_skb(pipe_data->iod,
@@ -1148,10 +1158,25 @@ int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
 				mif_err("rx iod fail err=%d\n", err);
 		}
 	}
-	dev_kfree_skb_any(skb_in);
 	return 1;
 error:
 	return 0;
+}
+
+int cdc_ncm_rx_fixup(struct if_usb_devdata *pipe_data, struct sk_buff *skb_in)
+{
+	int rc = __cdc_ncm_rx_fixup(pipe_data, skb_in, false);
+	if (rc)
+		dev_kfree_skb_any(skb_in);
+	return rc;
+}
+
+int cdc_ncm_rx_fixup_copyskb(struct if_usb_devdata *pipe_data,
+							struct sk_buff *skb_in)
+{
+	int rc = __cdc_ncm_rx_fixup(pipe_data, skb_in, true);
+	/* skb_in will reuse for static RX NTB buffer */
+	return rc;
 }
 
 static void
@@ -1200,10 +1225,12 @@ static void cdc_ncm_status(struct if_usb_devdata *pipe_data, struct urb *urb)
 			": network connection: %s connected\n",
 			ctx->connected ? "" : "dis");
 
-		if (ctx->connected)
+		if (ctx->connected) {
+			pipe_data->submit_urbs(pipe_data);
 			netif_carrier_on(pipe_data->iod->ndev);
-		else {
+		} else {
 			netif_carrier_off(pipe_data->iod->ndev);
+			schedule_delayed_work(&pipe_data->kill_urbs_work, 0);
 			ctx->tx_speed = ctx->rx_speed = 0;
 		}
 		break;
@@ -1262,4 +1289,3 @@ void cdc_ncm_intr_complete(struct urb *urb)
 			mif_err("intr resubmit --> %d\n", ret);
 	}
 }
-

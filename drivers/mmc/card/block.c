@@ -70,6 +70,8 @@ MODULE_ALIAS("mmc:block");
 #define PACKED_CMD_RD		0x01
 #define PACKED_CMD_WR		0x02
 
+#define MMC_WR_TIMEOUT_MS       (10 * 1000)     /* 10 sec timeout for write */
+
 static DEFINE_MUTEX(block_mutex);
 
 /*
@@ -1215,7 +1217,7 @@ static int mmc_blk_err_check(struct mmc_card *card,
 	if ((!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) ||
 			(mq_mrq->packed_cmd == MMC_PACKED_WR_HDR)) {
 		u32 status;
-		unsigned long timeout = jiffies + msecs_to_jiffies(5000);
+		unsigned long timeout = jiffies + msecs_to_jiffies(MMC_WR_TIMEOUT_MS);
 		do {
 			int err = get_card_status(card, &status, 5);
 			if (err) {
@@ -1240,7 +1242,7 @@ static int mmc_blk_err_check(struct mmc_card *card,
 			 (R1_CURRENT_STATE(status) == R1_STATE_PRG)) &&
 			 time_before(jiffies, timeout));
 
-		/* in case of card stays on program status in 5 secs */
+		/* in case of card stays on program status in 10 secs */
 		if (time_after_eq(jiffies, timeout)) {
 			pr_err("%s: error %d hang on checking status %#x.\n",
 					req->rq_disk->disk_name, -ETIMEDOUT,
@@ -2062,9 +2064,14 @@ snd_packed_rd:
 		spin_lock_irq(&md->lock);
 		if (mmc_card_removed(card))
 			req->cmd_flags |= REQ_QUIET;
-		while (ret)
-			ret = __blk_end_request(req, -EIO,
-					blk_rq_cur_bytes(req));
+		if (mmc_card_sd(card) && mmc_card_removed(card)) {
+			if (ret)
+				__blk_end_request_all(req, -EIO);
+		} else {
+			while (ret)
+				ret = __blk_end_request(req, -EIO,
+						blk_rq_cur_bytes(req));
+		}
 		spin_unlock_irq(&md->lock);
 	} else {
 		mmc_blk_abort_packed_req(mq, mq_rq);

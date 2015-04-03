@@ -17,6 +17,8 @@
 #include "gpio-n1a-rev00.h"
 #elif defined(CONFIG_CHAGALL)
 #include "gpio-chagall-3g-rev00.h"
+#elif defined(CONFIG_KLIMT)
+#include "gpio-klimt-3g-rev00.h"
 #else
 #include "gpio-ha-3g-rev00.h"
 #endif

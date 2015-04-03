@@ -13,6 +13,7 @@
 #ifndef _S5P_MIPI_DSI_LOWLEVEL_H
 #define _S5P_MIPI_DSI_LOWLEVEL_H
 
+void s5p_dsim_toggle_hs_clock(struct mipi_dsim_device *dsim);
 void s5p_mipi_dsi_func_reset(struct mipi_dsim_device *dsim);
 void s5p_mipi_dsi_sw_reset(struct mipi_dsim_device *dsim);
 void s5p_mipi_dsi_set_interrupt_mask(struct mipi_dsim_device *dsim,

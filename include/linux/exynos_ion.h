@@ -18,6 +18,9 @@
 #define _LINUX_EXYNOS_ION_H
 
 #include <linux/ion.h>
+#include <linux/device.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-direction.h>
 
 enum {
 	ION_HEAP_TYPE_EXYNOS_CONTIG = ION_HEAP_TYPE_CUSTOM + 1,
@@ -45,6 +48,7 @@ enum {
 	ION_EXYNOS_ID_SECTBL		= 9,
 	ION_EXYNOS_ID_G2D_WFD		= 10,
 	ION_EXYNOS_ID_VIDEO		= 11,
+	ION_EXYNOS_ID_SECDMA		= 13,
 	ION_EXYNOS_MAX_CONTIG_ID
 };
 
@@ -72,6 +76,7 @@ enum {
 #define ION_EXYNOS_MFC_FW_MASK		MAKE_CONTIG_MASK(ION_EXYNOS_ID_MFC_FW)
 #define ION_EXYNOS_SECTBL_MASK		MAKE_CONTIG_MASK(ION_EXYNOS_ID_SECTBL)
 #define ION_EXYNOS_G2D_WFD_MASK		MAKE_CONTIG_MASK(ION_EXYNOS_ID_G2D_WFD)
+#define ION_EXYNOS_SECDMA_MASK	     MAKE_CONTIG_MASK(ION_EXYNOS_ID_SECDMA)
 
 #define ION_HEAP_EXYNOS_MFC_SH_MASK					\
 		(EXYNOS_ION_HEAP_EXYNOS_CONTIG_MASK|ION_EXYNOS_MFC_SH_MASK)
@@ -93,5 +98,36 @@ enum {
 		(EXYNOS_ION_HEAP_EXYNOS_CONTIG_MASK|ION_EXYNOS_G2D_WFD_MASK)
 #define ION_HEAP_EXYNOS_VIDEO_MASK					\
 		(EXYNOS_ION_HEAP_EXYNOS_CONTIG_MASK|ION_EXYNOS_VIDEO_MASK)
+#define ION_HEAP_EXYNOS_SECDMA_MASK					\
+		(EXYNOS_ION_HEAP_EXYNOS_CONTIG_MASK|ION_EXYNOS_SECDMA_MASK)
+
+#ifdef __KERNEL__
+
+void exynos_ion_sync_dmabuf_for_device(struct device *dev,
+					struct dma_buf *dmabuf,
+					size_t size,
+					enum dma_data_direction dir);
+void exynos_ion_sync_vaddr_for_device(struct device *dev,
+					void *vaddr,
+					size_t size,
+					off_t offset,
+					enum dma_data_direction dir);
+void exynos_ion_sync_sg_for_device(struct device *dev,
+					struct sg_table *sgt,
+					enum dma_data_direction dir);
+void exynos_ion_sync_dmabuf_for_cpu(struct device *dev,
+					struct dma_buf *dmabuf,
+					size_t size,
+					enum dma_data_direction dir);
+void exynos_ion_sync_vaddr_for_cpu(struct device *dev,
+					void *vaddr,
+					size_t size,
+					off_t offset,
+					enum dma_data_direction dir);
+void exynos_ion_sync_sg_for_cpu(struct device *dev,
+					struct sg_table *sgt,
+					enum dma_data_direction dir);
+int ion_exynos_contig_heap_info(int region_id, phys_addr_t *phys, size_t *size);
+#endif /* __KERNEL */
 
 #endif /* _LINUX_ION_H */

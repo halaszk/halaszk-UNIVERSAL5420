@@ -376,7 +376,7 @@ struct ehci_qh {
 
 	u8			xacterrs;	/* XactErr retry counter */
 
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_QC_MODEM)
 #define	QH_XACTERR_MAX		4		/* XactErr retry limit */
 #else
 #define	QH_XACTERR_MAX		32		/* XactErr retry limit */

@@ -41,7 +41,7 @@
 #include <linux/scatterlist.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
-#if defined(CONFIG_LINK_DEVICE_HSIC)
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
 #include <linux/usb/quirks.h>
 #endif
 

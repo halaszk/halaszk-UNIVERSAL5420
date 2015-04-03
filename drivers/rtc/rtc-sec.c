@@ -23,6 +23,9 @@
 #include <linux/mfd/samsung/irq.h>
 #include <linux/regmap.h>
 
+bool pmic_is_jig_attached;
+EXPORT_SYMBOL(pmic_is_jig_attached);
+
 struct s2mps11_rtc_info {
 	struct device *dev;
 	struct sec_pmic_dev *iodev;
@@ -30,7 +33,22 @@ struct s2mps11_rtc_info {
 	int irq;
 	int rtc_24hr_mode;
 	bool wtsr_smpl;
+	bool jig_smpl_disable;
 };
+
+static bool s2mps11_rtc_is_jigonb_low(struct s2mps11_rtc_info *info)
+{
+	int ret;
+	u8 val;
+
+	ret = sec_reg_read(info->iodev, S2MPS11_REG_ST1, &val);
+	if (ret < 0) {
+		pr_err("%s: fail to read status1 reg(%d)\n",
+			__func__, ret);
+		return false;
+	}
+	return !(val & S2MPS11_ST1_JIGONB_MASK);
+}
 
 static inline int s2mps11_rtc_calculate_wday(u8 shifted)
 {
@@ -486,6 +504,7 @@ static int __devinit s2mps11_rtc_probe(struct platform_device *pdev)
 	s2mps11->iodev = iodev;
 
 	s2mps11->wtsr_smpl = pdata->wtsr_smpl;
+	s2mps11->jig_smpl_disable = pdata->jig_smpl_disable;
 
 	s2mps11->irq = pdata->irq_base + S2MPS11_IRQ_RTCA0;
 
@@ -497,9 +516,16 @@ static int __devinit s2mps11_rtc_probe(struct platform_device *pdev)
 		goto out_rtc;
 	}
 
+	pmic_is_jig_attached = s2mps11_rtc_is_jigonb_low(s2mps11);
+
+	if (s2mps11->jig_smpl_disable && pmic_is_jig_attached)
+		s2mps11->wtsr_smpl = false;
 	if (s2mps11->wtsr_smpl) {
 		s2mps11_rtc_enable_wtsr(s2mps11, true);
 		s2mps11_rtc_enable_smpl(s2mps11, true);
+	} else {
+		s2mps11_rtc_enable_wtsr(s2mps11, false);
+		s2mps11_rtc_enable_smpl(s2mps11, false);
 	}
 
 	device_init_wakeup(&pdev->dev, true);
@@ -523,6 +549,7 @@ static int __devinit s2mps11_rtc_probe(struct platform_device *pdev)
 	return 0;
 
 out_rtc:
+	devm_kfree(&pdev->dev, s2mps11);
 	platform_set_drvdata(pdev, NULL);
 	return ret;
 }

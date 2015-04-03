@@ -965,8 +965,8 @@ static int s3c64xx_serial_startup(struct uart_port *port)
 	dbg("s3c64xx_serial_startup: port=%p (%08lx,%p)\n",
 	    port->mapbase, port->membase);
 
-	ret = request_irq(port->irq, s3c64xx_serial_handle_irq, IRQF_SHARED,
-			  s3c24xx_serial_portname(port), ourport);
+	ret = request_threaded_irq(port->irq, NULL, s3c64xx_serial_handle_irq,
+			IRQF_ONESHOT, s3c24xx_serial_portname(port), ourport);
 	if (ret) {
 		printk(KERN_ERR "cannot get irq %d\n", port->irq);
 		return ret;

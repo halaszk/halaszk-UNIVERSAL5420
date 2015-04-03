@@ -23,6 +23,7 @@ struct flowi_common {
 #define FLOWI_FLAG_PRECOW_METRICS	0x02
 #define FLOWI_FLAG_CAN_SLEEP		0x04
 	__u32	flowic_secid;
+	uid_t	flowic_uid;
 };
 
 union flowi_uli {
@@ -59,7 +60,7 @@ struct flowi4 {
 #define flowi4_proto		__fl_common.flowic_proto
 #define flowi4_flags		__fl_common.flowic_flags
 #define flowi4_secid		__fl_common.flowic_secid
-
+#define flowi4_uid			__fl_common.flowic_uid
 	/* (saddr,daddr) must be grouped, same order as in IP header */
 	__be32			saddr;
 	__be32			daddr;
@@ -78,7 +79,7 @@ static inline void flowi4_init_output(struct flowi4 *fl4, int oif,
 				      __u32 mark, __u8 tos, __u8 scope,
 				      __u8 proto, __u8 flags,
 				      __be32 daddr, __be32 saddr,
-				      __be16 dport, __be16 sport)
+				      __be16 dport, __be16 sport, uid_t uid)
 {
 	fl4->flowi4_oif = oif;
 	fl4->flowi4_iif = 0;
@@ -88,6 +89,7 @@ static inline void flowi4_init_output(struct flowi4 *fl4, int oif,
 	fl4->flowi4_proto = proto;
 	fl4->flowi4_flags = flags;
 	fl4->flowi4_secid = 0;
+	fl4->flowi4_uid = uid;
 	fl4->daddr = daddr;
 	fl4->saddr = saddr;
 	fl4->fl4_dport = dport;
@@ -115,6 +117,7 @@ struct flowi6 {
 #define flowi6_proto		__fl_common.flowic_proto
 #define flowi6_flags		__fl_common.flowic_flags
 #define flowi6_secid		__fl_common.flowic_secid
+#define flowi6_uid			__fl_common.flowic_uid
 	struct in6_addr		daddr;
 	struct in6_addr		saddr;
 	__be32			flowlabel;
@@ -150,14 +153,15 @@ struct flowi {
 		struct flowi6		ip6;
 		struct flowidn		dn;
 	} u;
-#define flowi_oif	u.__fl_common.flowic_oif
-#define flowi_iif	u.__fl_common.flowic_iif
-#define flowi_mark	u.__fl_common.flowic_mark
-#define flowi_tos	u.__fl_common.flowic_tos
-#define flowi_scope	u.__fl_common.flowic_scope
-#define flowi_proto	u.__fl_common.flowic_proto
-#define flowi_flags	u.__fl_common.flowic_flags
-#define flowi_secid	u.__fl_common.flowic_secid
+#define flowi_oif		u.__fl_common.flowic_oif
+#define flowi_iif		u.__fl_common.flowic_iif
+#define flowi_mark		u.__fl_common.flowic_mark
+#define flowi_tos		u.__fl_common.flowic_tos
+#define flowi_scope		u.__fl_common.flowic_scope
+#define flowi_proto		u.__fl_common.flowic_proto
+#define flowi_flags		u.__fl_common.flowic_flags
+#define flowi_secid		u.__fl_common.flowic_secid
+#define flowi_uid		u.__fl_common.flowic_uid
 } __attribute__((__aligned__(BITS_PER_LONG/8)));
 
 static inline struct flowi *flowi4_to_flowi(struct flowi4 *fl4)

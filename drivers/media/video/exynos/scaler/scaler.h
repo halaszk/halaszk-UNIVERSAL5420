@@ -19,6 +19,7 @@
 #include <linux/videodev2.h>
 #include <linux/videodev2_exynos_media.h>
 #include <linux/io.h>
+#include <linux/pm_qos.h>
 #include <media/videobuf2-core.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
@@ -344,6 +345,7 @@ struct sc_dev {
 	struct sc_m2m_device		m2m;
 	int				id;
 	int				ver;
+	int				irq;
 	struct clk			*aclk;
 	struct clk			*pclk;
 	void __iomem			*regs;
@@ -355,6 +357,12 @@ struct sc_dev {
 	spinlock_t			slock;
 	struct mutex			lock;
 	struct sc_wdt			wdt;
+	struct pm_qos_request		qos_int;
+	struct timer_list		pmqos_timer;
+	struct work_struct		pmqos_work;
+	struct workqueue_struct		*pmqos_wq;
+	struct mutex			pmqos_lock;
+	atomic_t			pmqos_count;
 	atomic_t			clk_cnt;
 	void				*clk_private;
 	void *(*setup_clocks)(void);

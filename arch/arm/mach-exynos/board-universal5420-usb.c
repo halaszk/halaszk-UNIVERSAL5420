@@ -28,7 +28,7 @@
 #endif
 #include <mach/usb-switch.h>
 
-#if defined(CONFIG_MFD_MAX77803)
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 #include <linux/mfd/max77803-private.h>
 #endif
 
@@ -38,7 +38,7 @@
 
 static bool exynos5_usb_vbus_init(struct platform_device *pdev)
 {
-#if defined(CONFIG_MFD_MAX77803)
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 	printk(KERN_DEBUG"%s vbus value is (%d) \n",__func__,max77803_muic_read_vbus());
 	if(max77803_muic_read_vbus())return 1;
 	else return 0;
@@ -49,7 +49,7 @@ static bool exynos5_usb_vbus_init(struct platform_device *pdev)
 
 static int exynos5_usb_get_id_state(struct platform_device *pdev)
 {
-#if defined(CONFIG_MFD_MAX77803)
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 	int id;
 	id = max77803_muic_read_adc();
 	printk(KERN_DEBUG "%s id value is (%d) \n", __func__, id);
@@ -94,7 +94,7 @@ static struct dwc3_exynos_data universal5420_drd_pdata __initdata = {
 	.vbus_irq		= -1,
 };
 
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
 void usb30_redriver_en(int enable)
 {
 	struct regulator *regulator;
@@ -119,7 +119,7 @@ void usb30_redriver_en(int enable)
 		regulator_put(regulator);
 	}
 }
-#else
+#elif defined(CONFIG_HA_3G)
 void usb30_redriver_en(int enable)
 {
 	int err;

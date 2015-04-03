@@ -141,6 +141,7 @@ struct usb_link_device {
 
 	/* LINK PM DEVICE DATA */
 	struct link_pm_data *link_pm_data;
+	struct notifier_block phy_nfb;
 
 	/*RX retry work by -ENOMEM*/
 	struct delayed_work rx_retry_work;

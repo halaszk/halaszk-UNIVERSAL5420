@@ -249,9 +249,11 @@ static void arizona_start_mic(struct arizona_extcon_info *info)
 	}
 
 	if (info->micd_reva) {
+		mutex_lock(&arizona->reg_setting_lock);
 		regmap_write(arizona->regmap, 0x80, 0x3);
 		regmap_write(arizona->regmap, 0x294, 0);
 		regmap_write(arizona->regmap, 0x80, 0x0);
+		mutex_unlock(&arizona->reg_setting_lock);
 	}
 
 	regmap_update_bits(arizona->regmap,
@@ -294,9 +296,11 @@ static void arizona_stop_mic(struct arizona_extcon_info *info)
 	snd_soc_dapm_sync(dapm);
 
 	if (info->micd_reva) {
+		mutex_lock(&arizona->reg_setting_lock);
 		regmap_write(arizona->regmap, 0x80, 0x3);
 		regmap_write(arizona->regmap, 0x294, 2);
 		regmap_write(arizona->regmap, 0x80, 0x0);
+		mutex_unlock(&arizona->reg_setting_lock);
 	}
 
 	if (change) {

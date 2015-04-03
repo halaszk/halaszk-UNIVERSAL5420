@@ -1523,7 +1523,9 @@ static ssize_t camera_front_camfw_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	char type[] = "S5K6B2YX";
-	return sprintf(buf, "%s %s\n", type, type);
+	/* new firmware definition */
+	return sprintf(buf, "%s N\n", type);
+	/* return sprintf(buf, "%s %s\n", type, type); */
 }
 
 static DEVICE_ATTR(front_camtype, S_IRUGO,
@@ -1542,7 +1544,11 @@ int read_from_firmware_version(void)
 	fimc_is_sec_get_sysfs_pinfo(&pinfo);
 	fimc_is_sec_get_sysfs_finfo(&finfo);
 
-	if (finfo->bin_start_addr != 0x5000) {
+#ifdef CONFIG_CAMERA_EEPROM
+	if (finfo->oem_start_addr != 0x100) {
+#else
+	if (finfo->oem_start_addr != 0x1000) {
+#endif
 		fimc_is_sec_set_camid(CAMERA_DUAL_FRONT);
 #if defined(CONFIG_PM_RUNTIME)
 		dbg_ischain("pm_runtime_suspended = %d\n",
@@ -1568,6 +1574,13 @@ int read_from_firmware_version(void)
 static ssize_t camera_rear_camtype_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
+#ifdef CONFIG_CAMERA_EEPROM
+#if defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
+	return sprintf(buf, "SONY_IMX134_FIMC_IS\n");
+#else
+	return sprintf(buf, "SENSORMAKER_SENSORNAME_FIMC_IS\n");
+#endif
+#else
 	char type_sony13[] = "SONY_IMX135_FIMC_IS";
 	char type_sony8[] = "SONY_IMX134_FIMC_IS";
 	char type_slsi[] = "SLSI_3L2_FIMC_IS";
@@ -1584,14 +1597,53 @@ static ssize_t camera_rear_camtype_show(struct device *dev,
 		else
 			return sprintf(buf, "%s\n", type_sony13);
 	}
+#endif
+}
+
+static ssize_t camera_rear_camfw_full_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+#if 0 /* #ifdef CONFIG_CAMERA_EEPROM */
+	fimc_is_sec_get_sysfs_pinfo(&pinfo);
+	fimc_is_sec_read_phone_ver();
+	if (fimc_is_sec_get_crc_result())
+		return sprintf(buf, "%s %s %s\n",
+			"IMX134", pinfo->header_ver, pinfo->header_ver);
+	else
+		return sprintf(buf, "%s %s NG_CD\n",
+			"IMX134", pinfo->header_ver);
+#else
+	read_from_firmware_version();
+	if (fimc_is_sec_get_crc_result())
+		return sprintf(buf, "%s %s %s\n",
+			finfo->header_ver, pinfo->header_ver, pinfo->header_ver);
+	else
+		return sprintf(buf, "%s %s NG_CD\n",
+			finfo->header_ver, pinfo->header_ver);
+#endif
 }
 
 static ssize_t camera_rear_camfw_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
+#if 0 /* #ifdef CONFIG_CAMERA_EEPROM */
+	fimc_is_sec_get_sysfs_pinfo(&pinfo);
+	fimc_is_sec_read_phone_ver();
+	if (fimc_is_sec_get_crc_result())
+		return sprintf(buf, "%s %s\n",
+			"IMX134", pinfo->header_ver);
+	else
+		return sprintf(buf, "%s NG_CD\n",
+			"IMX134");
+#else
 	read_from_firmware_version();
-	return sprintf(buf, "%s %s\n",
-		finfo->header_ver, pinfo->header_ver);
+	if (fimc_is_sec_get_crc_result())
+		return sprintf(buf, "%s %s\n",
+			finfo->header_ver, pinfo->header_ver);
+	else
+		return sprintf(buf, "%s NG_CD\n",
+			finfo->header_ver);
+#endif
 }
 
 static ssize_t camera_rear_camfw_write(struct device *dev,
@@ -1608,10 +1660,40 @@ static ssize_t camera_rear_camfw_write(struct device *dev,
 	return ret;
 }
 
+static ssize_t camera_isp_core_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int voltage;
+	int voltage2;
+	read_from_firmware_version();
+	voltage = fimc_is_sec_core_voltage(finfo->header_ver);
+	voltage2 = voltage - ((int)(voltage / 1000000)) * 1000000;
+
+	return sprintf(buf, "%d.%2d\n", voltage / 1000000, voltage2 / 10000);
+}
+
+static ssize_t camera_rear_calcheck_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	char result[10];
+	read_from_firmware_version();
+	if (fimc_is_sec_get_crc_result())
+		strcpy(result, "Normal");
+	else
+		strcpy(result, "Abnormal");
+	return sprintf(buf, "%s %s %s\n", result, "Null", "Null");
+}
+
 static DEVICE_ATTR(rear_camtype, S_IRUGO,
 		camera_rear_camtype_show, NULL);
 static DEVICE_ATTR(rear_camfw, S_IRUGO|S_IWUSR|S_IWGRP|S_IROTH,
 		camera_rear_camfw_show, camera_rear_camfw_write);
+static DEVICE_ATTR(rear_camfw_full, S_IRUGO|S_IROTH,
+		camera_rear_camfw_full_show, NULL);
+static DEVICE_ATTR(isp_core, S_IRUGO|S_IROTH,
+		camera_isp_core_show, NULL);
+static DEVICE_ATTR(rear_calcheck, S_IRUGO|S_IROTH,
+		camera_rear_calcheck_show, NULL);
 
 #ifdef USE_OWN_FAULT_HANDLER
 #define SECT_ORDER 20
@@ -1993,6 +2075,24 @@ static int fimc_is_probe(struct platform_device *pdev)
 			printk(KERN_ERR
 				"failed to create rear device file, %s\n",
 				dev_attr_rear_camfw.attr.name);
+		}
+		if (device_create_file(camera_rear_dev,
+					&dev_attr_rear_camfw_full) < 0) {
+			printk(KERN_ERR
+				"failed to create rear device file, %s\n",
+				dev_attr_rear_camfw_full.attr.name);
+		}
+		if (device_create_file(camera_rear_dev,
+					&dev_attr_isp_core) < 0) {
+			printk(KERN_ERR
+				"failed to create rear device file, %s\n",
+				dev_attr_isp_core.attr.name);
+		}
+		if (device_create_file(camera_rear_dev,
+					&dev_attr_rear_calcheck) < 0) {
+			printk(KERN_ERR
+				"failed to create rear device file, %s\n",
+				dev_attr_rear_calcheck.attr.name);
 		}
 	}
 

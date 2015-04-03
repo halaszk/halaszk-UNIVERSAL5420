@@ -24,6 +24,12 @@
 
 #include <linux/i2c.h>
 
+#ifdef CONFIG_FAST_BOOT
+#include <linux/fake_shut_down.h>
+
+extern void kernel_power_off(void);
+#endif
+
 #define MAX77803_NUM_IRQ_MUIC_REGS	3
 #define MAX77803_REG_INVALID		(0xff)
 
@@ -184,6 +190,10 @@ enum max77803_haptic_reg {
 #define STATUS2_CHGDETRUN_MASK		(0x1 << STATUS2_CHGDETRUN_SHIFT)
 #define STATUS2_DXOVP_MASK		(0x1 << STATUS2_DXOVP_SHIFT)
 #define STATUS2_VBVOLT_MASK		(0x1 << STATUS2_VBVOLT_SHIFT)
+
+/* MAX77803 INTMASK1 register */
+#define INTMASK1_ADC1K_SHIFT		3
+#define INTMASK1_ADC1K_MASK		(0x1 << INTMASK1_ADC1K_SHIFT)
 
 /* MAX77803 CDETCTRL1 register */
 #define CHGDETEN_SHIFT			0
@@ -361,6 +371,11 @@ struct max77803_dev {
 	int irq_masks_cur[MAX77803_IRQ_GROUP_NR];
 	int irq_masks_cache[MAX77803_IRQ_GROUP_NR];
 
+#ifdef CONFIG_FAST_BOOT
+	struct notifier_block fsd_notifier_block;
+	bool is_irq_in_fsd;
+#endif
+
 #ifdef CONFIG_HIBERNATION
 	/* For hibernation */
 	u8 reg_pmic_dump[MAX77803_PMIC_REG_END];
@@ -406,8 +421,15 @@ extern int max77803_muic_set_jigset(int reg_value);
 #ifdef CONFIG_USB_HOST_NOTIFY
 extern int max77803_muic_host_notify_cb(int enable);
 #endif
+#ifdef CONFIG_FAST_BOOT
+extern bool max77803_get_current_acc(void);
+#endif
+/* WA for MUIC RESET */
+extern u8 max77888_restore_last_snapshot(u8 reg);
+extern void max77888_muic_reg_restore(struct work_struct *work);
+/* WA for MUIC RESET */
 
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 enum cable_type_muic {
 	CABLE_TYPE_NONE_MUIC = 0,
 	CABLE_TYPE_USB_MUIC,
@@ -428,7 +450,7 @@ enum cable_type_muic {
 	CABLE_TYPE_SMARTDOCK_USB_MUIC,
 	CABLE_TYPE_AUDIODOCK_MUIC,
 	CABLE_TYPE_CDP_MUIC,
-	CABLE_TYPE_LANHUB,
+	CABLE_TYPE_LANHUB_MUIC,
 	CABLE_TYPE_PS_CABLE_MUIC,
 #if defined(CONFIG_MUIC_DET_JACK)
 	CABLE_TYPE_EARJACK_MUIC,
@@ -457,6 +479,13 @@ enum {
 #endif
 
 };
-#endif /* CONFIG_MFD_MAX77803 */
+
+enum {
+	ADCMODE_ALWAYS_ON		= 0x00,
+	ADCMODE_ALWAYS_ON_1M_MON	= 0x01,
+	ADCMODE_ONESHOT			= 0x02,
+	ADCMODE_2S_PULSE		= 0x03
+};
+#endif /* CONFIG_MFD_MAX77803 AND 77888 */
 
 #endif /*  __LINUX_MFD_MAX77803_PRIV_H */

@@ -35,6 +35,7 @@
 #include <linux/timer.h>
 #include <linux/list.h>
 #include <linux/rtc.h>
+#include <linux/time.h>
 #include <linux/regulator/consumer.h>
 #include <linux/ssp_platformdata.h>
 #ifdef CONFIG_SENSORS_SSP_STM
@@ -297,12 +298,6 @@ enum {
 	SENSOR_MAX,	/*  = 17 */
 };
 
-#define SSP_BYPASS_SENSORS_EN_ALL (1 << ACCELEROMETER_SENSOR |\
-	1 << GYROSCOPE_SENSOR | 1 << GEOMAGNETIC_UNCALIB_SENSOR |\
-	1 << GEOMAGNETIC_SENSOR | 1 << PRESSURE_SENSOR |\
-	1 << TEMPERATURE_HUMIDITY_SENSOR | 1 << LIGHT_SENSOR|\
-	1 << GYRO_UNCALIB_SENSOR | 1 << GAME_ROTATION_VECTOR) /* PROXIMITY_SENSOR is not continuos */
-
 struct meta_data_event {
 	s32 what;
 	s32 sensor;
@@ -419,27 +414,42 @@ enum {
 	BIG_TYPE_MAX,
 };
 
+enum {
+	BATCH_MODE_NONE = 0,
+	BATCH_MODE_RUN,
+};
+
+struct ssp_time_diff {
+	u16 batch_count;
+	u16 batch_mode;
+	u64 time_diff;
+	u64 irq_diff;
+	u16 batch_count_fixed;
+};
+
 struct ssp_data {
 	struct iio_dev *accel_indio_dev;
 	struct iio_dev *gyro_indio_dev;
+	struct iio_dev *uncal_gyro_indio_dev;
 	struct iio_dev *rot_indio_dev;
 	struct iio_dev *game_rot_indio_dev;
 	struct iio_dev *step_det_indio_dev;
+	struct iio_dev *pressure_indio_dev;
+	struct iio_dev *mag_indio_dev;
+	struct iio_dev *uncal_mag_indio_dev;
 	struct iio_trigger *accel_trig;
 	struct iio_trigger *gyro_trig;
 	struct iio_trigger *rot_trig;
 	struct iio_trigger *game_rot_trig;
 	struct iio_trigger *step_det_trig;
+	struct iio_trigger *pressure_det_trig;
 
-	struct input_dev *pressure_input_dev;
 	struct input_dev *light_input_dev;
 	struct input_dev *prox_input_dev;
 	struct input_dev *temp_humi_input_dev;
-	struct input_dev *mag_input_dev;
-	struct input_dev *uncal_mag_input_dev;
 	struct input_dev *gesture_input_dev;
+
 	struct input_dev *sig_motion_input_dev;
-	struct input_dev *uncalib_gyro_input_dev;
 	struct input_dev *step_cnt_input_dev;
 	struct input_dev *meta_input_dev;
 #ifdef CONFIG_SENSORS_SSP_STM
@@ -508,6 +518,7 @@ struct ssp_data {
 	unsigned int uSanityCnt;
 	unsigned int uDumpCnt;
 
+	int sealevelpressure;
 	unsigned int uGyroDps;
 	unsigned int uSensorState;
 	unsigned int uCurFirmRev;
@@ -519,8 +530,10 @@ struct ssp_data {
 
 	atomic_t aSensorEnable;
 	int64_t adDelayBuf[SENSOR_MAX];
+	u64 lastTimestamp[SENSOR_MAX];
 	s32 batchLatencyBuf[SENSOR_MAX];
 	s8 batchOptBuf[SENSOR_MAX];
+	bool reportedData[SENSOR_MAX];
 
 	int (*set_mcu_reset)(int);
 	void (*get_sensor_data[SENSOR_MAX])(char *, int *,

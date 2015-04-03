@@ -43,6 +43,10 @@
 #include <linux/rculist.h>
 
 #include <asm/uaccess.h>
+
+#ifdef CONFIG_BL_SWITCHER
+#include <mach/debug-bL.h>
+#endif
 #include <asm/cputype.h>
 
 #define CREATE_TRACE_POINTS
@@ -817,6 +821,11 @@ static int printk_pid = 1;
 static int printk_pid;
 #endif
 module_param_named(pid, printk_pid, int, S_IRUGO | S_IWUSR);
+#if defined(CONFIG_PRINTK_CORE_NUM)
+static bool printk_core_num = 1;
+#else
+static bool printk_core_num = 0;
+#endif
 
 /* Check if we have any console registered that can be called early in boot. */
 static int have_callable_console(void)
@@ -1058,20 +1067,33 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				printed_len += tlen;
 			}
 
-			if (printk_cpu_id) {
-				/* Add the cpu id */
-				char tbuf[10], *tp;
+			if (printk_pid) {
+				char tbuf[2], *tp;
 				unsigned tlen;
-#ifdef CONFIG_ARM_EXYNOS_IKS_CPUFREQ
-				unsigned int cluster_id;
-				extern cluster_type get_boot_cluster(void);
 
-				cluster_id = !((read_cpuid_mpidr() >> 8) & 0xf);
+				tlen = sprintf(tbuf, "%c", in_interrupt()? 'I' : ' ');
 
-				tlen = sprintf(tbuf, "%c%u ", get_boot_cluster() == CA7 ? 'B' : (cluster_id == CA7 ? 'L' : 'B'), printk_cpu);
+				for (tp = tbuf; tp < tbuf + tlen; tp++)
+					emit_log_char(*tp);
+				printed_len += tlen;
+			}
+
+			if (printk_core_num) {
+				/* Add the current CPU number */
+				char tbuf[7], *tp;
+				unsigned tlen;
+
+#ifdef CONFIG_BL_SWITCHER
+				char cbuf[4];
+
+				print_bL_current_core(cbuf, sizeof(cbuf));
+				tlen = snprintf(tbuf, sizeof(tbuf), "[%s: ",
+						cbuf);
 #else
-				tlen = sprintf(tbuf, "c%u ", printk_cpu);
+				tlen = snprintf(tbuf, sizeof(tbuf), "[%d: ",
+						smp_processor_id());
 #endif
+
 				for (tp = tbuf; tp < tbuf + tlen; tp++)
 					emit_log_char(*tp);
 				printed_len += tlen;
@@ -1079,10 +1101,10 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 			if (printk_pid) {
 				/* Add the current process id */
-				char tbuf[10], *tp;
+				char tbuf[24], *tp;
 				unsigned tlen;
 
-				tlen = sprintf(tbuf, "%6u ", current->pid);
+				tlen = sprintf(tbuf, "%15s:%6u] ", current->comm, current->pid);
 
 				for (tp = tbuf; tp < tbuf + tlen; tp++)
 					emit_log_char(*tp);

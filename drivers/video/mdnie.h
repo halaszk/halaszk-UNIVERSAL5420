@@ -94,6 +94,11 @@ struct mdnie_info {
 	struct notifier_block secfb_notif;
 #endif
 
+	unsigned int scr_white_red;
+	unsigned int scr_white_green;
+	unsigned int scr_white_blue;
+	struct mdnie_tuning_info table_buffer;
+	unsigned short sequence_buffer[512];
 
 	struct platform_mdnie_data *pd;
 };

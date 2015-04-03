@@ -32,9 +32,8 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/wakelock.h>
-#include <linux/string.h>
 
-#include <linux/platform_data/modem.h>
+#include <linux/platform_data/modem_v2.h>
 #include "modem_prj.h"
 #include "modem_variation.h"
 #include "modem_utils.h"
@@ -64,6 +63,7 @@ static struct modem_shared *create_modem_shared_data(void)
 		(MAX_MIF_SEPA_SIZE * 2), GFP_KERNEL);
 	if (!msd->storage.addr) {
 		mif_err("IPC logger buff alloc failed!!\n");
+		kfree(msd);
 		return NULL;
 	}
 	memset(msd->storage.addr, 0, size + (MAX_MIF_SEPA_SIZE * 2));
@@ -133,11 +133,13 @@ static struct io_device *create_io_device(struct modem_io_t *io_t,
 	iod->net_typ = pdata->modem_net;
 	iod->use_handover = pdata->use_handover;
 	iod->ipc_version = pdata->ipc_version;
+	iod->rxq_max = io_t->rxq_max;
+	iod->attr = io_t->attr;
 	atomic_set(&iod->opened, 0);
 
 	/* link between io device and modem control */
 	iod->mc = modemctl;
-	if (iod->format == IPC_FMT)
+	if (iod->id == SIPC5_CH_ID_FMT_0)
 		modemctl->iod = iod;
 	if (iod->format == IPC_BOOT && iod->id == 0) {
 		modemctl->bootd = iod;
@@ -288,8 +290,7 @@ static int __devinit modem_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, modemctl);
 
-	mif_err("Complete!!!\n");
-
+	mif_info("Complete!!!\n");
 	return 0;
 
 err_free_modemctl:
@@ -316,54 +317,33 @@ static void modem_shutdown(struct platform_device *pdev)
 
 static int modem_suspend(struct device *pdev)
 {
-#ifndef CONFIG_LINK_DEVICE_HSIC
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
 
-	if (mc->gpio_pda_active)
+	mif_info("Enter modem_suspend\n");
+	if (mc->gpio_pda_active && !mc->pda_active_hwctl)
 		gpio_set_value(mc->gpio_pda_active, 0);
-#endif
 
 	return 0;
 }
 
 static int modem_resume(struct device *pdev)
 {
-#ifndef CONFIG_LINK_DEVICE_HSIC
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
 
-	if (mc->gpio_pda_active)
+	if (mc->gpio_pda_active && !mc->pda_active_hwctl)
 		gpio_set_value(mc->gpio_pda_active, 1);
-#endif
-	return 0;
-}
 
-static int modem_suspend_noirq(struct device *pdev)
-{
-#ifdef CONFIG_LINK_DEVICE_HSIC
-	struct modem_ctl *mc = dev_get_drvdata(pdev);
-
-	if (mc->gpio_pda_active)
-		gpio_set_value(mc->gpio_pda_active, 0);
-#endif
-	return 0;
-}
-
-static int modem_resume_noirq(struct device *pdev)
-{
-#ifdef CONFIG_LINK_DEVICE_HSIC
-	struct modem_ctl *mc = dev_get_drvdata(pdev);
-
-	if (mc->gpio_pda_active)
-		gpio_set_value(mc->gpio_pda_active, 1);
-#endif
 	return 0;
 }
 
 static const struct dev_pm_ops modem_pm_ops = {
+#ifdef CONFIG_LINK_DEVICE_HSIC
+	.suspend_noirq    = modem_suspend,
+	.resume_noirq     = modem_resume,
+#else
 	.suspend    = modem_suspend,
 	.resume     = modem_resume,
-	.suspend_noirq = modem_suspend_noirq,
-	.resume_noirq = modem_resume_noirq,
+#endif
 };
 
 static struct platform_driver modem_driver = {

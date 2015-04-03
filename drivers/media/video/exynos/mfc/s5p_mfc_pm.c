@@ -238,7 +238,9 @@ int s5p_mfc_clock_on(void)
 	unsigned long flags;
 
 #ifdef CONFIG_MFC_USE_BUS_DEVFREQ
+	mutex_lock(&dev->curr_rate_lock);
 	s5p_mfc_clock_set_rate(dev, dev->curr_rate);
+	mutex_unlock(&dev->curr_rate_lock);
 #endif
 	ret = clk_enable(pm->clock);
 	if (ret < 0)
@@ -281,7 +283,8 @@ void s5p_mfc_clock_off(void)
 		spin_lock_irqsave(&pm->clklock, flags);
 		if ((atomic_dec_return(&clk_ref) == 0) &&
 				(atomic_read(&dev->pm.power) == 1) &&
-				FW_HAS_BUS_RESET(dev)) {
+				FW_HAS_BUS_RESET(dev) &&
+				!dev->skip_bus_waiting) {
 			s5p_mfc_write_reg(0x1, S5P_FIMV_MFC_BUS_RESET_CTRL);
 
 			timeout = jiffies + msecs_to_jiffies(MFC_BW_TIMEOUT);

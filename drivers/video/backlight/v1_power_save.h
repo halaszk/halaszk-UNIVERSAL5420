@@ -216,9 +216,9 @@ struct tcon_reg_info *tcon_tune_value[TCON_AUTO_BR_MAX][TCON_LEVEL_MAX][TCON_MOD
 		/* Illumiatation Level 1 */
 		{
 			&TCON_UI,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
+			&TCON_UI,
+			&TCON_UI,
+			&TCON_UI,
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
@@ -233,9 +233,9 @@ struct tcon_reg_info *tcon_tune_value[TCON_AUTO_BR_MAX][TCON_LEVEL_MAX][TCON_MOD
 		/* Illumiatation Level 2 */
 		{
 			&TCON_UI,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
+			&TCON_UI,
+			&TCON_UI,
+			&TCON_UI,
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
@@ -250,9 +250,9 @@ struct tcon_reg_info *tcon_tune_value[TCON_AUTO_BR_MAX][TCON_LEVEL_MAX][TCON_MOD
 		/* Illumiatation Level 3 */
 		{
 			&TCON_UI,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
+			&TCON_UI,
+			&TCON_UI,
+			&TCON_UI,
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
@@ -270,9 +270,9 @@ struct tcon_reg_info *tcon_tune_value[TCON_AUTO_BR_MAX][TCON_LEVEL_MAX][TCON_MOD
 		/* Illumiatation Level 1 */
 		{
 			&TCON_UI,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
+			&TCON_UI,
+			&TCON_UI,
+			&TCON_UI,
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
 			&TCON_UI, /* default */
@@ -287,9 +287,9 @@ struct tcon_reg_info *tcon_tune_value[TCON_AUTO_BR_MAX][TCON_LEVEL_MAX][TCON_MOD
 		/* Illumiatation Level 2 */
 		{
 			&TCON_POWER_SAVE,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
-			&TCON_VIDEO,
+			&TCON_UI,
+			&TCON_UI,
+			&TCON_UI,
 			&TCON_POWER_SAVE, /* default */
 			&TCON_POWER_SAVE, /* default */
 			&TCON_POWER_SAVE, /* default */

@@ -140,7 +140,11 @@ fw-shipped-$(CONFIG_USB_SERIAL_XIRCOM) += keyspan_pda/xircom_pgs.fw
 fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
+ifeq ("$(CONFIG_KLIMT)", "y")
+fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_klimt.fw
+else
 fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH) += cypress/cypress_ha_m07.fw cypress/cypress_ha_m09.fw
+endif
 fw-shipped-$(CONFIG_EPEN_WACOM_G9PM) += epen/W9001_B887.bin epen/W9001_B911.bin
 ifeq ("$(CONFIG_EPEN_WACOM_G9PLL)", "y")
 fw-shipped-$(CONFIG_N1A) += epen/W9007A_LT03.bin
@@ -151,6 +155,7 @@ fw-shipped-$(CONFIG_EPEN_WACOM_G10PM) += epen/W9010_HA_B934.bin epen/W9010_HA_B9
 
 ifeq ("$(CONFIG_KEYBOARD_TC300K)", "y")
 fw-shipped-$(CONFIG_CHAGALL) += coreriver/tc300k_chagall.fw
+fw-shipped-$(CONFIG_CHAGALL) += coreriver/tc300k_chagall_r03.fw
 endif
 
 #for sensorhub
@@ -161,7 +166,15 @@ TSPFIRMWARE_DIRECTORY = firmware/tsp_atmel
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_MXT540E) += tsp_atmel/mXT540E.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT540S) += tsp_atmel/mXT540Sg.fw tsp_atmel/mXT540Si.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664S) += tsp_atmel/mXT1664S_v.fw tsp_atmel/mXT1664S_n.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664T) += tsp_atmel/mxtt_klimt.fw
+
+ifeq ("$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664S)", "y")
+fw-shipped-$(CONFIG_V1A) += tsp_atmel/mXT1664S_v.fw
+fw-shipped-$(CONFIG_V2A) += tsp_atmel/mXT1664S_v.fw
+fw-shipped-$(CONFIG_N1A) += tsp_atmel/mXT1664S_n.fw
+fw-shipped-$(CONFIG_N2A) += tsp_atmel/mXT1664S_n.fw
+endif
+
 else
 $(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
 endif
@@ -170,12 +183,13 @@ TSPFIRMWARE_DIRECTORY = firmware/tsp_synaptics
 ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_a0_h_no_tr.fw
-ifdef CONFIG_CHAGALL
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_chagall.fw
-else
+ifeq ("$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX)", "y")
+fw-shipped-$(CONFIG_CHAGALL) += tsp_synaptics/synaptics_chagall_5700.fw
+fw-shipped-$(CONFIG_CHAGALL) += tsp_synaptics/synaptics_chagall_5710.fw
+fw-shipped-$(CONFIG_KLIMT) += tsp_synaptics/synaptics_klimt_5707.fw
+endif
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2.fw
 fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C) += tsp_synaptics/synaptics_v2_g2.fw
-endif
 else
 $(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
 endif

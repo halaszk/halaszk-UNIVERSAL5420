@@ -9,7 +9,7 @@ menuconfig VIBETONZ
 config MOTOR_DRV_MAX77803
 	tristate "Maxim MAX77803 motor"
 	default n
-	depends on MFD_MAX77803
+	depends on MFD_MAX77803 || MFD_MAX77888
 	help
 	  If you say yes here you will get support for the
 	  motor of Maxim MAX77803 PMIC.

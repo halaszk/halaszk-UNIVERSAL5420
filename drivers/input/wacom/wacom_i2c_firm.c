@@ -26,18 +26,19 @@ extern unsigned int system_rev;
 #if defined(CONFIG_V1A) || defined(CONFIG_CHAGALL)
 const unsigned int fw_size = 0x0000;
 const unsigned char mpu_type = 0x00;
-unsigned int fw_ver_file = 0x020A;
+unsigned int fw_ver_file = 0x0330;
 unsigned char *fw_name = "epen/W9007A_V1.bin";
 
-char fw_chksum[] = { 0x1F, 0xEB, 0x40, 0x69, 0x2E, };
+char fw_chksum[] = { 0x1F, 0x76, 0x7A, 0x49, 0x25, };
 
 #elif defined(CONFIG_N1A)
 const unsigned int fw_size = 0x0000;
 const unsigned char mpu_type = 0x00;
-unsigned int fw_ver_file = 0x0260;
-unsigned char *fw_name = "epen/W9007A_LT03.bin";
+unsigned int fw_ver_file = 0x0267;
 
-char fw_chksum[] = { 0x1F, 0xDC, 0x8E, 0x08, 0x9C, };
+unsigned char *fw_name = "epen/W9007A_LT03.bin";
+/* LT03 (CHecksum : 49F7D40E)*/
+char fw_chksum[] = { 0x1F, 0x0E, 0xD4, 0xF7, 0x49, };  /* ver : 0X0267*/
 
 #elif defined(CONFIG_HA)
 const unsigned int fw_size = 0x0000;

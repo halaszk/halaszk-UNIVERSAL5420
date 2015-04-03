@@ -180,9 +180,13 @@ static irqreturn_t wacom_interrupt_pdct(int irq, void *dev_id)
 		return IRQ_HANDLED;
 
 	wac_i2c->pen_pdct = gpio_get_value(wac_i2c->wac_pdata->gpio_pendct);
-
+#if defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	printk(KERN_DEBUG "epen:pdct %d(%d)\n",
 		wac_i2c->pen_pdct, wac_i2c->pen_prox);
+#else
+	printk(KERN_DEBUG "epen:pdct %d(%d) %d\n",
+		wac_i2c->pen_pdct, wac_i2c->pen_prox, wac_i2c->wac_pdata->get_irq_state());
+#endif
 #if 0
 	if (wac_i2c->pen_pdct == PDCT_NOSIGNAL) {
 		/* If rdy is 1, pen is still working*/
@@ -372,14 +376,23 @@ static void wacom_i2c_late_resume(struct early_suspend *h)
 
 static void wacom_i2c_resume_work(struct work_struct *work)
 {
-struct wacom_i2c *wac_i2c =
-	    container_of(work, struct wacom_i2c, resume_work.work);
+	struct wacom_i2c *wac_i2c =
+			container_of(work, struct wacom_i2c, resume_work.work);
+	u8 irq_state = 0;
+	int ret = 0;
 
-#if defined(WACOM_PDCT_WORK_AROUND)
-	irq_set_irq_type(wac_i2c->irq_pdct, IRQ_TYPE_EDGE_BOTH);
-#endif
-
+	irq_state = wac_i2c->wac_pdata->get_irq_state();
 	wacom_enable_irq(wac_i2c, true);
+
+	if (unlikely(irq_state)) {
+		printk(KERN_DEBUG"epen:irq was enabled\n");
+		ret = wacom_i2c_recv(wac_i2c, wac_i2c->wac_feature->data, COM_COORD_NUM, false);
+		if (ret < 0) {
+			printk(KERN_ERR "epen:%s failed to read i2c.L%d\n", __func__,
+				__LINE__);
+		}
+	}
+
 	printk(KERN_DEBUG "epen:%s\n", __func__);
 }
 
@@ -916,6 +929,28 @@ static ssize_t epen_checksum_store(struct device *dev,
 	return count;
 }
 
+static ssize_t epen_checksum_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct wacom_i2c *wac_i2c = dev_get_drvdata(dev);
+
+	wacom_enable_irq(wac_i2c, false);
+	wacom_checksum(wac_i2c);
+	wacom_enable_irq(wac_i2c, true);
+
+	printk(KERN_DEBUG "epen:%s, result %d\n",
+		__func__, wac_i2c->checksum_result);
+
+	if (wac_i2c->checksum_result) {
+		printk(KERN_DEBUG "epen:checksum, PASS\n");
+		return sprintf(buf, "PASS\n");
+	} else {
+		printk(KERN_DEBUG "epen:checksum, FAIL\n");
+		return sprintf(buf, "FAIL\n");
+	}
+}
+
 static ssize_t epen_checksum_result_show(struct device *dev,
 					 struct device_attribute *attr,
 					 char *buf)
@@ -1094,9 +1129,10 @@ static DEVICE_ATTR(epen_reset_result,
 		   S_IRUSR | S_IRGRP, epen_reset_result_show, NULL);
 
 /* For SMD Test. Check checksum */
-static DEVICE_ATTR(epen_checksum, S_IWUSR | S_IWGRP, NULL, epen_checksum_store);
+static DEVICE_ATTR(epen_checksum, S_IRUSR | S_IRGRP | S_IWUSR | S_IWGRP,
+			epen_checksum_show, epen_checksum_store);
 static DEVICE_ATTR(epen_checksum_result, S_IRUSR | S_IRGRP,
-		   epen_checksum_result_show, NULL);
+			epen_checksum_result_show, NULL);
 #ifdef WACOM_BOOSTER
 static DEVICE_ATTR(boost_level, S_IWUSR | S_IWGRP, NULL, epen_boost_level);
 #endif
@@ -1292,9 +1328,6 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	wacom_init_fw_algo(wac_i2c);
 #endif
 
-	/*Change below if irq is needed */
-	wac_i2c->irq_flag = 1;
-
 	/*Register callbacks */
 	wac_i2c->callbacks.check_prox = wacom_check_emr_prox;
 	if (wac_i2c->wac_pdata->register_cb)
@@ -1313,9 +1346,6 @@ static int wacom_i2c_probe(struct i2c_client *client,
 
 	wacom_init_abs_params(wac_i2c);
 	input_set_drvdata(input, wac_i2c);
-
-	/*Change below if irq is needed */
-	wac_i2c->irq_flag = 1;
 
 	/*Set client data */
 	i2c_set_clientdata(client, wac_i2c);
@@ -1380,33 +1410,31 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	       wac_i2c->wac_feature->fw_version, fw_ver_file);
 
 	/*Request IRQ */
-	if (wac_i2c->irq_flag) {
-		ret =
-		    request_threaded_irq(wac_i2c->irq, NULL, wacom_interrupt,
-					 IRQF_DISABLED | EPEN_IRQF_TRIGGER_TYPE |
-					 IRQF_ONESHOT, "sec_epen_irq", wac_i2c);
-		if (ret < 0) {
-			printk(KERN_ERR
-			       "epen:failed to request irq(%d) - %d\n",
-			       wac_i2c->irq, ret);
-			goto err_request_irq;
-		}
+	ret =
+		request_threaded_irq(wac_i2c->irq, NULL, wacom_interrupt,
+					IRQF_DISABLED | EPEN_IRQF_TRIGGER_TYPE |
+					IRQF_ONESHOT, "sec_epen_irq", wac_i2c);
+	if (ret < 0) {
+		printk(KERN_ERR
+			    "epen:failed to request irq(%d) - %d\n",
+			    wac_i2c->irq, ret);
+		goto err_request_irq;
+	}
 
 #if defined(WACOM_PDCT_WORK_AROUND)
-		ret =
-			request_threaded_irq(wac_i2c->irq_pdct, NULL,
-					wacom_interrupt_pdct,
-					IRQF_DISABLED | IRQF_TRIGGER_RISING |
-					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-					"sec_epen_pdct", wac_i2c);
-		if (ret < 0) {
-			printk(KERN_ERR
-				"epen:failed to request irq(%d) - %d\n",
-				wac_i2c->irq_pdct, ret);
-			goto err_request_irq;
-		}
-#endif
+	ret =
+		request_threaded_irq(wac_i2c->irq_pdct, NULL,
+				wacom_interrupt_pdct,
+				IRQF_DISABLED | IRQF_TRIGGER_RISING |
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				"sec_epen_pdct", wac_i2c);
+	if (ret < 0) {
+		printk(KERN_ERR
+			"epen:failed to request irq(%d) - %d\n",
+			wac_i2c->irq_pdct, ret);
+		goto err_request_irq;
 	}
+#endif
 #ifdef WACOM_PEN_DETECT
 	init_pen_insert(wac_i2c);
 #endif

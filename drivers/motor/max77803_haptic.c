@@ -245,10 +245,12 @@ void vibtonz_pwm(int nForce)
 	pwm_period = g_hap_data->pdata->period;
 	pwm_duty = pwm_period / 2 + ((pwm_period / 2 - 2) * nForce) / 127;
 
+#if !defined(CONFIG_CHAGALL) && !defined(CONFIG_KLIMT)
 	if (pwm_duty > g_hap_data->pdata->duty)
 		pwm_duty = g_hap_data->pdata->duty;
 	else if (pwm_period - pwm_duty > g_hap_data->pdata->duty)
 		pwm_duty = pwm_period - g_hap_data->pdata->duty;
+#endif
 
 	/* add to avoid the glitch issue */
 	if (prev_duty != pwm_duty) {
@@ -287,6 +289,12 @@ static int max77803_haptic_probe(struct platform_device *pdev)
 	hap_data->pdata = pdata;
 
 	hap_data->workqueue = create_singlethread_workqueue("hap_work");
+	if (!(hap_data->workqueue)) {
+		pr_err("%s: fail to create single thread workqueue\n",
+								__func__);
+		error = -EFAULT;
+	}
+
 	INIT_WORK(&(hap_data->work), haptic_work);
 	spin_lock_init(&(hap_data->lock));
 

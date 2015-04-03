@@ -41,7 +41,7 @@
 #include "i2s-regs.h"
 #include "../codecs/wm5102.h"
 
-#undef USE_BIAS_LEVEL_POST
+#define USE_BIAS_LEVEL_POST
 
 #define ADONISUNIV_DEFAULT_MCLK1	24000000
 #define ADONISUNIV_DEFAULT_MCLK2	32768
@@ -51,6 +51,15 @@
 #define CLK_MODE_MEDIA 0
 #define CLK_MODE_TELEPHONY 1
 
+typedef enum {
+	MICBIAS1ON,
+	MICBIAS2ON,
+	MICBIAS3ON,
+	MICBIAS1OFF,
+	MICBIAS2OFF,
+	MICBIAS3OFF
+} micbias_type;
+
 struct wm5102_machine_priv {
 	int clock_mode;
 	struct snd_soc_jack jack;
@@ -59,7 +68,7 @@ struct wm5102_machine_priv {
 	struct delayed_work mic_work;
 	struct wake_lock jackdet_wake_lock;
 	int aif2mode;
-	int camcorder_eq;
+	int micbias_mode;
 
 	int aif1rate;
 	int aif2rate;
@@ -79,8 +88,8 @@ const char *aif2_mode_text[] = {
 	"Slave", "Master"
 };
 
-const char *camcorder_eq_text[] = {
-	"Off", "On"
+const char *micbias_mode_text[] = {
+	"BIAS1ON", "BIAS2ON", "BIAS3ON", "BIAS1OFF", "BIAS2OFF", "BIAS3OFF"
 };
 
 static const struct soc_enum lhpf_filter_mode_enum[] = {
@@ -91,8 +100,8 @@ static const struct soc_enum aif2_mode_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(aif2_mode_text), aif2_mode_text),
 };
 
-static const struct soc_enum camcorder_eq_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(camcorder_eq_text), camcorder_eq_text),
+static const struct soc_enum micbias_mode_enum[] = {
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(micbias_mode_text), micbias_mode_text),
 };
 
 static struct {
@@ -135,13 +144,17 @@ static int adonisuniv_start_sysclk(struct snd_soc_card *card)
 {
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
 	int ret;
+	int fs;
 
-	exynos5_audio_set_mclk(1, 0);
+	if (priv->aif1rate >= 192000)
+		fs = 256;
+	else
+		fs = 512;
 
 	ret = snd_soc_codec_set_pll(priv->codec, WM5102_FLL1,
 				     ARIZONA_CLK_SRC_MCLK1,
 				    ADONISUNIV_DEFAULT_MCLK1,
-				    priv->aif1rate * 512);
+				    priv->aif1rate * fs);
 	if (ret != 0) {
 		dev_err(priv->codec->dev, "Failed to start FLL1: %d\n", ret);
 		return ret;
@@ -155,9 +168,7 @@ static int adonisuniv_stop_sysclk(struct snd_soc_card *card)
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
 	int ret;
 
-	ret = snd_soc_codec_set_pll(priv->codec, WM5102_FLL1,
-				    ARIZONA_CLK_SRC_MCLK1,
-				    ADONISUNIV_DEFAULT_MCLK1, 0);
+	ret = snd_soc_codec_set_pll(priv->codec, WM5102_FLL1, 0, 0, 0);
 	if (ret != 0) {
 		dev_err(priv->codec->dev, "Failed to stop FLL1: %d\n", ret);
 		return ret;
@@ -170,8 +181,6 @@ static int adonisuniv_stop_sysclk(struct snd_soc_card *card)
 		return ret;
 	}
 
-	exynos5_audio_set_mclk(0, 0);
-
 	return ret;
 }
 
@@ -180,38 +189,49 @@ static int adonisuniv_set_bias_level(struct snd_soc_card *card,
 				     struct snd_soc_dapm_context *dapm,
 				     enum snd_soc_bias_level level)
 {
-	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
-	int ret = 0;
+	struct snd_soc_dai *codec_dai = card->rtd[0].codec_dai;
 
-	if (!priv->codec || dapm != &priv->codec->dapm)
+	if (dapm->dev != codec_dai->dev)
 		return 0;
 
-	dev_crit(priv->codec->dev, "SET BIAS %d\n", level);
+	dev_info(card->dev, "%s: %d\n", __func__, level);
 
 	switch (level) {
-	case SND_SOC_BIAS_STANDBY:
-		if (card->dapm.bias_level == SND_SOC_BIAS_OFF)
-			ret = adonisuniv_start_sysclk(card);
-		break;
-	case SND_SOC_BIAS_OFF:
-		ret = adonisuniv_stop_sysclk(card);
-
-		ret = snd_soc_codec_set_pll(priv->codec, WM5102_FLL2, 0, 0, 0);
-		if (ret != 0)
-			dev_err(priv->codec->dev,
-					"Failed to stop FLL2: %d\n", ret);
-		break;
 	case SND_SOC_BIAS_PREPARE:
-	case SND_SOC_BIAS_ON:
+		if (dapm->bias_level != SND_SOC_BIAS_STANDBY)
+		break;
+
+		adonisuniv_start_sysclk(card);
 		break;
 	default:
-		dev_err(priv->codec->dev, "UNKNOWN BIAS %d\n", level);
 		break;
 	}
 
-	card->dapm.bias_level = level;
+	return 0;
+}
 
-	return ret;
+static int adonisuniv_set_bias_level_post(struct snd_soc_card *card,
+				     struct snd_soc_dapm_context *dapm,
+				     enum snd_soc_bias_level level)
+{
+	struct snd_soc_dai *codec_dai = card->rtd[0].codec_dai;
+
+	if (dapm->dev != codec_dai->dev)
+		return 0;
+
+	dev_info(card->dev, "%s: %d\n", __func__, level);
+
+	switch (level) {
+	case SND_SOC_BIAS_STANDBY:
+		adonisuniv_stop_sysclk(card);
+		break;
+	default:
+		break;
+	}
+
+	dapm->bias_level = level;
+
+	return 0;
 }
 #endif
 
@@ -288,6 +308,18 @@ static void adonisuniv_gpio_init(void)
 	/*This is tempary code to enable for main mic.(force enable GPIO) */
 	gpio_set_value(GPIO_MICBIAS_EN, 0);
 #endif
+#ifdef GPIO_SUB_MICBIAS_EN
+	int ret;
+
+	/* Sub Microphone BIAS */
+	ret = gpio_request(GPIO_SUB_MICBIAS_EN, "SUBMIC_BIAS");
+	if (ret) {
+		pr_err(KERN_ERR "SUBMIC_BIAS_EN GPIO set error!\n");
+		return;
+	}
+	gpio_direction_output(GPIO_SUB_MICBIAS_EN, 1);
+	gpio_set_value(GPIO_SUB_MICBIAS_EN, 0);
+#endif
 }
 
 /*
@@ -312,10 +344,31 @@ static int adonisuniv_ext_mainmicbias(struct snd_soc_dapm_widget *w,
 	}
 
 	dev_dbg(codec->dev, "Main Mic BIAS: %d\n", event);
-#else
-	dev_err(codec->dev, "Noting to do for Main Mic BIAS\n");
 #endif
 
+	return 0;
+}
+
+static int adonisuniv_ext_submicbias(struct snd_soc_dapm_widget *w,
+			struct snd_kcontrol *kcontrol,  int event)
+{
+#ifdef GPIO_SUB_MICBIAS_EN
+	struct snd_soc_card *card = w->dapm->card;
+	struct snd_soc_codec *codec = card->rtd[0].codec;
+
+	switch (event) {
+
+	case SND_SOC_DAPM_PRE_PMU:
+		gpio_set_value(GPIO_SUB_MICBIAS_EN,  1);
+		break;
+
+	case SND_SOC_DAPM_POST_PMD:
+		gpio_set_value(GPIO_SUB_MICBIAS_EN,  0);
+		break;
+	}
+
+	dev_dbg(codec->dev, "Sub Mic BIAS: %d\n", event);
+#endif
 	return 0;
 }
 
@@ -399,67 +452,57 @@ static int set_aif2_mode(struct snd_kcontrol *kcontrol,
 	return  0;
 }
 
-static int get_camcorder_eq(struct snd_kcontrol *kcontrol,
+static int get_micbias_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct wm5102_machine_priv *priv
 		= snd_soc_card_get_drvdata(codec->card);
 
-	ucontrol->value.integer.value[0] = priv->camcorder_eq;
+	ucontrol->value.integer.value[0] = priv->micbias_mode;
 	return 0;
 }
 
-static int set_camcorder_eq(struct snd_kcontrol *kcontrol,
+static int set_micbias_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-	struct wm5102_machine_priv *priv
-		= snd_soc_card_get_drvdata(codec->card);
-	struct snd_soc_dai *codec_dai = codec->card->rtd[0].codec_dai;
-	int eq_switch = ucontrol->value.integer.value[0];
 	struct regmap *regmap = codec->control_data;
+	micbias_type micbias = ucontrol->value.integer.value[0];
 
-	if(eq_switch) {
-		regmap_update_bits(regmap, ARIZONA_EQ1_1,
-				0xFFFF, 0x614B);
-		regmap_update_bits(regmap, ARIZONA_EQ1_2,
-				0xFFFF, 0x3300);
+	switch (micbias) {
 
-		regmap_update_bits(regmap, ARIZONA_EQ1_6,
-				0xFFFF, 0x11F3);
-		regmap_update_bits(regmap, ARIZONA_EQ1_7,
-				0xFFFF, 0xF222);
-		regmap_update_bits(regmap, ARIZONA_EQ1_8,
-				0xFFFF, 0x040A);
-		regmap_update_bits(regmap, ARIZONA_EQ1_9,
-				0xFFFF, 0x0872);
-		regmap_update_bits(regmap, ARIZONA_EQ1_10,
-				0xFFFF, 0x0D79);
-		regmap_update_bits(regmap, ARIZONA_EQ1_11,
-				0xFFFF, 0xF404);
-		regmap_update_bits(regmap, ARIZONA_EQ1_12,
-				0xFFFF, 0x040A);
-		regmap_update_bits(regmap, ARIZONA_EQ1_13,
-				0xFFFF, 0x0FE7);
-		regmap_update_bits(regmap, ARIZONA_EQ1_14,
-				0xFFFF, 0x0A84);
-		regmap_update_bits(regmap, ARIZONA_EQ1_15,
-				0xFFFF, 0xF222);
-		regmap_update_bits(regmap, ARIZONA_EQ1_17,
-				0xFFFF, 0x0872);
-	} else {
-		regmap_update_bits(regmap, ARIZONA_EQ1_1,
-				ARIZONA_EQ1_ENA_MASK, 0x0);
+	case MICBIAS1ON:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_1, ARIZONA_MICB1_ENA_MASK,
+				ARIZONA_MICB1_ENA);
+		break;
+	case MICBIAS2ON:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_2, ARIZONA_MICB2_ENA_MASK,
+				ARIZONA_MICB2_ENA);
+		break;
+	case MICBIAS3ON:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_3, ARIZONA_MICB3_ENA_MASK,
+				ARIZONA_MICB3_ENA);
+		break;
+	case MICBIAS1OFF:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_1, ARIZONA_MICB1_ENA_MASK,
+				0);
+		break;
+	case MICBIAS2OFF:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_2, ARIZONA_MICB2_ENA_MASK,
+				0);
+		break;
+	case MICBIAS3OFF:
+		regmap_update_bits(regmap, ARIZONA_MIC_BIAS_CTRL_3, ARIZONA_MICB3_ENA_MASK,
+				0);
+		break;
+	default:
+		break;
 	}
-
-	priv->camcorder_eq = eq_switch;
-
-	dev_info(codec->dev, "%s : %s\n", __func__,
-					 camcorder_eq_text[priv->camcorder_eq]);
+	dev_info(codec->dev, "set micbias mode: %s\n",
+					 micbias_mode_text[micbias]);
 	return  0;
 }
-
 
 static const struct snd_kcontrol_new adonisuniv_codec_controls[] = {
 	SOC_ENUM_EXT("LHPF1 COEFF FILTER", lhpf_filter_mode_enum[0],
@@ -471,8 +514,9 @@ static const struct snd_kcontrol_new adonisuniv_codec_controls[] = {
 	SOC_ENUM_EXT("AIF2 Mode", aif2_mode_enum[0],
 		get_aif2_mode, set_aif2_mode),
 
-	SOC_ENUM_EXT("Camcorder EQ", camcorder_eq_enum[0],
-		get_camcorder_eq, set_camcorder_eq),
+	SOC_ENUM_EXT("MICBIAS Mode", micbias_mode_enum[0],
+		get_micbias_mode, set_micbias_mode),
+
 };
 
 static const struct snd_kcontrol_new adonisuniv_controls[] = {
@@ -498,7 +542,7 @@ const struct snd_soc_dapm_widget adonisuniv_dapm_widgets[] = {
 
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Main Mic", adonisuniv_ext_mainmicbias),
-	SND_SOC_DAPM_MIC("Sub Mic", NULL),
+	SND_SOC_DAPM_MIC("Sub Mic", adonisuniv_ext_submicbias),
 	SND_SOC_DAPM_MIC("3rd Mic", NULL),
 };
 
@@ -528,10 +572,10 @@ const struct snd_soc_dapm_route adonisuniv_dapm_routes[] = {
 	{ "Headset Mic", NULL, "MICBIAS1" },
 	{ "IN1R", NULL, "Headset Mic" },
 
-	{ "Sub Mic", NULL, "MICBIAS2" },
+	{ "Sub Mic", NULL, "MICBIAS3" },
 	{ "IN2L", NULL, "Sub Mic" },
 
-	{ "3rd Mic", NULL, "MICBIAS3" },
+	{ "3rd Mic", NULL, "MICBIAS2" },
 	{ "IN2R", NULL, "3rd Mic" },
 };
 
@@ -585,11 +629,22 @@ static int adonisuniv_wm5102_aif1_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+static int adonisuniv_wm5102_aif1_hw_free(struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	dev_info(card->dev, "%s\n", __func__);
+
+	return 0;
+}
+
 /*
  * AdnoisUniv wm5102 DAI operations.
  */
 static struct snd_soc_ops adonisuniv_wm5102_aif1_ops = {
 	.hw_params = adonisuniv_wm5102_aif1_hw_params,
+	.hw_free = adonisuniv_wm5102_aif1_hw_free,
 };
 
 static int adonisuniv_wm5102_aif2_hw_params(struct snd_pcm_substream *substream,
@@ -922,6 +977,7 @@ static struct snd_soc_card adonisuniv = {
 
 #ifdef USE_BIAS_LEVEL_POST
 	.set_bias_level = adonisuniv_set_bias_level,
+	.set_bias_level_post = adonisuniv_set_bias_level_post,
 #endif
 };
 
@@ -969,6 +1025,9 @@ static int __devexit snd_adonisuniv_remove(struct platform_device *pdev)
 
 #ifdef GPIO_MICBIAS_EN
 	gpio_free(GPIO_MICBIAS_EN);
+#endif
+#ifdef GPIO_SUB_MICBIAS_EN
+	gpio_free(GPIO_SUB_MICBIAS_EN);
 #endif
 
 	return 0;

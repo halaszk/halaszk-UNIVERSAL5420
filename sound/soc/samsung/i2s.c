@@ -637,15 +637,26 @@ static int i2s_hw_params(struct snd_pcm_substream *substream,
 	struct i2s_dai *i2s = to_info(dai);
 	u32 mod = readl(i2s->addr + I2SMOD);
 
-	if (!is_secondary(i2s))
+	if (!is_secondary(i2s) &&
+		(substream->stream == SNDRV_PCM_STREAM_PLAYBACK))
 		mod &= ~(MOD_DC2_EN | MOD_DC1_EN);
 
 	switch (params_channels(params)) {
 	case 6:
-		mod |= MOD_DC1_EN | MOD_DC2_EN;
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+			i2s->dma_playback.dma_size = 4;
+			mod |= MOD_DC2_EN | MOD_DC1_EN;
+		} else {
+			i2s->dma_capture.dma_size = 4;
+		}
 		break;
 	case 4:
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+			i2s->dma_playback.dma_size = 4;
 		mod |= MOD_DC1_EN;
+		} else {
+			i2s->dma_capture.dma_size = 4;
+		}
 		break;
 	case 2:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)

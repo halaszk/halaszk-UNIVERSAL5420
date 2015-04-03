@@ -184,7 +184,7 @@ config CHARGER_MAX77693
 
 config CHARGER_MAX77803
 	tristate "MAX77803 battery charger support"
-	depends on MFD_MAX77803 && I2C
+	depends on MFD_MAX77803 || MFD_MAX77888 && I2C
 	help
 	  Say Y here to enable support for the MAX77803 charger
 	  MAX77803 incluse muic, pmic, haptic, led,
@@ -200,3 +200,9 @@ config SAMSUNG_LPM_MODE
 	  Before enable this feature,
 	  implemet power off charging in the bootloader.
 
+config BATT_TEMP_TMO
+       bool "chagall lte tmo model"
+       default n
+       help
+        Say Y to include support for chagall lte tmo model
+	This value defined device

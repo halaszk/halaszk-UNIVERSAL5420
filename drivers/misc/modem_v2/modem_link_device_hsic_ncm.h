@@ -16,6 +16,8 @@
 #ifndef __MODEM_LINK_DEVICE_USB_H__
 #define __MODEM_LINK_DEVICE_USB_H__
 
+#include <linux/rtc.h>
+
 /* FOR XMM6360 */
 enum {
 	IF_USB_BOOT_EP = 0,
@@ -27,15 +29,8 @@ enum {
 };
 
 #define PS_DATA_CH_01	0xa
-#define RX_POOL_SIZE 5
-
-#define IOCTL_LINK_CONTROL_ENABLE	_IO('o', 0x30)
-#define IOCTL_LINK_CONTROL_ACTIVE	_IO('o', 0x31)
-#define IOCTL_LINK_GET_HOSTWAKE		_IO('o', 0x32)
-#define IOCTL_LINK_CONNECTED		_IO('o', 0x33)
-#define IOCTL_LINK_SET_BIAS_CLEAR	_IO('o', 0x34)
-#define IOCTL_LINK_GET_PHONEACTIVE	_IO('o', 0x35)
-#define IOCTL_LINK_DISABLE_RECOVERY	_IO('o', 0x36)
+#define RX_POOL_SIZE 2
+#define MULTI_URB 4
 
 enum {
 	BOOT_DOWN = 0,
@@ -47,8 +42,6 @@ enum ch_state {
 	STATE_RESUMED,
 };
 
-#define HOSTWAKE_TRIGLEVEL	0
-
 struct link_pm_info {
 	struct usb_link_device *usb_ld;
 };
@@ -56,7 +49,9 @@ struct link_pm_info {
 struct if_usb_devdata;
 struct usb_id_info {
 	int intf_id;
+	int urb_cnt;
 	struct usb_link_device *usb_ld;
+	unsigned max_ch;
 
 	char *description;
 	int (*bind)(struct if_usb_devdata *, struct usb_interface *,
@@ -68,53 +63,12 @@ struct usb_id_info {
 	void (*intr_complete)(struct urb *urb);
 };
 
-struct link_pm_data {
-	struct miscdevice miscdev;
-	struct usb_link_device *usb_ld;
-	unsigned irq_link_hostwake;
-	int (*link_ldo_enable)(bool);
-	unsigned gpio_link_enable;
-	unsigned gpio_link_active;
-	unsigned gpio_link_hostwake;
-	unsigned gpio_link_slavewake;
-	int (*link_reconnect)(void);
-	int link_reconnect_cnt;
-	void (*wait_cp_connect)(int);
-
-	struct workqueue_struct *wq;
-	struct delayed_work link_pm_work;
-	struct delayed_work link_pm_start;
-	struct delayed_work link_reconnect_work;
-	bool resume_requested;
-	bool link_pm_active;
-	int resume_retry_cnt;
-
-	struct wake_lock l2_wake;
-	struct wake_lock rpm_wake;
-	struct notifier_block usb_notifier;
-	struct notifier_block pm_notifier;
-	bool dpm_suspending;
-
-	/* for SE interface test */
-	bool disable_recovery;
-	bool roothub_resume_req;
-	bool apinit_l0_req;
-
-	struct list_head link;
-	spinlock_t lock;
-	struct usb_device *udev;
-	struct usb_device *hdev;
-
-	int rpm_suspending_cnt;
-};
-
-struct mif_skb_pool;
-
 #define MIF_NET_SUSPEND_RF_STOP         (0x1<<0)
 #define MIF_NET_SUSPEND_LINK_WAKE	(0x1<<1)
 #define MIF_NET_SUSPEND_GET_TX_BUF	(0x1<<2)
 #define MIF_NET_SUSPEND_TX_RETRY	(0x1<<3)
 
+struct mif_skb_pool;
 struct if_usb_devdata {
 	struct usb_interface *data_intf;
 	struct usb_link_device *usb_ld;
@@ -126,9 +80,14 @@ struct if_usb_devdata {
 
 	int format;
 	int idx;
-	struct urb *urb;
+
+	/* Multi-URB style*/
+	struct usb_anchor urbs;
+	struct usb_anchor reading;
+
 	struct urb *intr_urb;
 	unsigned int rx_buf_size;
+	unsigned int rx_buf_setup;
 	enum ch_state state;
 
 	struct usb_id_info *info;
@@ -147,10 +106,17 @@ struct if_usb_devdata {
 	int net_suspend;
 	bool net_connected;
 
-	bool defered_rx;
-	struct delayed_work rx_defered_work;
-
 	struct mif_skb_pool *ntb_pool;
+
+	int (*submit_urbs)(struct if_usb_devdata *);
+	struct delayed_work kill_urbs_work;
+	atomic_t kill_urb;
+};
+
+enum resume_by_status {
+	HSIC_RESUMEBY_UNKNOWN,
+	HSIC_RESUMEBY_AP,
+	HSIC_RESUMEBY_CP,
 };
 
 struct usb_link_device {
@@ -158,21 +124,22 @@ struct usb_link_device {
 	struct link_device ld;
 
 	/*USB SPECIFIC LINK DEVICE*/
-	struct usb_device	*usbdev;
+	struct usb_device *usbdev;
 	int max_link_ch;
 	int max_acm_ch;
 	int acm_cnt;
 	int ncm_cnt;
-	struct if_usb_devdata *devdata;
-	unsigned int		suspended;
+	struct if_usb_devdata *acm_data;
+	struct if_usb_devdata *ncm_data;
+	unsigned int suspended;
 	int if_usb_connected;
-
-	/* LINK PM DEVICE DATA */
-	struct link_pm_data *link_pm_data;
 
 	struct mif_skb_pool skb_pool;
 	struct delayed_work link_event;
 	unsigned long events;
+
+	struct notifier_block phy_nfb;
+	struct notifier_block pm_nfb;
 
 	/* for debug */
 	unsigned debug_pending;
@@ -180,6 +147,14 @@ struct usb_link_device {
 	unsigned rx_cnt;
 	unsigned tx_err;
 	unsigned rx_err;
+	unsigned resumeby;
+
+	/* to decide the suitable function regarding pipe_data */
+	struct if_usb_devdata *(*get_pipe)(struct usb_link_device *ld,
+			struct io_device *iod);
+	int (*link_reconnect)(void);
+	struct delayed_work link_reconnect_work;
+	int link_reconnect_cnt;
 };
 
 enum bit_link_events {
@@ -190,6 +165,11 @@ enum bit_link_events {
 #define to_usb_link_device(linkdev) \
 			container_of(linkdev, struct usb_link_device, ld)
 
+#define get_pipedata_with_idx(usb_ld, idx) \
+	((idx < usb_ld->max_acm_ch) ? \
+	 &usb_ld->acm_data[idx] : \
+	 &usb_ld->ncm_data[idx - usb_ld->max_acm_ch])
+
 #ifdef FOR_TEGRA
 extern void tegra_ehci_txfilltuning(void);
 #define ehci_vendor_txfilltuning tegra_ehci_txfilltuning
@@ -199,4 +179,7 @@ extern void tegra_ehci_txfilltuning(void);
 
 int usb_tx_skb(struct if_usb_devdata *pipe_data, struct sk_buff *skb);
 extern int usb_resume(struct device *dev, pm_message_t msg);
+#if defined(CONFIG_UMTS_MODEM_XMM6360)
+int usb_linkpm_request_resume(struct usb_device *udev);
+#endif
 #endif

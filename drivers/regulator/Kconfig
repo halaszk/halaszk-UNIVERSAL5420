@@ -221,7 +221,7 @@ config REGULATOR_MAX77802
 
 config REGULATOR_MAX77803
 	tristate "Maxim 777803 regulator"
-	depends on MFD_MAX77803
+	depends on MFD_MAX77803 || MFD_MAX77888
 	help
 	  This driver control a Maxsim 77803 regulator.
 
@@ -269,6 +269,13 @@ config REGULATOR_S2MPS11
 	 via I2C bus. S2MPS11 have 10 Bucks and 38 LDOs output.
 	 S2MPS11 provide stable power to the ARM core/cache, internal logic,
 	 memory, camera processor, and sub-regulators
+
+config REGULATOR_S2ABB01
+	bool "SAMSUNG Electronics S2ABB01 PMIC Support"
+	depends on I2C=y
+	select REGMAP_I2C
+	help
+	 This driver controls Samsung S2ABB01 regulator.
 
 config REGULATOR_AB3100
 	tristate "ST-Ericsson AB3100 Regulator functions"

@@ -251,7 +251,7 @@ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
 		return -ERANGE;
 	}
 
-	pwm_dbg(pwm, "duty_ns=%d, period_ns=%d (%lu)\n",
+	pr_info("duty_ns=%d, period_ns=%d (%lu)\n",
 		duty_ns, period_ns, period);
 
 	if (tcmp == 0)

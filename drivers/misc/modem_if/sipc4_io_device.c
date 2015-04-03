@@ -645,6 +645,7 @@ static int rx_multipdp(struct sk_buff *skb)
 }
 
 /* de-mux function draft */
+static int check_ipc_loopback(struct io_device *iod, struct sk_buff *skb);
 static int rx_iodev_skb(struct sk_buff *skb)
 {
 	struct io_device *iod = skbpriv(skb)->iod;
@@ -654,6 +655,10 @@ static int rx_iodev_skb(struct sk_buff *skb)
 		return rx_multipdp(skb);
 
 	case IPC_FMT:
+		if (check_ipc_loopback(iod, skb)) {
+			dev_kfree_skb_any(skb);
+			return 0;
+		}
 		if (iod->mc->mdm_data->ipc_version == SIPC_VER_42)
 			return rx_multi_fmt_frame_sipc42(skb);
 		else
@@ -935,7 +940,6 @@ static void io_dev_sim_state_changed(struct io_device *iod, bool sim_online)
 	}
 }
 
-
 static int misc_open(struct inode *inode, struct file *filp)
 {
 	struct io_device *iod = to_io_device(filp->private_data);
@@ -1160,24 +1164,24 @@ static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return 0;
 }
 
-static void check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
+static int check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
 {
 	struct sipc_fmt_hdr *ipc;
 	struct link_device *ld = skbpriv(skb)->ld;
 
 	if (!skb || !test_bit(IOD_DEBUG_IPC_LOOPBACK, &dbg_flags)
 						|| iod->format != IPC_FMT)
-		return;
+		return 0;
 
 	ipc = (struct sipc_fmt_hdr *)skb->data;
 	if (ipc->main_cmd == 0x90) { /* loop-back */
 		int ret, timeout;
 		struct sk_buff *skb_bk = skb_copy_expand(skb,
 			SIZE_OF_HDLC_START + get_header_size(iod),
-			SIZE_OF_HDLC_END, GFP_KERNEL);
+			SIZE_OF_HDLC_END, GFP_ATOMIC);
 		if (!skb_bk) {
 			mif_err("SKB clone fail\n");
-			return;
+			return 0;
 		}
 		memcpy(skb_push(skb_bk, get_header_size(iod)),
 			get_header(iod, skb->len, skb->data),
@@ -1191,13 +1195,15 @@ static void check_ipc_loopback(struct io_device *iod, struct sk_buff *skb)
 		if (ret < 0) {
 			mif_err("ld->send fail (%s, err %d)\n", iod->name, ret);
 		}
+
 		/* Because CP IPC loop period is 5 second, we can try variery
 		 * timmging with wakelock 2000 ~ 4555ms */
 		timeout = (jiffies & 0x1ff) + HZ * 2;
 		wake_lock_timeout(&iod->wakelock, timeout);
 		mif_debug("lb wakelock = %d\n", jiffies_to_msecs(timeout));
+		return 1;
 	}
-	return;
+	return 0;
 }
 
 static size_t _boot_write(struct io_device *iod, const char __user *buf,
@@ -1388,8 +1394,6 @@ static ssize_t misc_read(struct file *filp, char *buf, size_t count,
 			}
 		}
 	} else {
-		check_ipc_loopback(iod, skb);
-
 		if (skb->len > count) {
 			mif_err("<%s> skb->len %d > count %d\n", iod->name,
 				skb->len, count);

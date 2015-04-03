@@ -148,8 +148,6 @@ struct sec_battery_info {
 
 #ifdef CONFIG_FAST_BOOT
 	struct notifier_block fsd_notifier_block;
-	bool dup_power_off;
-	bool suspend_check;
 #endif
 
 	int siop_level;
@@ -240,9 +238,12 @@ enum {
 	BATT_EVENT_LCD,
 	BATT_EVENT_GPS,
 	BATT_EVENT,
+	BATT_TEMP_TABLE,
 #if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
 	BATT_TEST_CHARGE_CURRENT,
 #endif
+	BATT_INBAT_VOLTAGE,
+	BATT_HIGH_CURRENT_USB,
 };
 
 #endif /* __SEC_BATTERY_H */

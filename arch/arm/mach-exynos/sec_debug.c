@@ -28,6 +28,7 @@
 #include <asm/system_misc.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/pm_qos.h>
 
 #include <mach/sec_debug.h>
 #include <mach/regs-clock.h>
@@ -37,6 +38,14 @@
 #include <plat/regs-watchdog.h>
 #include <linux/seq_file.h>
 #include "common.h"
+
+#if (defined CONFIG_SEC_DEBUG && defined CONFIG_SEC_DEBUG_SUBSYS)
+struct sec_debug_subsys *subsys_info=0;
+static char *sec_subsys_log_buf;
+static unsigned sec_subsys_log_size;
+static unsigned int reserved_out_buf=0;
+static unsigned int reserved_out_size=0;
+#endif
 
 /* klaatu - schedule log */
 #ifdef CONFIG_SEC_DEBUG_SCHED_LOG
@@ -238,6 +247,9 @@ struct sec_debug_core_t {
  * The other cases are not considered
  */
 union sec_debug_level_t sec_debug_level = { .en.kernel_fault = 1, };
+
+static struct pm_qos_request panic_mif_qos;
+static struct pm_qos_request panic_int_qos;
 
 static unsigned reset_reason = RR_N;
 module_param_named(reset_reason, reset_reason, uint, 0644);
@@ -591,8 +603,8 @@ static void dump_cpu_stat(void);
 static int sec_debug_panic_handler(struct notifier_block *nb,
 				   unsigned long l, void *buf)
 {
-	if (!sec_debug_level.en.kernel_fault)
-		return -1;
+	pm_qos_add_request(&panic_mif_qos, PM_QOS_BUS_THROUGHPUT, 800000);
+	pm_qos_add_request(&panic_int_qos, PM_QOS_DEVICE_THROUGHPUT, 600000);
 
 	local_irq_disable();
 
@@ -623,16 +635,19 @@ static int sec_debug_panic_handler(struct notifier_block *nb,
 	sec_debug_disable_watchdog();
 #endif
 
+	if(sec_debug_level.en.kernel_fault) {
 #ifdef CONFIG_SEC_DEBUG_FUPLOAD_DUMP_MORE
-	dump_all_task_info();
-	dump_cpu_stat();
+		dump_all_task_info();
+		dump_cpu_stat();
 
-	show_state_filter(TASK_STATE_MAX);	/* no backtrace */
+		show_state_filter(TASK_STATE_MAX);	/* no backtrace */
 #else
-	show_state();
+		show_state();
 #endif
 
-	sec_debug_dump_stack();
+		sec_debug_dump_stack();
+	}
+
 	sec_debug_hw_reset();
 
 	return 0;
@@ -1578,6 +1593,110 @@ static void sec_input_debug_disconnect(struct input_handle *handle)
 	kfree(handle);
 }
 
+#if (defined CONFIG_SEC_DEBUG && defined CONFIG_SEC_DEBUG_SUBSYS)
+void sec_debug_subsys_info_set_log_buffer(char* buffer, unsigned size)
+{
+	sec_subsys_log_buf = buffer;
+	sec_subsys_log_size = size;
+}
+
+int sec_debug_subsys_init(void)
+{
+	int offset = 0;
+	if(!sec_subsys_log_buf) {
+		pr_info("no subsys buffer\n");
+		return 0;
+	}
+	subsys_info = (struct sec_debug_subsys *)sec_subsys_log_buf;
+	memset(subsys_info, 0, sizeof(subsys_info));
+	
+//	subsys_info->kernel.sched_log.task_idx_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, task_log_idx);
+	subsys_info->kernel.sched_log.task_buf_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, task);
+	subsys_info->kernel.sched_log.task_struct_sz = sizeof(struct task_log);
+	subsys_info->kernel.sched_log.task_array_cnt = SCHED_LOG_MAX;
+//	subsys_info->kernel.sched_log.irq_idx_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, irq_log_idx);
+	subsys_info->kernel.sched_log.irq_buf_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, irq);
+	subsys_info->kernel.sched_log.irq_struct_sz = sizeof(struct irq_log);
+	subsys_info->kernel.sched_log.irq_array_cnt = SCHED_LOG_MAX;
+//	subsys_info->kernel.sched_log.work_idx_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, work_log_idx);
+	subsys_info->kernel.sched_log.work_buf_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, work);
+	subsys_info->kernel.sched_log.work_struct_sz = sizeof(struct work_log);
+	subsys_info->kernel.sched_log.work_array_cnt = SCHED_LOG_MAX;
+#ifdef CONFIG_SEC_DEBUG_TIMER_LOG
+//	subsys_info->kernel.sched_log.timer_idx_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, timer_log_idx);
+	subsys_info->kernel.sched_log.timer_buf_paddr = virt_to_phys(&sec_debug_log) + offsetof(struct sched_log, timer);
+	subsys_info->kernel.sched_log.timer_struct_sz = sizeof(struct timer_log);
+	subsys_info->kernel.sched_log.timer_array_cnt = SCHED_LOG_MAX;
+#endif
+
+	sec_debug_subsys_set_logger_info(&subsys_info->kernel.logger_log);
+	offset += sizeof(struct sec_debug_subsys);
+
+	subsys_info->kernel.cpu_info.cpu_active_mask_paddr = virt_to_phys(cpu_active_mask);
+	subsys_info->kernel.cpu_info.cpu_online_mask_paddr = virt_to_phys(cpu_online_mask);
+
+	offset += sec_debug_set_cpu_info(subsys_info,sec_subsys_log_buf+offset);
+
+	subsys_info->kernel.cmdline_paddr = virt_to_phys(sec_subsys_log_buf)+offset;
+	subsys_info->kernel.cmdline_len = strlen(saved_command_line);
+	memcpy(sec_subsys_log_buf+offset,saved_command_line,subsys_info->kernel.cmdline_len);
+	offset += subsys_info->kernel.cmdline_len;
+
+	subsys_info->kernel.linuxbanner_paddr = virt_to_phys(sec_subsys_log_buf)+offset;
+	subsys_info->kernel.linuxbanner_len = strlen(linux_banner);
+	memcpy(sec_subsys_log_buf+offset,linux_banner,subsys_info->kernel.linuxbanner_len);
+	offset += subsys_info->kernel.linuxbanner_len;
+
+	subsys_info->kernel.nr_cpus = CONFIG_NR_CPUS;
+
+	subsys_info->reserved_out_buf = reserved_out_buf;
+	subsys_info->reserved_out_size = reserved_out_size;
+
+	subsys_info->magic[0] = SEC_DEBUG_SUBSYS_MAGIC0;
+	subsys_info->magic[1] = SEC_DEBUG_SUBSYS_MAGIC1;
+	subsys_info->magic[2] = SEC_DEBUG_SUBSYS_MAGIC2;
+	subsys_info->magic[3] = SEC_DEBUG_SUBSYS_MAGIC3;
+	
+	return 0;
+}
+late_initcall(sec_debug_subsys_init);
+
+void sec_debug_subsys_set_reserved_out_buf(unsigned int buf, unsigned int size)
+{
+	if(size <= SZ_16M && size > reserved_out_size) {
+		reserved_out_buf = buf;
+		reserved_out_size = size;
+	}
+}
+
+int sec_debug_save_die_info(const char *str, struct pt_regs *regs)
+{
+	if (!sec_subsys_log_buf || !subsys_info)
+		return -ENOMEM;
+	snprintf(subsys_info->kernel.excp.pc_sym, sizeof(subsys_info->kernel.excp.pc_sym),
+		"%-42pS", (void *)regs->ARM_pc);
+	snprintf(subsys_info->kernel.excp.lr_sym, sizeof(subsys_info->kernel.excp.lr_sym),
+		"%-42pS", (void *)regs->ARM_lr);
+
+	return 0;
+}
+
+int sec_debug_save_panic_info(const char *str, unsigned int caller)
+{
+	if(!sec_subsys_log_buf || !subsys_info)
+		return 0;
+	snprintf(subsys_info->kernel.excp.panic_caller,
+		sizeof(subsys_info->kernel.excp.panic_caller), "%pS", (void *)caller);
+	snprintf(subsys_info->kernel.excp.panic_msg,
+		sizeof(subsys_info->kernel.excp.panic_msg), "%s", str);
+	snprintf(subsys_info->kernel.excp.thread,
+		sizeof(subsys_info->kernel.excp.thread), "%s:%d", current->comm,
+		task_pid_nr(current));
+
+	return 0;
+}
+#endif
+
 static int __devinit sec_input_debug_probe(struct platform_device *pdev)
 {
 	struct input_debug_pdata *pdata = pdev->dev.platform_data;
@@ -1585,6 +1704,11 @@ static int __devinit sec_input_debug_probe(struct platform_device *pdev)
 	int i = 0;
 
 	ddata = kzalloc(sizeof(struct input_debug_drv_data), GFP_KERNEL);
+
+	if (!ddata) {
+		pr_err("no memory for ddata\n");
+		return -ENOMEM;
+	}
 
 	ddata->pdata = pdata;
 

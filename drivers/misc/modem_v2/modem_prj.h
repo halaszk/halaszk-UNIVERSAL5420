@@ -24,6 +24,7 @@
 #include <linux/rbtree.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/platform_data/sipc_def.h>
 
 #define MAX_CPINFO_SIZE		512
 
@@ -60,6 +61,9 @@
 #define IOCTL_DPRAM_SEND_BOOT		_IO('o', 0x40)
 #define IOCTL_DPRAM_INIT_STATUS		_IO('o', 0x43)
 
+#define IOCTL_MODEM_RAMDUMP_START	_IO('o', 0xCE)
+#define IOCTL_MODEM_RAMDUMP_STOP	_IO('o', 0xCF)
+
 /* ioctl command definitions. */
 #define IOCTL_DPRAM_PHONE_POWON		_IO('o', 0xd0)
 #define IOCTL_DPRAM_PHONEIMG_LOAD	_IO('o', 0xd1)
@@ -73,6 +77,9 @@
 #define IOCTL_MIF_LOG_DUMP		_IO('o', 0x51)
 #define IOCTL_MIF_DPRAM_DUMP		_IO('o', 0x52)
 
+/* ioctl boot link speed change */
+#define IOCTL_BOOT_LINK_SPEED_CHG	_IO('o', 0x60)
+
 /* modem status */
 #define MODEM_OFF		0
 #define MODEM_CRASHED		1
@@ -83,24 +90,10 @@
 #define MODEM_DUMPING		6
 #define MODEM_RUNNING		7
 
-#define HDLC_HEADER_MAX_SIZE	6 /* fmt 3, raw 6, rfs 6 */
-
-#define PSD_DATA_CHID_BEGIN	0x2A
-#define PSD_DATA_CHID_END	0x38
-
-#define PS_DATA_CH_0	10
-#define PS_DATA_CH_LAST	24
-
 #define IP6VERSION		6
+#define IP4VERSION		4
 
 #define SOURCE_MAC_ADDR		{0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC}
-
-/* loopback: CP -> AP -> CP */
-#define CP2AP_LOOPBACK_CHANNEL	30
-
-/* ip loopback */
-#define RMNET0_CH_ID		10
-#define DATA_LOOPBACK_CHANNEL	31
 
 /* Debugging features */
 #define MAX_MIF_LOG_PATH_LEN	128
@@ -181,12 +174,33 @@ enum modem_state {
 	STATE_SIM_DETACH,
 };
 
+static const char const *cp_state_str[] = {
+	[STATE_OFFLINE]		= "OFFLINE",
+	[STATE_CRASH_RESET]	= "CRASH_RESET",
+	[STATE_CRASH_EXIT]	= "CRASH_EXIT",
+	[STATE_BOOTING]		= "BOOTING",
+	[STATE_ONLINE]		= "ONLINE",
+	[STATE_NV_REBUILDING]	= "NV_REBUILDING",
+	[STATE_LOADER_DONE]	= "LOADER_DONE",
+	[STATE_SIM_ATTACH]	= "SIM_ATTACH",
+	[STATE_SIM_DETACH]	= "SIM_DETACH",
+#if defined(CONFIG_SEC_DUAL_MODEM_MODE)
+	[STATE_MODEM_SWITCH]	= "MODEM_SWITCH",
+#endif
+};
+
+static const inline char *get_cp_state_str(int state)
+{
+	return cp_state_str[state];
+}
+
 enum com_state {
 	COM_NONE,
 	COM_ONLINE,
 	COM_HANDSHAKE,
 	COM_BOOT,
 	COM_CRASH,
+	COM_BOOT_EBL,
 };
 
 enum link_mode {
@@ -202,144 +216,17 @@ struct sim_state {
 	bool changed;	/* online is changed? */
 };
 
-#define HDLC_START		0x7F
-#define HDLC_END		0x7E
-#define SIZE_OF_HDLC_START	1
-#define SIZE_OF_HDLC_END	1
-#define MAX_LINK_PADDING_SIZE	3
-
 struct header_data {
-	char hdr[HDLC_HEADER_MAX_SIZE];
+	char hdr[SIPC_HDR_LEN_MAX];
 	unsigned len;
 	unsigned frag_len;
 	char start; /*hdlc start header 0x7F*/
 };
 
-struct fmt_hdr {
-	u16 len;
-	u8 control;
-} __packed;
-
-struct raw_hdr {
-	u32 len;
-	u8 channel;
-	u8 control;
-} __packed;
-
-struct rfs_hdr {
-	u32 len;
-	u8 cmd;
-	u8 id;
-} __packed;
-
-struct sipc_fmt_hdr {
-	u16 len;
-	u8  msg_seq;
-	u8  ack_seq;
-	u8  main_cmd;
-	u8  sub_cmd;
-	u8  cmd_type;
-} __packed;
-
-#define SIPC5_START_MASK	(0b11111000)
-#define SIPC5_CONFIG_MASK	(0b00000111)
-#define SIPC5_EXT_FIELD_MASK	(0b00000011)
-
-#define SIPC5_PADDING_EXIST	(0b00000100)
-#define SIPC5_EXT_FIELD_EXIST	(0b00000010)
-#define SIPC5_CTL_FIELD_EXIST	(0b00000001)
-
-#define SIPC5_CFG_PADDING	(0b00000100)
-#define SIPC5_CFG_EXT_LEN	(0b00000010)
-#define SIPC5_CFG_CONTROL	(0b00000011)
-
-#define SIPC5_HDR_LEN		4
-#define SIPC5_HDR_CTRL_LEN	5
-#define SIPC5_HDR_EXT_LEN	6
-#define SIPC5_HDR_LEN_MIN	(SIPC5_HDR_LEN)
-#define SIPC5_HDR_LEN_MAX	(SIPC5_HDR_EXT_LEN)
-
-#define SIPC5_CONFIG_SIZE	1
-#define SIPC5_CH_ID_SIZE	1
-
-enum sipc5_ch_id {
-	SIPC5_CH_ID_RAW_0 = 0,	/*reserved*/
-	SIPC5_CH_ID_CS_VT_DATA,
-	SIPC5_CH_ID_CS_VT_CONTROL,
-	SIPC5_CH_ID_CS_VT_AUDIO,
-	SIPC5_CH_ID_CS_VT_VIDEO,
-	SIPC5_CH_ID_RAW_5,	/*reserved*/
-	SIPC5_CH_ID_RAW_6,	/*reserved*/
-	SIPC5_CH_ID_CDMA_DATA,
-	SIPC5_CH_ID_PCM_DATA,
-	SIPC5_CH_ID_TRANSFER_SCREEN,
-
-	SIPC5_CH_ID_PDP_0,	/*ID:10*/
-	SIPC5_CH_ID_PDP_1,
-	SIPC5_CH_ID_PDP_2,
-	SIPC5_CH_ID_PDP_3,
-	SIPC5_CH_ID_PDP_4,
-	SIPC5_CH_ID_PDP_5,
-	SIPC5_CH_ID_PDP_6,
-	SIPC5_CH_ID_PDP_7,
-	SIPC5_CH_ID_PDP_8,
-	SIPC5_CH_ID_PDP_9,
-	SIPC5_CH_ID_PDP_10,
-	SIPC5_CH_ID_PDP_11,
-	SIPC5_CH_ID_PDP_12,
-	SIPC5_CH_ID_PDP_13,
-	SIPC5_CH_ID_PDP_14,
-	SIPC5_CH_ID_BT_DUN,	/*ID:25*/
-	SIPC5_CH_ID_CIQ_DATA,
-	SIPC5_CH_ID_PDP_18,	/*reserved*/
-	SIPC5_CH_ID_CPLOG1,	/*ID:28*/
-	SIPC5_CH_ID_CPLOG2,	/*ID:29*/
-	SIPC5_cH_ID_LOOPBACK1,
-	SIPC5_CH_ID_LOOPBACK2,
-				/*32~234 was reserved*/
-	SIPC5_CH_ID_FMT_0 = 235,
-	SIPC5_CH_ID_FMT_1,
-	SIPC5_CH_ID_FMT_2,
-	SIPC5_CH_ID_FMT_3,
-	SIPC5_CH_ID_FMT_4,
-	SIPC5_CH_ID_FMT_5,
-	SIPC5_CH_ID_FMT_6,
-	SIPC5_CH_ID_FMT_7,
-	SIPC5_CH_ID_FMT_8,
-	SIPC5_CH_ID_FMT_9,
-
-	SIPC5_CH_ID_RFS_0,
-	SIPC5_CH_ID_RFS_1,
-	SIPC5_CH_ID_RFS_2,
-	SIPC5_CH_ID_RFS_3,
-	SIPC5_CH_ID_RFS_4,
-	SIPC5_CH_ID_RFS_5,
-	SIPC5_CH_ID_RFS_6,
-	SIPC5_CH_ID_RFS_7,
-	SIPC5_CH_ID_RFS_8,
-	SIPC5_CH_ID_RFS_9,
-	SIPC5_CH_ID_MAX	= SIPC5_CH_ID_RFS_9,
+struct sipc_hdr {
+	u8 multifmt;
+	u32 hdr_size;
 };
-
-/* If iod->id is 0, do not need to store to `iodevs_tree_fmt' in SIPC4 */
-#define sipc4_is_not_reserved_channel(ch) ((ch) != 0)
-
-/* Channel 0, 5, 6, 27, 255 are reserved in SIPC5.
- * see SIPC5 spec: 2.2.2 Channel Identification (Ch ID) Field.
- * They do not need to store in `iodevs_tree_fmt'
- */
-#define sipc5_is_not_reserved_channel(ch) \
-	((ch) != 0 && (ch) != 5 && (ch) != 6 && (ch) != 27 && (ch) != 255)
-
-struct sipc5_link_hdr {
-	u8 cfg;
-	u8 ch;
-	u16 len;
-	union {
-		u8 ctl;
-		u16 ext_len;
-	} ext;
-} __packed;
 
 struct vnet {
 	struct io_device *iod;
@@ -362,8 +249,8 @@ struct skbuff_private {
 	struct io_device *iod;
 	struct link_device *ld;
 	struct io_device *real_iod; /* for rx multipdp */
-	u8 ch_id;
-	u8 control;
+	void *sipch;
+
 	void *context;
 	struct urb *urb; /* TX urb*/
 	bool nzlp; /* Non-Zero Length packet*/
@@ -374,6 +261,22 @@ static inline struct skbuff_private *skbpriv(struct sk_buff *skb)
 	BUILD_BUG_ON(sizeof(struct skbuff_private) > sizeof(skb->cb));
 	return (struct skbuff_private *)&skb->cb;
 }
+
+struct sipc_ops {
+	struct sk_buff * (*header_create)
+		(struct io_device *, struct sipc_hdr *, struct sk_buff *);
+	int (*header_parse) (struct io_device *, struct sk_buff *);
+	int (*header_parse_continue)
+		(struct io_device *, struct sk_buff *, size_t);
+	u32 (*multifmt_length)
+		(struct io_device *, struct sipc_hdr *, size_t);
+	int (*recv_demux)
+		(struct io_device *, struct link_device *, struct sk_buff *);
+	int (*recv_skb_packet)
+		(struct io_device *, struct link_device *, struct sk_buff *);
+	int (*recv_skb_fragment)
+		(struct io_device *, struct link_device *, struct sk_buff *);
+};
 
 struct io_device {
 	/* rb_tree node for an io device */
@@ -425,6 +328,9 @@ struct io_device {
 	int (*recv_skb)(struct io_device *iod, struct link_device *ld,
 					struct sk_buff *skb);
 
+	struct sipc_ops ops;
+	u32 headroom;
+
 	/* inform the IO device that the modem is now online or offline or
 	 * crashing or whatever...
 	 */
@@ -443,6 +349,8 @@ struct io_device {
 	 * you MUST use skbpriv(skb)->ld in mc, link, etc..
 	 */
 	struct link_device *__current_link;
+	unsigned rxq_max;
+	unsigned attr;
 };
 #define to_io_device(misc) container_of(misc, struct io_device, miscdev)
 
@@ -527,13 +435,21 @@ struct link_device {
 	int (*modem_update)(struct link_device *ld, struct io_device *iod,
 			unsigned long arg);
 
+	/* methods for CP firmware upgrade */
+	int (*dload_start)(struct link_device *ld, struct io_device *iod);
+	int (*firm_update)(struct link_device *ld, struct io_device *iod,
+			unsigned long arg);
+
 	int (*dump_update)(struct link_device *ld, struct io_device *iod,
+			unsigned long arg);
+	int (*dump_finish)(struct link_device *ld, struct io_device *iod,
 			unsigned long arg);
 
 	int (*ioctl)(struct link_device *ld, struct io_device *iod,
 			unsigned cmd, unsigned long _arg);
 	void (*enable_dm)(struct link_device *, bool);
 	bool dm_log_enable;
+	int (*suspend_check_cpwake)(struct link_device *ld);
 };
 
 /** rx_alloc_skb - allocate an skbuff and set skb's iod, ld
@@ -601,6 +517,9 @@ struct modem_shared {
 	/* If we send the 's' or 'x' to XMM6360 modem, CP start the IPC loop
 	 * back aging test.*/
 	void (*loopback_start) (struct io_device *, struct modem_shared *);
+
+	/* ipc loopback state */
+	bool ipcloopback_enable;
 };
 
 struct modem_ctl {
@@ -672,6 +591,13 @@ struct modem_ctl {
 
 	bool need_switch_to_usb;
 	bool sim_polarity;
+	bool pda_active_hwctl;
+
+	void (*modem_complete)(struct modem_ctl *mc);
+	bool sim_shutdown_req;
+
+	/* For IMC modem, to use slient logging */
+	unsigned fixed_log_ch;
 };
 
 int sipc4_init_io_device(struct io_device *iod);
@@ -687,7 +613,7 @@ int sipc5_init_io_device(struct io_device *iod);
  */
 static inline int sipc5_start_valid(struct sipc5_link_hdr *hdr)
 {
-	return (hdr->cfg & SIPC5_START_MASK) == SIPC5_START_MASK;
+	return (hdr->cfg & SIPC5_HDR_CFG_START) == SIPC5_HDR_CFG_START;
 }
 
 /**
@@ -699,21 +625,11 @@ static inline int sipc5_start_valid(struct sipc5_link_hdr *hdr)
  */
 static inline unsigned sipc5_get_hdr_len(struct sipc5_link_hdr *hdr)
 {
-/*
-	if (cfg & SIPC5_EXT_FIELD_EXIST) {
-		if (cfg & SIPC5_CTL_FIELD_EXIST)
-			return SIPC5_HEADER_SIZE_WITH_CTL_FLD;
-		else
-			return SIPC5_HEADER_SIZE_WITH_EXT_LEN;
-	} else {
-		return SIPC5_MIN_HEADER_SIZE;
-	}
-
-	(*cfg & 0x11) : 0b00 -> 4, 0b10 -> 6, 0b11 -> 5
+/*	(*cfg & 0x11) : 0b00 -> 4, 0b10 -> 6, 0b11 -> 5
 		~(0bxx00-1) = ~0bxx11 = 0b00 = 0,
 		~(0bxx10-1) = ~0bxx01 = 0b10 = 2
 		~(0bxx11-1) = ~0bxx10 = 0b01 = 1 */
-	return (~(hdr->cfg - 1) & SIPC5_EXT_FIELD_MASK) | 0x4;
+	return (~(hdr->cfg - 1) & SIPC5_HDR_EXT_MASK) | 0x4;
 }
 
 /**
@@ -725,10 +641,7 @@ static inline unsigned sipc5_get_hdr_len(struct sipc5_link_hdr *hdr)
  */
 static inline unsigned sipc5_calc_padding_size(unsigned len)
 {
-/*	unsigned residue = len & 0x3;
-	return residue ? (4 - residue) : 0;
-
-	len & 0b11 : 00 -> 00, 01 -> 11, 10 -> 10, 11 -> 01
+/*	len & 0b11 : 00 -> 00, 01 -> 11, 10 -> 10, 11 -> 01
 		~(0bxx00-1) = ~(0bxx11) = 0b00
 		~(0bxx01-1) = ~(0bxx00) = 0b11
 		~(0bxx10-1) = ~(0bxx01) = 0b10

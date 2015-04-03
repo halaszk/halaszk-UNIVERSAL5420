@@ -310,16 +310,12 @@ struct mipi_dsim_device {
  * @dsim_lcd_info: pointer to structure for configuring
  *	mipi-dsi based lcd panel.
  * @mipi_power: callback pointer for enabling or disabling mipi power.
- * @part_reset: callback pointer for reseting mipi phy.
  * @init_d_phy: callback pointer for enabing d_phy of dsi master.
  * @get_fb_frame_done: callback pointer for getting frame done status of
 the
  *	display controller(FIMD).
  * @trigger: callback pointer for triggering display controller(FIMD)
  *	in case of CPU mode.
- * @delay_for_stabilization: specifies stable time.
- *	this delay needs when writing data on SFR
- *	after mipi mode became LP mode.
  */
 struct s5p_platform_mipi_dsim {
 	const char	clk_name[16];
@@ -327,11 +323,8 @@ struct s5p_platform_mipi_dsim {
 	struct mipi_dsim_config *dsim_config;
 	struct mipi_dsim_lcd_config *dsim_lcd_config;
 
-	unsigned int delay_for_stabilization;
-
 	int (*mipi_power) (struct mipi_dsim_device *dsim, unsigned int
 		enable);
-	int (*part_reset) (struct mipi_dsim_device *dsim);
 	int (*init_d_phy) (struct mipi_dsim_device *dsim, unsigned int enable);
 	int (*get_fb_frame_done) (struct fb_info *info);
 	void (*trigger) (struct fb_info *info);
@@ -358,7 +351,6 @@ struct mipi_dsim_lcd_driver {
  * register mipi_dsim_lcd_driver object defined by lcd panel driver
  * to mipi-dsi driver.
  */
-extern int s5p_dsim_part_reset(struct mipi_dsim_device *dsim);
 extern int s5p_dsim_init_d_phy(struct mipi_dsim_device *dsim,
 	unsigned int enable);
 extern void s5p_dsim0_set_platdata(struct s5p_platform_mipi_dsim *pd);
@@ -370,5 +362,11 @@ extern int s5p_mipi_dsi_clk_disable_by_fimd(struct device *dsim);
 #ifdef CONFIG_FB_I80IF
 extern int s5p_mipi_dsi_get_mipi_state(struct device *dsim_device);
 extern int s3c_fb_enable_trigger_by_dsim(struct device *fimd, unsigned int enable);
+#endif
+#ifdef CONFIG_FB_HW_TRIGGER
+extern int lcd_get_mipi_state(struct device *dsim_device);
+extern int s3c_fb_enable_trigger_forcing(struct device *fimd, unsigned int enable);
+extern void s5p_dsim_frame_done_interrupt_enable(struct device *dsim);
+
 #endif
 #endif /* _DSIM_H */

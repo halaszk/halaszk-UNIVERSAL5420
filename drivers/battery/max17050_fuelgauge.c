@@ -730,6 +730,7 @@ static int fg_read_vcell(struct i2c_client *client)
 	u16 w_data;
 	u32 temp;
 	u32 temp2;
+	static int count = 0;
 
 	if (fg_i2c_read(client, VCELL_REG, data, 2) < 0) {
 		dev_err(&client->dev, "%s: Failed to read VCELL\n", __func__);
@@ -745,9 +746,11 @@ static int fg_read_vcell(struct i2c_client *client)
 	temp2 = temp / 1000000;
 	vcell += (temp2 << 4);
 
-	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
-		dev_info(&client->dev, "%s: VCELL(%d), data(0x%04x)\n",
+	if (!(count++ % PRINT_COUNT)) {
+		dev_dbg(&client->dev, "%s: VCELL(%d), data(0x%04x)\n",
 			__func__, vcell, (data[1]<<8) | data[0]);
+		count = 1;
+	}
 
 	return vcell;
 }
@@ -840,14 +843,90 @@ static int fg_write_temp(struct i2c_client *client, int temperature)
 	return temperature;
 }
 
+static int fg_adjust_temp (struct i2c_client *client, enum power_supply_property psp, int value)
+{
+	int temp = 0;
+	int temp_adc;
+	int low = 0;
+	int high = 0;
+	int mid = 0;
+	static int count = 0;
+	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
+	const sec_bat_adc_table_data_t *temp_adc_table;
+	unsigned int temp_adc_table_size;
+
+	temp_adc = value;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_TEMP:
+		if (fuelgauge->pdata->temp_adc_table) {
+			temp_adc_table = fuelgauge->pdata->temp_adc_table;
+			temp_adc_table_size = fuelgauge->pdata->temp_adc_table_size;
+		} else {
+			return temp_adc;
+		}
+		break;
+	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
+		if (fuelgauge->pdata->temp_amb_adc_table) {
+			temp_adc_table = fuelgauge->pdata->temp_amb_adc_table;
+			temp_adc_table_size =
+				fuelgauge->pdata->temp_amb_adc_table_size;
+		} else {
+			return temp_adc;
+		}
+		break;
+	default:
+		return temp_adc;
+	}
+
+	if (temp_adc_table[0].adc <= temp_adc) {
+		temp = temp_adc_table[0].temperature;
+		goto finish;
+	} else if (temp_adc_table[temp_adc_table_size-1].adc >= temp_adc) {
+		temp = temp_adc_table[temp_adc_table_size-1].temperature;
+		goto finish;
+	}
+
+	high = temp_adc_table_size - 1;
+
+	while (low <= high) {
+		mid = (low + high) / 2;
+		if (temp_adc_table[mid].adc > temp_adc)
+			low = mid + 1;
+		else if (temp_adc_table[mid].adc < temp_adc)
+			high = mid - 1;
+		else {
+			temp = temp_adc_table[mid].temperature;
+			goto finish;
+		}
+	}
+
+	temp = temp_adc_table[high].temperature;
+	temp +=
+		((temp_adc_table[low].temperature -
+		temp_adc_table[high].temperature) *
+		(temp_adc - temp_adc_table[high].adc)) /
+		(temp_adc_table[low].adc - temp_adc_table[high].adc);
+
+finish:
+	if (!(count++ % PRINT_COUNT)) {
+		dev_dbg(&client->dev,
+			"%s: Temp_org(%d) -> Temp_adj(%d)\n",
+			__func__, temp_adc, temp);
+		count = 1;
+	}
+	return temp;
+}
+
 static int fg_read_temp(struct i2c_client *client)
 {
-	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
-	u8 data[2] = {0, 0};
-	int temper = 0;
 #if 0
+	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	int i;
 #endif
+	u8 data[2] = {0, 0};
+	int temper = 0;
+	static int count = 0;
 
 	if (fg_check_battery_present(client)) {
 		if (fg_i2c_read(client, TEMPERATURE_REG, data, 2) < 0) {
@@ -890,20 +969,11 @@ static int fg_read_temp(struct i2c_client *client)
 	} else
 		temper = 20000;
 
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
-	/* temperature compensation: HW tunning value*/
-	if (temper >= 52100 && temper <= 53500)
-		temper += 2000;
-	else if (temper >= 53600 && temper <= 56000)
-		temper += 3000;
-	else if (temper >= 56100)
-		temper += 4000;
-#endif
-
-	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
-		dev_info(&client->dev, "%s: TEMPERATURE(%d), data(0x%04x)\n",
+	if (!(count++ % PRINT_COUNT)) {
+		dev_dbg(&client->dev, "%s: TEMPERATURE(%d), data(0x%04x)\n",
 			__func__, temper, (data[1]<<8) | data[0]);
-
+		count = 1;
+	}
 	return temper/100;
 }
 
@@ -942,11 +1012,11 @@ static int fg_read_avsoc(struct i2c_client *client)
 /* soc should be 0.1% unit */
 static int fg_read_soc(struct i2c_client *client)
 {
-	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	u8 data[2];
 	int soc;
 	int rep_soc;
 	int vf_soc;
+	static int count = 0;
 
 	if (fg_i2c_read(client, SOCREP_REG, data, 2) < 0) {
 		dev_err(&client->dev, "%s: Failed to read SOCREP\n", __func__);
@@ -957,13 +1027,12 @@ static int fg_read_soc(struct i2c_client *client)
 	rep_soc = min(soc, 1000);
 	vf_soc = fg_read_vfsoc(client);
 
-	dev_dbg(&client->dev, "%s: raw capacity (0.1%%) (%d)\n", __func__, soc);
-
-	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT)) {
+	if (!(count++ % PRINT_COUNT)) {
 		dev_dbg(&client->dev, "%s: raw capacity (%d), data(0x%04x)\n",
 			__func__, soc, (data[1]<<8) | data[0]);
 		dev_dbg(&client->dev, "%s: RepSOC (%d), VFSOC (%d)\n",
 			__func__, rep_soc/10, vf_soc/10);
+		count = 1;
 	}
 
 	return rep_soc;
@@ -972,9 +1041,9 @@ static int fg_read_soc(struct i2c_client *client)
 /* soc should be 0.01% unit */
 static int fg_read_rawsoc(struct i2c_client *client)
 {
-	struct sec_fuelgauge_info *fuelgauge = i2c_get_clientdata(client);
 	u8 data[2];
 	int soc;
+	static int count = 0;
 
 	if (fg_i2c_read(client, SOCREP_REG, data, 2) < 0) {
 		dev_err(&client->dev, "%s: Failed to read SOCREP\n", __func__);
@@ -983,12 +1052,11 @@ static int fg_read_rawsoc(struct i2c_client *client)
 
 	soc = (data[1] * 100) + (data[0] * 100 / 256);
 
-	dev_dbg(&client->dev, "%s: raw capacity (0.01%%) (%d)\n",
-		__func__, soc);
-
-	if (!(fuelgauge->info.pr_cnt % PRINT_COUNT))
-		dev_dbg(&client->dev, "%s: raw capacity (%d), data(0x%04x)\n",
+	if (!(count++ % PRINT_COUNT)) {
+		dev_dbg(&client->dev, "%s: raw capacity (0x01%%) (%d), data(0x%04x)\n",
 			__func__, soc, (data[1]<<8) | data[0]);
+		count = 1;
+	}
 
 	return min(soc, 10000);
 }
@@ -2370,6 +2438,7 @@ bool sec_hal_fg_get_property(struct i2c_client *client,
 		/* Target Temperature */
 	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
 		val->intval = get_fuelgauge_value(client, FG_TEMPERATURE);
+		val->intval = fg_adjust_temp(client, psp, val->intval);
 		break;
 	default:
 		return false;

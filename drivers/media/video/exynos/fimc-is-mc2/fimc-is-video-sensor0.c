@@ -476,29 +476,24 @@ static int fimc_is_ss0_video_g_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	struct fimc_is_video_ctx *vctx = file->private_data;
-	struct fimc_is_device_sensor *sensor;
+	struct fimc_is_device_sensor *device;
 
 	BUG_ON(!vctx);
 	BUG_ON(!ctrl);
 
-	sensor = vctx->device;
-	if (!sensor) {
-		err("sensor is NULL");
+	device = vctx->device;
+	if (!device) {
+		err("device is NULL");
 		ret = -EINVAL;
 		goto p_err;
 	}
 
 	switch (ctrl->id) {
-	case V4L2_CID_IS_G_STREAM:
-		if (sensor->instant_ret)
-			ctrl->value = sensor->instant_ret;
+	case V4L2_CID_IS_G_DTPSTATUS:
+		if (test_bit(FIMC_IS_SENSOR_FRONT_DTP_STOP, &device->state))
+			ctrl->value = 1;
 		else
-			ctrl->value = (test_bit(FIMC_IS_SENSOR_FRONT_START, &sensor->state) ?
-				IS_ENABLE_STREAM : IS_DISABLE_STREAM);
-		break;
-	default:
-		err("unsupported ioctl(%d)\n", ctrl->id);
-		ret = -EINVAL;
+			ctrl->value = 0;
 		break;
 	}
 

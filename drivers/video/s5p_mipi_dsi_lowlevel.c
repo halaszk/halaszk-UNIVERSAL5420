@@ -62,6 +62,27 @@ void s5p_mipi_dsi_set_interrupt_mask(struct mipi_dsim_device *dsim,
 
 	writel(reg, dsim->reg_base + S5P_DSIM_INTMSK);
 }
+void s5p_dsim_toggle_hs_clock(struct mipi_dsim_device *dsim)
+{
+	unsigned int reg;
+	dev_info(dsim->dev, "%s\n", __func__);
+
+	reg = readl(dsim->reg_base + S5P_DSIM_INTSRC);
+
+	writel(reg | INTSRC_FRAME_DONE, dsim->reg_base +
+			S5P_DSIM_INTSRC);
+
+
+	reg = readl(dsim->reg_base + S5P_DSIM_CLKCTRL);
+	reg	&= ~(1 << DSIM_TX_REQUEST_HSCLK_SHIFT);
+
+	writel(reg, dsim->reg_base + S5P_DSIM_CLKCTRL);
+
+	reg |= 1 << DSIM_TX_REQUEST_HSCLK_SHIFT;
+
+	writel(reg, dsim->reg_base + S5P_DSIM_CLKCTRL);
+}
+
 
 void s5p_mipi_dsi_init_fifo_pointer(struct mipi_dsim_device *dsim,
 		unsigned int cfg)

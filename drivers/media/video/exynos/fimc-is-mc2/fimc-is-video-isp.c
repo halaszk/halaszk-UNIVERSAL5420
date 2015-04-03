@@ -375,6 +375,11 @@ static int fimc_is_isp_video_qbuf(struct file *file, void *priv,
 		goto p_err;
 	}
 
+	if (atomic_read(&queue->vbq->queued_count) >= 5) {
+                merr("queued count is over %d", vctx, atomic_read(&queue->vbq->queued_count));
+                return -EINVAL;
+        }
+
 	ret = fimc_is_video_qbuf(file, vctx, buf);
 	if (ret)
 		merr("fimc_is_video_qbuf is fail(%d)", vctx, ret);
@@ -681,18 +686,10 @@ static int fimc_is_isp_video_g_ctrl(struct file *file, void *priv,
 	struct v4l2_control *ctrl)
 {
 	int ret = 0;
-	struct fimc_is_video_ctx *vctx = file->private_data;
-	struct fimc_is_device_ischain *ischain = vctx->device;
 
 	dbg_isp("%s\n", __func__);
 
 	switch (ctrl->id) {
-	case V4L2_CID_IS_BDS_WIDTH:
-		ctrl->value = ischain->chain0_width;
-		break;
-	case V4L2_CID_IS_BDS_HEIGHT:
-		ctrl->value = ischain->chain0_height;
-		break;
 	default:
 		err("unsupported ioctl(%d)\n", ctrl->id);
 		ret = -EINVAL;

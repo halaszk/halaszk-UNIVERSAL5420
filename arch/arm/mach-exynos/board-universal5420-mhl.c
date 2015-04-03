@@ -11,7 +11,7 @@
 #include <mach/hs-iic.h>
 #include <mach/regs-gpio.h>
 #include <mach/gpio.h>
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 #include <linux/mfd/max77803.h>
 #include <linux/mfd/max77803-private.h>
 #endif
@@ -43,7 +43,9 @@ static bool mhl_power_on;
 #if defined(CONFIG_HA)
 #define MHL_DEFAULT_SWING 0x27 /*default value is 0x2D*/
 #elif defined(CONFIG_N2A_WIFI)
-#define MHL_DEFAULT_SWING 0x2D
+#define MHL_DEFAULT_SWING 0x2E
+#elif defined(CONFIG_MHL_SWING_LEVEL_VALUE)
+#define MHL_DEFAULT_SWING CONFIG_MHL_SWING_LEVEL_VALUE
 #else
 #define MHL_DEFAULT_SWING 0x25
 #endif

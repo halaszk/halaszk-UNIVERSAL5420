@@ -38,6 +38,8 @@ register */
 #define S5P_DSIM_FIFOTHLD	(0x40)	/* FIFO threshold level register */
 #define S5P_DSIM_FIFOCTRL	(0x44)	/* FIFO status and control register
 */
+#define DSIM_INIT_SFR		(1 << 3)	/* SFR FIFO write point initialize */
+
 
 /* PLL ctrl register */
 #define S5P_DSIM_PLLCTRL	(0x4c)  /* PLL control register */
@@ -121,7 +123,11 @@ register */
 
 /* S5P_DSIM_MDRESOL */
 #define DSIM_MAIN_STAND_BY		(1 << 31)
+#if defined(CONFIG_SOC_EXYNOS5420)
+#define DSIM_MAIN_VRESOL(x)		(((x) & 0xfff) << 16)
+#else
 #define DSIM_MAIN_VRESOL(x)		(((x) & 0x7ff) << 16)
+#endif
 #define DSIM_MAIN_HRESOL(x)		(((x) & 0X7ff) << 0)
 
 /* S5P_DSIM_MVPORCH */
@@ -170,5 +176,29 @@ register */
 /* S5P_DSIM_PLLCTRL */
 #define DSIM_PLL_EN_SHIFT		(23)
 #define DSIM_FREQ_BAND_SHIFT		(24)
+
+#if defined(CONFIG_SOC_EXYNOS3250)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS3470)
+#define DPHY_PLL_STABLE_TIME		32000
+#elif defined(CONFIG_SOC_EXYNOS3472)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS4415)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5260)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5410)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5420)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5422)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5430)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5433)
+#define DPHY_PLL_STABLE_TIME		22200
+#else
+#define DPHY_PLL_STABLE_TIME		32000
+#endif
 
 #endif /* _REGS_MIPIDSIM_H */

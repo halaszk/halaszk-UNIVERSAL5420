@@ -25,9 +25,11 @@
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <media/v4l2-ioctl.h>
+#include <mach/smc.h>
 
 #include "gsc-core.h"
 
+#define SMC_PROTECTION_SET	0x81000000
 static int gsc_ctx_stop_req(struct gsc_ctx *ctx)
 {
 	struct gsc_ctx *curr_ctx;
@@ -113,11 +115,15 @@ int gsc_fill_addr(struct gsc_ctx *ctx)
 
 void gsc_op_timer_handler(unsigned long arg)
 {
-	struct gsc_ctx *ctx = (struct gsc_ctx *)arg;
-	struct gsc_dev *gsc = ctx->gsc_dev;
+	struct gsc_dev *gsc = (struct gsc_dev *)arg;
+	struct gsc_ctx *ctx = v4l2_m2m_get_curr_priv(gsc->m2m.m2m_dev);
 	struct vb2_buffer *src_vb, *dst_vb;
-
+#ifdef GSC_PERF
+	gsc->end_time = sched_clock();
+	gsc_err("expire time: %llu\n", gsc->end_time - gsc->start_time);
+#endif
 	gsc_dump_registers(gsc);
+	exynos_iommu_dump_status(&gsc->pdev->dev);
 
 	clear_bit(ST_M2M_RUN, &gsc->state);
 	pm_runtime_put(&gsc->pdev->dev);
@@ -231,10 +237,9 @@ static void gsc_m2m_device_run(void *priv)
 			gsc_err("gscaler wait operating timeout");
 			goto put_device;
 		}
+		gsc->op_timer.expires = (jiffies + 2 * HZ);
+		mod_timer(&gsc->op_timer, gsc->op_timer.expires);
 	}
-
-	ctx->op_timer.expires = (jiffies + 2 * HZ);
-	add_timer(&ctx->op_timer);
 
 	spin_unlock_irqrestore(&ctx->slock, flags);
 	return;
@@ -519,6 +524,12 @@ static int gsc_m2m_streamon(struct file *file, void *fh,
 
 	gsc_pm_qos_ctrl(gsc, GSC_QOS_ON, pdata->mif_min, pdata->int_min);
 
+	if (gsc->protected_content) {
+		int id = gsc->id + 3;
+		exynos_smc(SMC_PROTECTION_SET, 0, id, 1);
+		gsc_dbg("DRM enable");
+	}
+
 	return v4l2_m2m_streamon(file, ctx->m2m_ctx, type);
 }
 
@@ -529,6 +540,12 @@ static int gsc_m2m_streamoff(struct file *file, void *fh,
 	struct gsc_dev *gsc = ctx->gsc_dev;
 
 	gsc_pm_qos_ctrl(gsc, GSC_QOS_OFF, 0, 0);
+
+	if (gsc->protected_content) {
+		int id = gsc->id + 3;
+		exynos_smc(SMC_PROTECTION_SET, 0, id, 0);
+		gsc_dbg("DRM disable");
+	}
 
 	return v4l2_m2m_streamoff(file, ctx->m2m_ctx, type);
 }
@@ -699,10 +716,6 @@ static int gsc_m2m_open(struct file *file)
 	ctx->out_path = GSC_DMA;
 	spin_lock_init(&ctx->slock);
 
-	init_timer(&ctx->op_timer);
-	ctx->op_timer.data = (unsigned long)ctx;
-	ctx->op_timer.function = gsc_op_timer_handler;
-
 	INIT_LIST_HEAD(&ctx->fence_wait_list);
 	INIT_WORK(&ctx->fence_work, gsc_m2m_fence_work);
 
@@ -734,12 +747,6 @@ static int gsc_m2m_release(struct file *file)
 	gsc_dbg("pid: %d, state: 0x%lx, refcnt= %d",
 		task_pid_nr(current), gsc->state, gsc->m2m.refcnt);
 
-	/* if we didn't properly sequence with the secure side to turn off
-	 * content protection, we may be left in a very bad state and the
-	 * only way to recover this reliably is to reboot.
-	 */
-	BUG_ON(gsc->protected_content);
-
 	kfree(ctx->m2m_ctx->cap_q_ctx.q.name);
 	kfree(ctx->m2m_ctx->out_q_ctx.q.name);
 	v4l2_m2m_ctx_release(ctx->m2m_ctx);
@@ -749,6 +756,15 @@ static int gsc_m2m_release(struct file *file)
 
 	if (--gsc->m2m.refcnt <= 0)
 		clear_bit(ST_M2M_OPEN, &gsc->state);
+
+	/* This is unnormal case */
+	if (gsc->protected_content) {
+		int id = gsc->id + 3;
+		gsc_err("DRM should be disabled before device close");
+		exynos_smc(SMC_PROTECTION_SET, 0, id, 0);
+		gsc_set_protected_content(gsc, false);
+	}
+
 	kfree(ctx);
 	return 0;
 }
@@ -822,6 +838,9 @@ int gsc_register_m2m_device(struct gsc_dev *gsc)
 			 "%s(): failed to register video device\n", __func__);
 		goto err_m2m_r2;
 	}
+
+	setup_timer(&gsc->op_timer, gsc_op_timer_handler,
+			(unsigned long)gsc);
 
 	gsc_dbg("gsc m2m driver registered as /dev/video%d", vfd->num);
 

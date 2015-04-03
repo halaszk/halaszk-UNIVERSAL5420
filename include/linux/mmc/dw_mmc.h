@@ -324,6 +324,9 @@ struct dw_mci_board {
 	/* If necessary, add to the extra tuning */
 	s8 (*extra_tuning)(u8 map);
 
+	/* Present IO mode */
+	unsigned int io_mode;
+
 	/* Phase Shift Value */
 	unsigned int sdr_timing;
 	unsigned int ddr_timing;
@@ -340,6 +343,7 @@ struct dw_mci_board {
 
 	/* INT QOS khz */
 	unsigned int qos_int_level;
+	unsigned int int_camera;
 
 	/* cd_type: Type of Card Detection method (see cd_types enum above) */
 	enum dw_mci_cd_types cd_type;
@@ -377,6 +381,10 @@ struct dw_mci_board {
 	unsigned int sw_timeout;
 	u16 tuning_map[MAX_TUNING_RETRIES];
 	u8 tuning_map_mask;
+#if defined(CONFIG_MMC_DW_CMD_LOGGING)
+	atomic_t log_count;
+	bool dw_mci_cmd_logging;
+#endif
 };
 
 #endif /* LINUX_MMC_DW_MMC_H */

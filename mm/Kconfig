@@ -399,6 +399,7 @@ config FRONTSWAP
 
 config ZSMALLOC_NEW
 	tristate "Memory allocator for compressed pages"
+	depends on !ZSMALLOC
 	default n
 	help
 	  zsmalloc is a slab-based memory allocator designed to store
@@ -435,6 +436,31 @@ config ZSWAP
 	  from this compressed store much faster than most tradition
 	  swap devices resulting in reduced I/O and faster performance
 	  for many workloads.
+
+config ZSWAP_ENABLE_WRITEBACK
+	bool "Enable writeback"
+	depends on ZSWAP
+	default n
+
+config INCREASE_MAXIMUM_SWAPPINESS
+	bool "Allow swappiness to be set up to 200"
+	depends on ZSWAP
+	default n
+
+config FIX_INACTIVE_RATIO
+	bool "Fix active:inactive anon ratio to 1:1"
+	depends on ZSWAP
+	default n
+
+config SWAP_ENABLE_READAHEAD
+	bool "Enable readahead on page swap in"
+	depends on SWAP
+	default y
+	help
+	  When a page fault occurs, adjacent pages of SWAP_CLUSTER_MAX are
+	  also paged in expecting those pages will be used in near future.
+	  This behaviour is good at disk-based system, but not on in-memory
+	  compression (e.g. zram).
 
 config DISABLE_LUMPY_RECLAIM
 	bool "Disable lumpy reclaim"
@@ -506,3 +532,13 @@ config CMA_BEST_FIT
 config FADV_NOACTIVE
 	bool "fadvise noactive option support"
 	default n
+
+config MIN_DIRTY_THRESH_PAGES
+	int "The lower bound of VM dirty_thresh value in number of pages"
+	default 2560
+	help
+	  Setting this to certain positive number guaranttees
+	  the VM Dirty-Thresh valus is always larger than that value.
+	  It is only effective when dirty_ratio is used. (Setting dirty_bytes
+	  disables this option.)
+	  Do not use it if you unsure.

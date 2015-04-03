@@ -42,6 +42,9 @@
 #include "board-universal5420.h"
 
 #include <linux/i2c-gpio.h>
+#include <plat/gpio-cfg.h>
+#include <linux/gpio.h>
+#include <mach/hs-iic.h>
 
 #ifdef CONFIG_ARM_EXYNOS5420_BUS_DEVFREQ
 static struct s5p_mfc_qos universal5420_mfc_qos_table[] = {
@@ -230,7 +233,46 @@ static struct i2c_board_info hs_i2c_devs1[] __initdata = {
 	},
 };
 
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#if defined(CONFIG_CAMERA_EEPROM)
+#if defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
+#define SEC_CAMERA_EEPROM_SLAVEADDR 0xA0
+struct exynos5_platform_i2c hs_i2c1_data __initdata = {
+	.bus_number = 5,
+	.operation_mode = HSI2C_INTERRUPT,
+	.speed_mode = HSI2C_FAST_SPD,
+	.fast_speed = 400000,
+	.high_speed = 2500000,
+	.cfg_gpio = NULL,
+};
+
+static struct i2c_board_info sec_brdinfo_camera_eeprom[] __initdata = {
+	{
+		I2C_BOARD_INFO("cameraeeprom", SEC_CAMERA_EEPROM_SLAVEADDR >> 1),
+	},
+};
+#else
+#define SEC_CAMERA_EEPROM_ID 11
+#define SEC_CAMERA_EEPROM_SLAVEADDR 0xA0
+static struct i2c_gpio_platform_data gpio_i2c_camera_eeprom = {
+	.sda_pin = EXYNOS5420_GPA2(2),
+	.scl_pin = EXYNOS5420_GPA2(3),
+};
+
+struct platform_device sec_device_camera_eeprom = {
+	.name = "i2c-gpio",
+	.id = SEC_CAMERA_EEPROM_ID,
+	.dev.platform_data = &gpio_i2c_camera_eeprom,
+};
+
+static struct i2c_board_info sec_brdinfo_camera_eeprom[] __initdata = {
+	{
+		I2C_BOARD_INFO("cameraeeprom", SEC_CAMERA_EEPROM_SLAVEADDR >> 1),
+	},
+};
+#endif
+#endif
+
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 #define SEC_VISION_SWI2C_ID 25
 
 static struct i2c_gpio_platform_data gpio_i2c_data_vision = {
@@ -292,7 +334,7 @@ static struct platform_device mipi_csi_fixed_voltage = {
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_LITE
 static struct exynos_isp_info __refdata s5k6b2 = {
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	.board_info = sec_brdinfo_vision,
 #else
 	.board_info	= hs_i2c_devs1,
@@ -304,7 +346,7 @@ static struct exynos_isp_info __refdata s5k6b2 = {
 	.cam_clk_name	= "aclk_333_432_gscl",
 #ifdef CONFIG_S5K6B2_CSI_C
 	.camif_clk_name	= "gscl_flite0",
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	.i2c_bus_num	= SEC_VISION_SWI2C_ID,
 #else
 	.i2c_bus_num	= 1,
@@ -313,7 +355,7 @@ static struct exynos_isp_info __refdata s5k6b2 = {
 #endif
 #ifdef CONFIG_S5K6B2_CSI_D
 	.camif_clk_name	= "gscl_flite1",
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	.i2c_bus_num	= SEC_VISION_SWI2C_ID,
 #else
 	.i2c_bus_num	= 1,
@@ -410,7 +452,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 			.flite_id = FLITE_ID_A,
 			.count = 0,
 		},
-#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 		{
 			.pin_type = PIN_GPIO,
 			.pin = EXYNOS5420_GPE1(0),
@@ -488,7 +530,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420 = {
 			.flite_id = FLITE_ID_A,
 			.count = 0,
 		},
-#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 		/* AF_28V */
 		{
 			.pin_type = PIN_REGULATOR,
@@ -919,6 +961,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420_chagall = {
 			.flite_id = FLITE_ID_B,
 			.count = 0,
 		},
+#ifndef CONFIG_CAMERA_EEPROM
 		/* ETC */
 		/* Host use spi controller in image subsystem */
 		{
@@ -958,6 +1001,7 @@ static struct exynos5_sensor_gpio_info gpio_universal5420_chagall = {
 			.flite_id = FLITE_ID_A,
 			.count = 0,
 		},
+#endif
 	}
 };
 
@@ -987,10 +1031,17 @@ static struct platform_device *universal5420_media_devices[] __initdata = {
 	&exynos5_device_hs_i2c1,
 #endif
 #if defined (CONFIG_CSI_D) || defined (CONFIG_S5K6B2_CSI_D)
-#if defined(CONFIG_V1A) || defined(CONFIG_V2A)
+#if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	&sec_device_vision,
 #else
 	&s3c_device_i2c1,
+#endif
+#endif
+#if defined(CONFIG_CAMERA_EEPROM)
+#if defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
+	&exynos5_device_hs_i2c1,
+#else
+	&sec_device_camera_eeprom,
 #endif
 #endif
 	&exynos_device_md0,
@@ -1011,7 +1062,9 @@ static struct platform_device *universal5420_media_devices[] __initdata = {
 #endif
 #ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS
 	&exynos5_device_fimc_is,
+#ifndef CONFIG_CAMERA_EEPROM
 	&s3c64xx_device_spi3,
+#endif
 #endif
 	&exynos5_device_scaler0,
 	&exynos5_device_scaler1,
@@ -1059,13 +1112,32 @@ void __init exynos5_universal5420_media_init(void)
 	i2c_register_board_info(2, i2c_devs2, ARRAY_SIZE(i2c_devs2));
 #endif
 
+#if defined(CONFIG_CAMERA_EEPROM)
+#if defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
+	exynos5_hs_i2c1_set_platdata(&hs_i2c1_data);
+	i2c_register_board_info(5,
+			sec_brdinfo_camera_eeprom, ARRAY_SIZE(sec_brdinfo_camera_eeprom));
+#else
+	s3c_gpio_cfgpin(gpio_i2c_camera_eeprom.scl_pin, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(gpio_i2c_camera_eeprom.scl_pin, S3C_GPIO_PULL_NONE);
+	s5p_gpio_set_drvstr(gpio_i2c_camera_eeprom.scl_pin, S5P_GPIO_DRVSTR_LV1);
+
+	s3c_gpio_cfgpin(gpio_i2c_camera_eeprom.sda_pin, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(gpio_i2c_camera_eeprom.sda_pin, S3C_GPIO_PULL_NONE);
+	s5p_gpio_set_drvstr(gpio_i2c_camera_eeprom.sda_pin, S5P_GPIO_DRVSTR_LV1);
+
+	i2c_register_board_info(SEC_CAMERA_EEPROM_ID,
+			sec_brdinfo_camera_eeprom, ARRAY_SIZE(sec_brdinfo_camera_eeprom));
+#endif
+#endif
+
 	s5p_fimg2d_set_platdata(&fimg2d_data);
 
 	platform_add_devices(universal5420_media_devices,
 			ARRAY_SIZE(universal5420_media_devices));
 
 	exynos5_gsc_set_ip_ver(IP_VER_GSC_5A);
-#if defined(CONFIG_N1A) || defined(CONFIG_N2A)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	exynos5_gsc_set_pm_qos_val(160000, 222000);
 #else
 	exynos5_gsc_set_pm_qos_val(160000, 111000);
@@ -1123,12 +1195,15 @@ void __init exynos5_universal5420_media_init(void)
 	} else {
 		exynos5_fimc_is_data.gpio_info = &gpio_universal5420_chagall;
 	}
+#elif defined(CONFIG_KLIMT)
+	exynos5_fimc_is_data.gpio_info = &gpio_universal5420_chagall;
 #else
 	exynos5_fimc_is_data.gpio_info = &gpio_universal5420;
 #endif
 
 	exynos5_fimc_is_set_platdata(&exynos5_fimc_is_data);
 
+#ifndef CONFIG_CAMERA_EEPROM
 	if (!exynos_spi_cfg_cs(spi3_csi[0].line, 3)) {
 		s3c64xx_spi3_set_platdata(&s3c64xx_spi3_pdata,
 			EXYNOS_SPI_SRCCLK_SCLK, ARRAY_SIZE(spi3_csi));
@@ -1138,6 +1213,7 @@ void __init exynos5_universal5420_media_init(void)
 	} else {
 		pr_err("%s: Error requesting gpio for SPI-CH1 CS\n", __func__);
 	}
+#endif
 #endif
 #ifdef CONFIG_VIDEO_EXYNOS_JPEG_HX
 	s3c_set_platdata(&exynos5_jpeg_hx_pd, sizeof(exynos5_jpeg_hx_pd),

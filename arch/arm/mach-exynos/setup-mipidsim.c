@@ -84,18 +84,6 @@ static int s5p_dsim_enable_dsi_master(struct mipi_dsim_device *dsim,
 	return 0;
 }
 
-int s5p_dsim_part_reset(struct mipi_dsim_device *dsim)
-{
-#if defined(CONFIG_ARCH_EXYNOS5)
-	if (dsim->id == 0)
-		writel(S5P_MIPI_M_RESETN, S5P_MIPI_DPHY_CONTROL(1));
-#else
-	if (dsim->id == 0)
-		writel(S5P_MIPI_M_RESETN, S5P_MIPI_DPHY_CONTROL(0));
-#endif
-	return 0;
-}
-
 int s5p_dsim_init_d_phy(struct mipi_dsim_device *dsim, unsigned int enable)
 {
 	/**

@@ -55,6 +55,9 @@ static struct switch_dev switch_dock = {
 #ifdef CONFIG_MACH_JA
 #include <linux/i2c/touchkey_i2c.h>
 #endif
+#ifdef CONFIG_KLIMT
+#include <linux/i2c/touchkey_i2c.h>
+#endif
 
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI
 #include <linux/i2c/synaptics_rmi.h>
@@ -62,9 +65,11 @@ static struct switch_dev switch_dock = {
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C
 #include <linux/i2c/synaptics_rmi.h>
 #endif
-
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MXTS
 #include <linux/i2c/mxts.h>
+#endif
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MXT1664T
+#include <linux/i2c/mxtt.h>
 #endif
 
 struct device *switch_dev;
@@ -88,7 +93,7 @@ void synaptics_tsp_register_callback(struct synaptics_rmi_callbacks *cb)
 bool is_cable_attached;
 bool is_jig_attached;
 
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 extern int g_usbvbus;
 #endif
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
@@ -240,7 +245,7 @@ static int __init sec_switch_init(void)
 };
 
 int current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 {
 	struct power_supply *psy = power_supply_get_by_name("battery");
@@ -270,7 +275,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 		is_cable_attached = true;
 		break;
 	case CABLE_TYPE_TA_MUIC:
-	case CABLE_TYPE_LANHUB:
+	case CABLE_TYPE_LANHUB_MUIC:
 	case CABLE_TYPE_CARDOCK_MUIC:
 	case CABLE_TYPE_DESKDOCK_TA_MUIC:
 	case CABLE_TYPE_SMARTDOCK_MUIC:
@@ -293,10 +298,14 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 #endif
 	synaptics_tsp_charger_infom(cable_type);
 #elif defined(CONFIG_V1A) || defined(CONFIG_V2A) \
-		|| defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_CHAGALL)
+		|| defined(CONFIG_N1A) || defined(CONFIG_N2A)\
+		|| defined(CONFIG_KLIMT)
 	tsp_charger_infom(is_cable_attached);
 #endif
 #if defined(CONFIG_MACH_JA)
+	touchkey_charger_infom(is_cable_attached);
+#endif
+#if defined(CONFIG_KLIMT) && defined(TK_INFORM_CHARGER)
 	touchkey_charger_infom(is_cable_attached);
 #endif
 
@@ -349,7 +358,7 @@ int max77803_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_CDP_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_USB_CDP;
 		break;
-	case CABLE_TYPE_LANHUB:
+	case CABLE_TYPE_LANHUB_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_LAN_HUB;
 		break;
 	case CABLE_TYPE_PS_CABLE_MUIC:
@@ -434,19 +443,19 @@ void max77803_muic_usb_cb(u8 usb_mode)
 	}
 
 	if (usb_mode == USB_CABLE_ATTACHED) {
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 		g_usbvbus = USB_CABLE_ATTACHED;
 #endif
 #ifdef CONFIG_HA_3G
 		if(system_rev >= 6)
 			usb30_redriver_en(1);
-#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 		usb30_redriver_en(1);
 #endif
 		max77803_set_vbus_state(USB_CABLE_ATTACHED);
 		pr_info("%s - USB_CABLE_ATTACHED\n", __func__);
 	} else if (usb_mode == USB_CABLE_DETACHED) {
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 		g_usbvbus = USB_CABLE_DETACHED;
 #endif
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
@@ -458,7 +467,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 #ifdef CONFIG_HA_3G
 		if(system_rev >= 6)
 			usb30_redriver_en(0);
-#elif defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_V1A) || defined(CONFIG_V2A)
 		usb30_redriver_en(0);
 #endif
 		max77803_set_vbus_state(USB_CABLE_DETACHED);
@@ -486,7 +495,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 	} else if (usb_mode == USB_POWERED_HOST_ATTACHED) {
 #ifdef CONFIG_USB_HOST_NOTIFY
 		host_noti_pdata->powered_booster(1);
-		if (cable_type == CABLE_TYPE_LANHUB)
+		if (cable_type == CABLE_TYPE_LANHUB_MUIC)
 		{
 			host_noti_pdata->ndev.mode = NOTIFY_HOST_MODE;
 			if (host_noti_pdata->usbhostd_start)
@@ -501,7 +510,7 @@ void max77803_muic_usb_cb(u8 usb_mode)
 		max77803_check_id_state(1);
 #ifdef CONFIG_USB_HOST_NOTIFY
 		host_noti_pdata->powered_booster(0);
-		if (cable_type == CABLE_TYPE_LANHUB)
+		if (host_noti_pdata->ndev.mode == NOTIFY_HOST_MODE)
 		{
 			host_noti_pdata->ndev.mode = NOTIFY_NONE_MODE;
 			if (host_noti_pdata->usbhostd_stop)

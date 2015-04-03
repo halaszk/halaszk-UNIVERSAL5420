@@ -36,6 +36,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef INC_ISSP_ERRORS
 #define INC_ISSP_ERRORS
 
+/* for issp debug */
+//#define CYPRESS_ISSP_DEBUG
+
 // The following are defines for error messages from the ISSP program.
 #define PASS           0
 // PASS is used to indicate that a function completed successfully.
@@ -59,6 +62,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SECURITY_ERROR 6
 // SECURITY_ERROR means that the write of the security information failed.
 #define STATUS_ERROR 7
+#define MAX_ERROR STATUS_ERROR
 
 #endif				//(INC_ISSP_ERRORS)
 #endif				//(PROJECT_REV_)

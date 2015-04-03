@@ -39,6 +39,129 @@ struct input_debug_drv_data {
 	kernel_ulong_t keybit[INPUT_DEVICE_ID_KEY_MAX / BITS_PER_LONG + 1];
 };
 
+#ifdef CONFIG_SEC_DEBUG_SUBSYS
+
+#define SEC_DEBUG_SUBSYS_MAGIC0 0xFFFFFFFF
+#define SEC_DEBUG_SUBSYS_MAGIC1 0x5ECDEB6
+#define SEC_DEBUG_SUBSYS_MAGIC2 0x14F014F0
+ /* high word : major version
+  * low word : minor version
+  * minor version changes should not affect bootloader behavior
+  */
+#define SEC_DEBUG_SUBSYS_MAGIC3 0x00010001
+
+struct __log_struct_info {
+	unsigned int buffer_offset;
+	unsigned int w_off_offset;
+	unsigned int head_offset;
+	unsigned int size_offset;
+	unsigned int size_t_typesize;
+};
+
+struct __log_data {
+	unsigned int log_paddr;
+	unsigned int buffer_paddr;
+};
+
+struct sec_debug_subsys_log {
+	unsigned int idx_paddr;
+	unsigned int log_paddr;
+	unsigned int size;
+};
+
+struct sec_debug_subsys_logger_log_info {
+	struct __log_struct_info stinfo;
+	struct __log_data main;
+	struct __log_data system;
+	struct __log_data events;
+	struct __log_data radio;
+};
+
+struct sec_debug_subsys_excp_kernel {
+	char pc_sym[64];
+	char lr_sym[64];
+	char panic_caller[64];
+	char panic_msg[128];
+	char thread[32];
+};
+
+struct sec_debug_subsys_sched_log {
+	unsigned int task_idx_paddr;
+	unsigned int task_buf_paddr;
+	unsigned int task_struct_sz;
+	unsigned int task_array_cnt;
+	unsigned int irq_idx_paddr;
+	unsigned int irq_buf_paddr;
+	unsigned int irq_struct_sz;
+	unsigned int irq_array_cnt;
+	unsigned int work_idx_paddr;
+	unsigned int work_buf_paddr;
+	unsigned int work_struct_sz;
+	unsigned int work_array_cnt;
+	unsigned int timer_idx_paddr;
+	unsigned int timer_buf_paddr;
+	unsigned int timer_struct_sz;
+	unsigned int timer_array_cnt;
+};
+
+struct sec_debug_subsys_cpufreq_policy {
+	unsigned int paddr;
+	int name_length;
+	int min_offset;
+	int max_offset;
+	int cur_offset;
+};
+
+struct sec_debug_subsys_cpu_info {
+	struct sec_debug_subsys_cpufreq_policy cpufreq_policy;
+	unsigned int cpu_offset_paddr;
+	unsigned int cpu_active_mask_paddr;
+	unsigned int cpu_online_mask_paddr;
+};
+
+struct sec_debug_subsys_data_kernel {
+	char name[16];
+	char state[16];
+	int nr_cpus;
+	//int sched_log_max;
+	//unsigned int sec_debug_log;
+
+	struct sec_debug_subsys_log log;
+	struct sec_debug_subsys_excp_kernel excp;
+	//struct sec_debug_subsys_simple_var_mon var_mon;
+	//struct sec_debug_subsys_simple_var_mon info_mon;
+	//struct tzbsp_dump_buf_s **tz_core_dump;
+	//struct sec_debug_subsys_fb fb_info;
+	struct sec_debug_subsys_sched_log sched_log;
+	struct sec_debug_subsys_logger_log_info logger_log;
+	//struct sec_debug_subsys_avc_log avc_log;
+	struct sec_debug_subsys_cpu_info cpu_info;
+
+	unsigned int cmdline_paddr;
+	unsigned int cmdline_len;
+	unsigned int linuxbanner_paddr;
+	unsigned int linuxbanner_len;
+};
+
+struct sec_debug_subsys {
+	unsigned int magic[4];
+	
+	struct sec_debug_subsys_data_kernel kernel;
+
+	unsigned int log_kernel_base;
+	unsigned int log_kernel_start;
+
+	unsigned int reserved_out_buf;
+	unsigned int reserved_out_size;
+};
+extern int sec_debug_subsys_set_logger_info(
+	struct sec_debug_subsys_logger_log_info *log_info);
+int sec_debug_save_die_info(const char *str, struct pt_regs *regs);
+int sec_debug_save_panic_info(const char *str, unsigned int caller);
+int sec_debug_set_cpu_info(struct sec_debug_subsys *subsys_info, char *subsys_log_buf);
+void sec_debug_subsys_set_reserved_out_buf(unsigned int buf, unsigned int size);
+#endif
+
 extern union sec_debug_level_t sec_debug_level;
 
 extern int sec_debug_init(void);

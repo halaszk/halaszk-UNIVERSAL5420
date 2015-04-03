@@ -11,6 +11,9 @@
 #ifndef __S3C64XX_PLAT_SPI_H
 #define __S3C64XX_PLAT_SPI_H
 
+#include <linux/dma-mapping.h>
+#include <mach/dma.h>
+
 #define HYBRID_MODE     0x0
 #define PIO_MODE        0x1
 
@@ -60,6 +63,52 @@ struct s3c64xx_spi_info {
 	int high_speed;
 	int tx_st_done;
 	int dma_mode;
+};
+
+struct s3c64xx_spi_dma_data {
+	unsigned		ch;
+	enum dma_transfer_direction direction;
+	enum dma_ch	dmach;
+};
+
+/**
+ * struct s3c64xx_spi_driver_data - Runtime info holder for SPI driver.
+ * @clk: Pointer to the spi clock.
+ * @src_clk: Pointer to the clock used to generate SPI signals.
+ * @master: Pointer to the SPI Protocol master.
+ * @cntrlr_info: Platform specific data for the controller this driver manages.
+ * @tgl_spi: Pointer to the last CS left untoggled by the cs_change hint.
+ * @queue: To log SPI xfer requests.
+ * @lock: Controller specific lock.
+ * @state: Set of FLAGS to indicate status.
+ * @rx_dmach: Controller's DMA channel for Rx.
+ * @tx_dmach: Controller's DMA channel for Tx.
+ * @sfr_start: BUS address of SPI controller regs.
+ * @regs: Pointer to ioremap'ed controller registers.
+ * @irq: interrupt
+ * @xfer_completion: To indicate completion of xfer task.
+ * @cur_mode: Stores the active configuration of the controller.
+ * @cur_bpw: Stores the active bits per word settings.
+ * @cur_speed: Stores the active xfer clock speed.
+ */
+struct s3c64xx_spi_driver_data {
+	void __iomem                    *regs;
+	struct clk                      *clk;
+	struct clk                      *src_clk;
+	struct platform_device          *pdev;
+	struct spi_master               *master;
+	struct s3c64xx_spi_info  *cntrlr_info;
+	struct spi_device               *tgl_spi;
+	struct list_head                queue;
+	spinlock_t                      lock;
+	unsigned long                   sfr_start;
+	struct completion               xfer_completion;
+	unsigned                        state;
+	unsigned                        cur_mode, cur_bpw;
+	unsigned                        cur_speed;
+	struct s3c64xx_spi_dma_data	rx_dma;
+	struct s3c64xx_spi_dma_data	tx_dma;
+	struct samsung_dma_ops		*ops;
 };
 
 /**

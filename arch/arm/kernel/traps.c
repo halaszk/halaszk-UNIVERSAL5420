@@ -36,7 +36,9 @@
 #include <asm/system_misc.h>
 
 #include "signal.h"
-
+#ifdef CONFIG_SEC_DEBUG_SUBSYS
+#include <mach/sec_debug.h>
+#endif
 static const char *handler[]= { "prefetch abort", "data abort", "address exception", "interrupt" };
 
 void *vectors_page;
@@ -291,6 +293,10 @@ void die(const char *str, struct pt_regs *regs, int err)
 	add_taint(TAINT_DIE);
 	raw_spin_unlock_irq(&die_lock);
 	oops_exit();
+
+#ifdef CONFIG_SEC_DEBUG_SUBSYS
+	sec_debug_save_die_info(str, regs);
+#endif
 
 #ifdef CONFIG_SEC_DEBUG
 	if (in_interrupt())

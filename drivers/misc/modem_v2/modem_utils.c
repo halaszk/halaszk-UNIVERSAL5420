@@ -13,7 +13,7 @@
  */
 
 #include <linux/netdevice.h>
-#include <linux/platform_data/modem.h>
+#include <linux/platform_data/modem_v2.h>
 #include <linux/platform_device.h>
 #include <linux/skbuff.h>
 #include <linux/ip.h>
@@ -43,6 +43,7 @@ int mif_dump_dpram(struct io_device *iod)
 	struct dpram_link_device *dpld = to_dpram_link_device(ld);
 	u32 size = dpld->dp_size;
 	unsigned long read_len = 0;
+	unsigned long alloc_size;
 	struct sk_buff *skb;
 	char *buff;
 
@@ -55,16 +56,19 @@ int mif_dump_dpram(struct io_device *iod)
 	}
 
 	while (read_len < size) {
-		skb = alloc_skb(MAX_IPC_SKB_SIZE, GFP_ATOMIC);
+		alloc_size = min_t(unsigned long,
+			MAX_IPC_SKB_SIZE, (size - read_len));
+		skb = alloc_skb(alloc_size, GFP_ATOMIC);
 		if (!skb) {
 			pr_err("[MIF] <%s> alloc skb failed\n", __func__);
 			kfree(buff);
 			return -ENOMEM;
 		}
-		memcpy(skb_put(skb, MAX_IPC_SKB_SIZE),
-			buff + read_len, MAX_IPC_SKB_SIZE);
+
+		memcpy(skb_put(skb, alloc_size), buff + read_len, alloc_size);
+		read_len += alloc_size;
+
 		skb_queue_tail(&iod->sk_rx_q, skb);
-		read_len += MAX_IPC_SKB_SIZE;
 		wake_up(&iod->wq);
 	}
 	kfree(buff);
@@ -76,22 +80,27 @@ int mif_dump_log(struct modem_shared *msd, struct io_device *iod)
 {
 	struct sk_buff *skb;
 	unsigned long read_len = 0;
+	unsigned long alloc_size;
 	unsigned long int flags;
 
 	spin_lock_irqsave(&msd->lock, flags);
 	while (read_len < MAX_MIF_BUFF_SIZE) {
-		skb = alloc_skb(MAX_IPC_SKB_SIZE, GFP_ATOMIC);
+		alloc_size = min_t(unsigned long,
+			MAX_IPC_SKB_SIZE, (MAX_MIF_BUFF_SIZE - read_len));
+		skb = alloc_skb(alloc_size, GFP_ATOMIC);
 		if (!skb) {
 			pr_err("[MIF] <%s> alloc skb failed\n", __func__);
 			spin_unlock_irqrestore(&msd->lock, flags);
 			return -ENOMEM;
 		}
-		memcpy(skb_put(skb, MAX_IPC_SKB_SIZE),
-			msd->storage.addr + read_len, MAX_IPC_SKB_SIZE);
+
+		memcpy(skb_put(skb, alloc_size),
+			msd->storage.addr + read_len, alloc_size);
+		read_len += alloc_size;
+
 		skbpriv(skb)->iod = iod;
 		skbpriv(skb)->ld = get_current_link(iod);
 		skb_queue_tail(&iod->sk_rx_q, skb);
-		read_len += MAX_IPC_SKB_SIZE;
 		wake_up(&iod->wq);
 	}
 	spin_unlock_irqrestore(&msd->lock, flags);
@@ -624,9 +633,9 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 {
 	u8 *frm;			/* HDLC Frame	*/
 	struct fmt_hdr *hh;		/* HDLC Header	*/
-	struct sipc_fmt_hdr *fh;	/* IPC Header	*/
+	struct sipc_main_hdr *fh;	/* IPC Header	*/
 	u16 hh_len = sizeof(struct fmt_hdr);
-	u16 fh_len = sizeof(struct sipc_fmt_hdr);
+	u16 fh_len = sizeof(struct sipc_main_hdr);
 	u8 *data;
 	int dlen;
 
@@ -635,7 +644,7 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 
 	/* Point HDLC header and IPC header */
 	hh = (struct fmt_hdr *)(frm);
-	fh = (struct sipc_fmt_hdr *)(frm + hh_len);
+	fh = (struct sipc_main_hdr *)(frm + hh_len);
 
 	/* Point IPC data */
 	data = frm + (hh_len + fh_len);
@@ -662,8 +671,8 @@ void print_sipc4_hdlc_fmt_frame(const u8 *psrc)
 
 void print_sipc4_fmt_frame(const u8 *psrc)
 {
-	struct sipc_fmt_hdr *fh = (struct sipc_fmt_hdr *)psrc;
-	u16 fh_len = sizeof(struct sipc_fmt_hdr);
+	struct sipc_main_hdr *fh = (struct sipc_main_hdr *)psrc;
+	u16 fh_len = sizeof(struct sipc_main_hdr);
 	u8 *data;
 	int dlen;
 
@@ -689,7 +698,7 @@ void print_sipc5_link_fmt_frame(const u8 *psrc)
 {
 	u8 *lf;				/* Link Frame	*/
 	struct sipc5_link_hdr *lh;	/* Link Header	*/
-	struct sipc_fmt_hdr *fh;	/* IPC Header	*/
+	struct sipc_main_hdr *fh;	/* IPC Header	*/
 	u16 lh_len;
 	u16 fh_len;
 	u8 *data;
@@ -703,8 +712,8 @@ void print_sipc5_link_fmt_frame(const u8 *psrc)
 		lh_len = SIPC5_HEADER_SIZE_WITH_CTL_FLD;
 	else
 		lh_len = SIPC5_MIN_HEADER_SIZE;
-	fh = (struct sipc_fmt_hdr *)(lf + lh_len);
-	fh_len = sizeof(struct sipc_fmt_hdr);
+	fh = (struct sipc_main_hdr *)(lf + lh_len);
+	fh_len = sizeof(struct sipc_main_hdr);
 
 	/* Point IPC data */
 	data = lf + (lh_len + fh_len);

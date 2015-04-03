@@ -73,6 +73,7 @@ static const struct reg_default wm5102_revb_patch[] = {
 	{ 0x171, 0x0000 },
 	{ 0x35E, 0x000C },
 	{ 0x2D4, 0x0000 },
+	{ 0x4DC, 0x0900 },
 	{ 0x80, 0x0000 },
 };
 
@@ -137,30 +138,11 @@ static const struct {
 	{ wm5102t_pwr_4, ARRAY_SIZE(wm5102t_pwr_4) },
 };
 
-static int wm5102_apply_patch(struct arizona *arizona,
-		       const struct reg_default *wm5102_patch,
-		       const int patch_size)
-{
-	int i, ret;
-
-	for (i = 0; i < patch_size; i++) {
-		ret = regmap_write(arizona->regmap, wm5102_patch[i].reg,
-				   wm5102_patch[i].def);
-		if (ret != 0) {
-			dev_err(arizona->dev, "Failed to write %x = %x: %d\n",
-				wm5102_patch[i].reg, wm5102_patch[i].def, ret);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
 /* We use a function so we can use ARRAY_SIZE() */
 int wm5102_patch(struct arizona *arizona)
 {
 	const struct reg_default *wm5102_patch;
-	int ret = 0;
+	int ret;
 	int patch_size;
 	int pwr_index = arizona->pdata.wm5102t_output_pwr;
 
@@ -173,21 +155,20 @@ int wm5102_patch(struct arizona *arizona)
 		patch_size = ARRAY_SIZE(wm5102_revb_patch);
 	}
 
-	regcache_cache_bypass(arizona->regmap, true);
-
-	ret = wm5102_apply_patch(arizona, wm5102_patch, patch_size);
+	ret = regmap_multi_reg_write_bypassed(arizona->regmap,
+						   wm5102_patch,
+						   patch_size);
 	if (ret != 0)
 		goto out;
 
 	if (pwr_index < ARRAY_SIZE(wm5102t_pwr))
-		ret = wm5102_apply_patch(arizona,
+		ret = regmap_multi_reg_write_bypassed(arizona->regmap,
 					 wm5102t_pwr[pwr_index].patch,
 					 wm5102t_pwr[pwr_index].size);
 	else
 		dev_err(arizona->dev, "Invalid wm5102t output power\n");
 
 out:
-	regcache_cache_bypass(arizona->regmap, false);
 	return ret;
 }
 
@@ -337,9 +318,6 @@ struct regmap_irq_chip wm5102_irq = {
 static const struct reg_default wm5102_reg_default[] = {
 	{ 0x00000008, 0x0019 },   /* R8     - Ctrl IF SPI CFG 1 */ 
 	{ 0x00000009, 0x0001 },   /* R9     - Ctrl IF I2C1 CFG 1 */ 
-	{ 0x00000016, 0x0000 },   /* R22    - Write Sequencer Ctrl 0 */ 
-	{ 0x00000017, 0x0000 },   /* R23    - Write Sequencer Ctrl 1 */ 
-	{ 0x00000018, 0x0000 },   /* R24    - Write Sequencer Ctrl 2 */ 
 	{ 0x00000020, 0x0000 },   /* R32    - Tone Generator 1 */ 
 	{ 0x00000021, 0x1000 },   /* R33    - Tone Generator 2 */ 
 	{ 0x00000022, 0x0000 },   /* R34    - Tone Generator 3 */ 
@@ -1954,6 +1932,9 @@ static bool wm5102_volatile_register(struct device *dev, unsigned int reg)
 	switch (reg) {
 	case ARIZONA_SOFTWARE_RESET:
 	case ARIZONA_DEVICE_REVISION:
+	case ARIZONA_WRITE_SEQUENCER_CTRL_0:
+	case ARIZONA_WRITE_SEQUENCER_CTRL_1:
+	case ARIZONA_WRITE_SEQUENCER_CTRL_2:
 	case ARIZONA_OUTPUT_STATUS_1:
 	case ARIZONA_SAMPLE_RATE_1_STATUS:
 	case ARIZONA_SAMPLE_RATE_2_STATUS:
@@ -1962,6 +1943,10 @@ static bool wm5102_volatile_register(struct device *dev, unsigned int reg)
 	case ARIZONA_ASYNC_SAMPLE_RATE_1_STATUS:
 	case ARIZONA_FLL1_NCO_TEST_0:
 	case ARIZONA_FLL2_NCO_TEST_0:
+	case ARIZONA_DAC_COMP_1:
+	case ARIZONA_DAC_COMP_2:
+	case ARIZONA_DAC_COMP_3:
+	case ARIZONA_DAC_COMP_4:
 	case ARIZONA_FX_CTRL2:
 	case ARIZONA_INTERRUPT_STATUS_1:
 	case ARIZONA_INTERRUPT_STATUS_2:

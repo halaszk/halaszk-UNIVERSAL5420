@@ -125,6 +125,8 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 
 	if (timing == MMC_TIMING_MMC_HS200_DDR) {
 		clksel = (pdata->ddr200_timing & 0xfffffff8) | pdata->clk_smpl;
+		if (pdata->is_fine_tuned)
+			clksel |= BIT(6);
 
 		if (!tuning) {
 			rddqs |= DWMCI_RDDQS_EN;
@@ -133,7 +135,7 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned int tuning, unsigned
 			}
 #if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
 			dline = DWMCI_FIFO_CLK_DELAY_CTRL(0x2) | DWMCI_RD_DQS_DELAY_CTRL(110);
-#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A)|| defined(CONFIG_KLIMT)
 			dline = DWMCI_FIFO_CLK_DELAY_CTRL(0x2) | DWMCI_RD_DQS_DELAY_CTRL(100);
 #else
 			dline = DWMCI_FIFO_CLK_DELAY_CTRL(0x2) | DWMCI_RD_DQS_DELAY_CTRL(90);

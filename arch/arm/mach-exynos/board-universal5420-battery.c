@@ -575,6 +575,8 @@ sec_battery_platform_data_t sec_battery_pdata = {
 		SEC_BATTERY_ADC_TYPE_AP,	/* TEMP */
 		SEC_BATTERY_ADC_TYPE_AP,	/* TEMP_AMB */
 		SEC_BATTERY_ADC_TYPE_AP,	/* FULL_CHECK */
+		SEC_BATTERY_ADC_TYPE_NONE,	/* VOLTAGE_NOW */
+		SEC_BATTERY_ADC_TYPE_NONE,	/* INBAT_VOLTAGE */
 	},
 
 	/* Battery */
@@ -643,7 +645,7 @@ sec_battery_platform_data_t sec_battery_pdata = {
 #if defined(CONFIG_MACH_J_CHN_CTC)
 	.full_condition_vcell = 4150,
 #else
-	.full_condition_vcell = 4300,
+	.full_condition_vcell = 4250,
 #endif
 
 	.recharge_check_count = 2,
@@ -703,7 +705,7 @@ struct platform_device sec_device_fg = {
 };
 
 static struct i2c_board_info sec_brdinfo_fg[] __initdata = {
-#if !defined(CONFIG_MFD_MAX77803)
+#if !defined(CONFIG_MFD_MAX77803) && !defined(CONFIG_MFD_MAX77888)
 	{
 		I2C_BOARD_INFO("sec-charger",
 			SEC_CHARGER_I2C_SLAVEADDR),

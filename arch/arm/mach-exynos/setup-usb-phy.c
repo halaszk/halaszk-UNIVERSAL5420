@@ -22,7 +22,9 @@
 #include <plat/cpu.h>
 #include <plat/usb-phy.h>
 #include <plat/udc-hs.h>
-#include <mach/sec_modem.h>
+#if defined(CONFIG_MDM_HSIC_PM)
+#include <linux/mdm_hsic_pm.h>
+#endif
 
 #define EXYNOS5_PICO_SLEEP
 #define EXYNOS5_HSIC2_SLEEP
@@ -51,6 +53,35 @@ static struct exynos_usb_phy usb_phy_control = {
 };
 
 static atomic_t host_usage;
+
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
+static struct raw_notifier_head phy_nfb;
+
+int __init init_phy_notifier(void)
+{
+	RAW_INIT_NOTIFIER_HEAD(&phy_nfb);
+
+	return 0;
+}
+module_init(init_phy_notifier);
+
+int register_usb2phy_notifier(struct notifier_block *nfb)
+{
+	pr_info("<%s> mif: register phy_notifier\n", __func__);
+	return raw_notifier_chain_register(&phy_nfb, nfb);
+}
+
+int unregister_usb2phy_notifier(struct notifier_block *nfb)
+{
+	pr_info("<%s> mif: unregister phy_notifier\n", __func__);
+	return raw_notifier_chain_unregister(&phy_nfb, nfb);
+}
+
+int usb2phy_notifier(unsigned cmd, void *arg)
+{
+	return raw_notifier_call_chain(&phy_nfb, cmd, arg);
+}
+#endif
 
 static void exynos5_usb_phy_crport_handshake(struct platform_device *pdev,
 				u32 reg, void __iomem *reg_base, u32 cmd)
@@ -635,7 +666,7 @@ static int exynos5_usb_phy_host_resume(struct platform_device *pdev)
 		if (usb_phy_control.lpa_entered) {
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 			if (!strcmp(pdev->name, "s5p-ehci"))
-				set_hsic_lpa_states(STATE_HSIC_LPA_WAKE);
+				usb2phy_notifier(STATE_HSIC_LPA_WAKE, NULL);
 #endif
 			usb_phy_control.lpa_entered = 0;
 			err = 1;
@@ -685,14 +716,14 @@ static int exynos5_usb_phy_host_resume(struct platform_device *pdev)
 		hsic_ctrl |= HSIC_CTRL_FORCESLEEP;
 #endif
 		writel(hsic_ctrl, EXYNOS5_PHY_HSIC_CTRL2);
-#if defined(CONFIG_N1A_3G) || defined(CONFIG_N2A_3G)
-		writel(0xF0, EXYNOS5_PHY_HSIC_TUNE1);
+#if defined(CONFIG_PHY_HSIC_TUNE1)
+		writel(CONFIG_PHY_HSIC_TUNE1_REG, EXYNOS5_PHY_HSIC_TUNE1);
 		pr_info("%s: HSIC phy tune 0x%x\n", __func__,
 			readl(EXYNOS5_PHY_HSIC_TUNE1));
 #endif
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 		if (!strcmp(pdev->name, "s5p-ehci"))
-			set_hsic_lpa_states(STATE_HSIC_LPA_WAKE);
+			usb2phy_notifier(STATE_HSIC_LPA_WAKE, NULL);
 #endif
 
 		usb_phy_control.lpa_entered = 0;
@@ -786,9 +817,8 @@ static int exynos5_usb_phy20_init(struct platform_device *pdev)
 	hsic_ctrl |= HSIC_CTRL_FORCESLEEP;
 #endif
 	writel(hsic_ctrl, EXYNOS5_PHY_HSIC_CTRL2);
-
-#if defined(CONFIG_N1A_3G) || defined(CONFIG_N2A_3G)
-	writel(0xF0, EXYNOS5_PHY_HSIC_TUNE1);
+#if defined(CONFIG_PHY_HSIC_TUNE1)
+	writel(CONFIG_PHY_HSIC_TUNE1_REG, EXYNOS5_PHY_HSIC_TUNE1);
 	pr_info("%s: HSIC phy tune 0x%x\n", __func__,
 		readl(EXYNOS5_PHY_HSIC_TUNE1));
 #endif
@@ -1288,16 +1318,16 @@ static int exynos5_check_usb_op(void)
 	if (hostphy_ctrl0 & HOST_CTRL0_FORCESUSPEND &&
 		hsic_ctrl1 & HSIC_CTRL_FORCESUSPEND &&
 		hsic_ctrl2 & HSIC_CTRL_FORCESUSPEND) {
-#if defined(CONFIG_LINK_DEVICE_HSIC)
-		/* HSIC LPA: LPA USB phy retention reume call the usb
-		 * reset resume, so we should let CP to HSIC L3 mode. */
-		set_hsic_lpa_states(STATE_HSIC_LPA_ENTER);
-#elif defined(CONFIG_MDM_HSIC_PM)
-		ret = set_hsic_lpa_states(STATE_HSIC_LPA_ENTER);
-		if (ret < 0) {
+#if defined(CONFIG_LINK_DEVICE_HSIC) || defined(CONFIG_MDM_HSIC_PM)
+		if (is_cp_wait_for_resume()) {
+			pr_info("%s: fail to enter LPA by HWK irq\n", __func__);
 			op = 1;
 			goto done;
 		}
+
+		/* HSIC LPA: LPA USB phy retention reume call the usb
+		 * reset resume, so we should let CP to HSIC L3 mode. */
+		usb2phy_notifier(STATE_HSIC_LPA_ENTER, NULL);
 #endif
 		/* unset to normal of Host */
 		hostphy_ctrl0 |= (HOST_CTRL0_SIDDQ);
@@ -1434,7 +1464,7 @@ int s5p_usb_phy_init(struct platform_device *pdev, int type)
 #if defined(CONFIG_LINK_DEVICE_HSIC)
 		/* HSIC LPA: Let CP know the slave wakeup from LPA wakeup */
 		if (!strcmp(pdev->name, "s5p-ehci"))
-			set_hsic_lpa_states(STATE_HSIC_LPA_PHY_INIT);
+			usb2phy_notifier(STATE_HSIC_LPA_PHY_INIT, NULL);
 #endif
 		if (!strcmp(pdev->name, "s5p-ehci"))
 			set_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
@@ -1488,6 +1518,9 @@ int s5p_usb_phy_exit(struct platform_device *pdev, int type)
 			clear_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
 		else if (!strcmp(pdev->name, "exynos-ohci"))
 			clear_bit(HOST_PHY_OHCI, &usb_phy_control.flags);
+#if defined(CONFIG_LINK_DEVICE_HSIC)
+			usb2phy_notifier(STATE_HSIC_PHY_SHUTDOWN, NULL);
+#endif
 	} else if (type == S5P_USB_PHY_DEVICE) {
 		if (soc_is_exynos4210()) {
 			ret = exynos4_usb_phy0_exit(pdev);

@@ -363,6 +363,11 @@ static int calc_gamma(struct dynamic_aid_info d_aid, int ibr, int *result)
 
 			if (offset_color)
 				res[c] += offset_color[ibr][iv].rgb[c];
+			/* round up/down */
+			if(res[c] < 0)
+				res[c] = 0;
+			else if(res[c] > 255)
+				res[c] = 255;
 		}
 	}
 

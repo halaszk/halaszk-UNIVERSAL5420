@@ -397,6 +397,7 @@ void AssertXRES(void)
 	clk_busy_wait(1000);
 	clk_busy_wait(1000);
 #endif
+	gpio_direction_output(issp_tkey_i2c->pdata->gpio_rst, 1);
 }
 
 /* ********************* LOW-LEVEL ISSP SUBROUTINE SECTION ********************
@@ -411,6 +412,7 @@ void AssertXRES(void)
 void DeassertXRES(void)
 {
 	/*gpio_out(EXT_TSP_RST, GPIO_LOW_VALUE); */
+	gpio_direction_output(issp_tkey_i2c->pdata->gpio_rst, 0);
 }
 #else
 /* ********************* LOW-LEVEL ISSP SUBROUTINE SECTION ********************

@@ -501,6 +501,12 @@ static int enable_periodic (struct ehci_hcd *ehci)
 	ehci_writel(ehci, cmd, &ehci->regs->command);
 	/* posted write ... PSS happens later */
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	status = handshake(ehci, &ehci->regs->status, STS_PSS, STS_PSS, 2000);
+	if (status)
+		ehci_dbg (ehci, "%s handshake %d\n", __func__, status);
+#endif
+
 	/* make sure ehci_work scans these */
 	ehci->next_uframe = ehci_read_frame_index(ehci)
 		% (ehci->periodic_size << 3);
@@ -541,6 +547,10 @@ static int disable_periodic (struct ehci_hcd *ehci)
 	ehci_writel(ehci, cmd, &ehci->regs->command);
 	/* posted write ... */
 
+#if defined(CONFIG_MDM_HSIC_PM)
+	status = handshake(ehci, &ehci->regs->status, STS_PSS, 0, 2000);
+#endif
+
 	free_cached_lists(ehci);
 
 	ehci->next_uframe = -1;
@@ -560,7 +570,7 @@ static int qh_link_periodic (struct ehci_hcd *ehci, struct ehci_qh *qh)
 	unsigned	i;
 	unsigned	period = qh->period;
 
-#if !defined(CONFIG_LINK_DEVICE_HSIC)
+#if !defined(CONFIG_LINK_DEVICE_HSIC) && !defined(CONFIG_QC_MODEM)
 	dev_dbg (&qh->dev->dev,
 		"link qh%d-%04x/%p start %d [%d/%d us]\n",
 		period, hc32_to_cpup(ehci, &qh->hw->hw_info2)
@@ -644,7 +654,7 @@ static int qh_unlink_periodic(struct ehci_hcd *ehci, struct ehci_qh *qh)
 		? ((qh->usecs + qh->c_usecs) / qh->period)
 		: (qh->usecs * 8);
 
-#if !defined(CONFIG_LINK_DEVICE_HSIC)
+#if !defined(CONFIG_LINK_DEVICE_HSIC) && !defined(CONFIG_QC_MODEM)
 	dev_dbg (&qh->dev->dev,
 		"unlink qh%d-%04x/%p start %d [%d/%d us]\n",
 		qh->period,
@@ -885,7 +895,7 @@ static int qh_schedule(struct ehci_hcd *ehci, struct ehci_qh *qh)
 			: cpu_to_hc32(ehci, QH_SMASK);
 		hw->hw_info2 |= c_mask;
 	}
-#if !defined(CONFIG_LINK_DEVICE_HSIC)
+#if !defined(CONFIG_LINK_DEVICE_HSIC) && !defined(CONFIG_QC_MODEM)
 	else
 		ehci_dbg (ehci, "reused qh %p schedule\n", qh);
 #endif

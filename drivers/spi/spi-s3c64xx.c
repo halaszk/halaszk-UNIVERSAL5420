@@ -23,12 +23,10 @@
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
-#include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/spi/spi.h>
 
-#include <mach/dma.h>
 #include <plat/s3c64xx-spi.h>
 #include <plat/cpu.h>
 
@@ -131,52 +129,6 @@
 
 #define RXBUSY    (1<<2)
 #define TXBUSY    (1<<3)
-
-struct s3c64xx_spi_dma_data {
-	unsigned		ch;
-	enum dma_transfer_direction direction;
-	enum dma_ch	dmach;
-};
-
-/**
- * struct s3c64xx_spi_driver_data - Runtime info holder for SPI driver.
- * @clk: Pointer to the spi clock.
- * @src_clk: Pointer to the clock used to generate SPI signals.
- * @master: Pointer to the SPI Protocol master.
- * @cntrlr_info: Platform specific data for the controller this driver manages.
- * @tgl_spi: Pointer to the last CS left untoggled by the cs_change hint.
- * @queue: To log SPI xfer requests.
- * @lock: Controller specific lock.
- * @state: Set of FLAGS to indicate status.
- * @rx_dmach: Controller's DMA channel for Rx.
- * @tx_dmach: Controller's DMA channel for Tx.
- * @sfr_start: BUS address of SPI controller regs.
- * @regs: Pointer to ioremap'ed controller registers.
- * @irq: interrupt
- * @xfer_completion: To indicate completion of xfer task.
- * @cur_mode: Stores the active configuration of the controller.
- * @cur_bpw: Stores the active bits per word settings.
- * @cur_speed: Stores the active xfer clock speed.
- */
-struct s3c64xx_spi_driver_data {
-	void __iomem                    *regs;
-	struct clk                      *clk;
-	struct clk                      *src_clk;
-	struct platform_device          *pdev;
-	struct spi_master               *master;
-	struct s3c64xx_spi_info  *cntrlr_info;
-	struct spi_device               *tgl_spi;
-	struct list_head                queue;
-	spinlock_t                      lock;
-	unsigned long                   sfr_start;
-	struct completion               xfer_completion;
-	unsigned                        state;
-	unsigned                        cur_mode, cur_bpw;
-	unsigned                        cur_speed;
-	struct s3c64xx_spi_dma_data	rx_dma;
-	struct s3c64xx_spi_dma_data	tx_dma;
-	struct samsung_dma_ops		*ops;
-};
 
 static struct s3c2410_dma_client s3c64xx_spi_dma_client = {
 	.name = "samsung-spi-dma",
@@ -1257,19 +1209,22 @@ static int s3c64xx_spi_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int s3c64xx_spi_suspend(struct device *dev)
 {
+#ifndef CONFIG_PM_RUNTIME
 	struct platform_device *pdev = to_platform_device(dev);
+#endif
 	struct spi_master *master = spi_master_get(dev_get_drvdata(dev));
 	struct s3c64xx_spi_driver_data *sdd = spi_master_get_devdata(master);
 
 	spi_master_suspend(master);
 
+#ifndef CONFIG_PM_RUNTIME
+
 	if (pdev->id < 3) {
-		if (!pm_runtime_enabled(dev)) {
-			/* Disable the clock */
-			clk_disable(sdd->src_clk);
-			clk_disable(sdd->clk);
-		}
+		/* Disable the clock */
+		clk_disable(sdd->src_clk);
+		clk_disable(sdd->clk);
 	}
+#endif
 
 	sdd->cur_speed = 0; /* Output Clock is stopped */
 
@@ -1292,15 +1247,25 @@ static int s3c64xx_spi_resume(struct device *dev)
 
 		s3c64xx_spi_hwinit(sdd, pdev->id);
 
-		if (pm_runtime_enabled(dev)) {
-			/* Disable the clock */
-			clk_disable(sdd->src_clk);
-			clk_disable(sdd->clk);
-		}
+#ifdef CONFIG_PM_RUNTIME
+		/* Disable the clock */
+		clk_disable(sdd->src_clk);
+		clk_disable(sdd->clk);
+#endif
 	}
 
 	spi_master_resume(master);
 
+	return 0;
+}
+#else
+static int s3c64xx_spi_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int s3c64xx_spi_resume(struct device *dev)
+{
 	return 0;
 }
 #endif /* CONFIG_PM */

@@ -36,6 +36,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/pm_qos.h>
+#include <linux/pm_runtime.h>
 
 #include <mach/bts.h>
 #include <mach/map.h>
@@ -277,7 +278,8 @@ static void mali_dvfs_event_proc(struct work_struct *w)
 
 	mali_dvfs_decide_next_level(dvfs_status);
 
-	kbase_platform_dvfs_set_level(dvfs_status->kbdev, dvfs_status->step);
+	if (!pm_runtime_status_suspended(dvfs_status->kbdev->osdev.dev))
+		kbase_platform_dvfs_set_level(dvfs_status->kbdev, dvfs_status->step);
 
 	mutex_unlock(&mali_enable_clock_lock);
 #endif
@@ -843,7 +845,7 @@ void kbase_tmu_normal_work(void)
 }
 #endif
 
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 unsigned long get_dpll_freq(int curr, int targ)
 {
 	unsigned long dpll_clk;
@@ -875,7 +877,7 @@ unsigned long get_dpll_freq(int curr, int targ)
 
 void kbase_platform_dvfs_set_clock(kbase_device *kbdev, int freq)
 {
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	struct clk *mout_dpll = NULL;
 	struct clk *mout_vpll = NULL;
 	struct clk *fout_vpll = NULL;

@@ -1275,22 +1275,30 @@ static void set_jitter_level(void *device_data)
 		fdata->cmd_state = CMD_STATUS_FAIL;
 	} else {
 		int retval = 0, level = 0;
+		u8 cfg_val;
 
 		level = fdata->cmd_param[0];
+		retval = mxt_read_object(data, MXT_TOUCH_MULTITOUCHSCREEN_T9, MXT_TOUCH_MOVFILTER2, &cfg_val);
 
-		/* TODO: Write config value for changing jitter value  on tsp ic */
-		retval = mxt_write_object(data, MXT_TOUCH_MULTITOUCHSCREEN_T9,
-					MXT_TOUCH_MOVFILTER2, level);
+		if (!retval) {
+			cfg_val = ((cfg_val & 0xf0 )| level);
+
+			/* TODO: Write config value for changing jitter value  on tsp ic */
+			retval = mxt_write_object(data, MXT_TOUCH_MULTITOUCHSCREEN_T9, MXT_TOUCH_MOVFILTER2, cfg_val);
+		} else {
+			tsp_debug_err(true, &data->client->dev, "%s: failed to read T9 object.\n", __func__);
+			retval = -EINVAL;
+		}
 
 		if (retval < 0) {
-			tsp_debug_err(true, &client->dev, "%s: failed, retval=%d,level=%d\n",
-						__func__, retval, level);
+			tsp_debug_err(true, &client->dev, "%s: failed, retval=%d,level=%d,cfg_val=%d\n",
+						__func__, retval, level, cfg_val);
 			snprintf(buff, sizeof(buff), "%s", "NG");
 			set_cmd_result(fdata, buff, strnlen(buff, sizeof(buff)));
 			fdata->cmd_state = CMD_STATUS_FAIL;
 		} else {
-			tsp_debug_info(true, &client->dev, "%s: success write config[%d]\n",
-						__func__, level);
+			tsp_debug_info(true, &client->dev, "%s: success write level[%d],cfg_val=[%d]\n",
+						__func__, level, cfg_val);
 			snprintf(buff, sizeof(buff), "%s", "OK");
 			set_cmd_result(fdata, buff, strnlen(buff, sizeof(buff)));
 			fdata->cmd_state = CMD_STATUS_OK;
@@ -1909,21 +1917,20 @@ static ssize_t touchkey_d_back_show(struct device *dev,
 	return sprintf(buf, "%d\n", touchkey_delta_show(data, "d_back"));
 }
 
+/* Depend on OS. (~JBP : ues menu key, KK~ : use recent key */
 static ssize_t touchkey_menu_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-
-/* Depend on OS. (~JBP : menu, KK~ : recent */
-/* It will change from KK factory binary base on using recent key */
-#if defined(CONFIG_N2A) || defined(CONFIG_V1A) || defined(CONFIG_V2A)
-	return sprintf(buf, "%d\n", touchkey_delta_show(data, "recent"));
-#elif defined(CONFIG_N1A)
 	return sprintf(buf, "%d\n", touchkey_delta_show(data, "menu"));
-#else
-	return sprintf(buf, "%d\n", touchkey_delta_show(data, "menu"));
-#endif
 }
+static ssize_t touchkey_recent_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct mxt_data *data = dev_get_drvdata(dev);
+	return sprintf(buf, "%d\n", touchkey_delta_show(data, "recent"));
+}
+/* Depend on OS. */
 
 static ssize_t touchkey_back_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
@@ -2041,7 +2048,11 @@ static DEVICE_ATTR(touchkey_d_menu, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_d_menu
 static DEVICE_ATTR(touchkey_d_home1, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_d_home1_show, NULL);
 static DEVICE_ATTR(touchkey_d_home2, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_d_home2_show, NULL);
 static DEVICE_ATTR(touchkey_d_back, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_d_back_show, NULL);
+#if defined(CONFIG_N1A) /* N1A : JBP */
 static DEVICE_ATTR(touchkey_menu, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_menu_show, NULL);
+#else
+static DEVICE_ATTR(touchkey_recent, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_recent_show, NULL);
+#endif
 static DEVICE_ATTR(touchkey_back, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_back_show, NULL);
 static DEVICE_ATTR(touchkey_threshold, S_IRUGO | S_IWUSR | S_IWGRP, get_touchkey_threshold, NULL);
 static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, NULL, touchkey_led_control);
@@ -2056,7 +2067,11 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_touchkey_d_home1.attr,
 	&dev_attr_touchkey_d_home2.attr,
 	&dev_attr_touchkey_d_back.attr,
+#if defined(CONFIG_N1A) /* N1A : JBP */
 	&dev_attr_touchkey_menu.attr,
+#else
+	&dev_attr_touchkey_recent.attr,
+#endif
 	&dev_attr_touchkey_back.attr,
 	&dev_attr_touchkey_threshold.attr,
 	&dev_attr_brightness.attr,

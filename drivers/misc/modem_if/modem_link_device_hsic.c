@@ -32,6 +32,7 @@
 #include <linux/version.h>
 
 #include <linux/platform_data/modem_if.h>
+#include <plat/usb-phy.h>
 #include "modem_prj.h"
 #include "modem_link_device_hsic.h"
 #include "modem_utils.h"
@@ -352,8 +353,7 @@ static int usb_send(struct link_device *ld, struct io_device *iod,
 			 * packets can be reached here.
 			 */
 			if (in_irq()) {
-				mif_err("raw tx is suspended, "
-						"drop packet. size=%d",
+				mif_err("raw tx is suspended, drop packet. size=%d",
 						skb->len);
 				return -EBUSY;
 			}
@@ -450,7 +450,6 @@ static int usb_tx_urb_with_skb(struct usb_device *usbdev, struct sk_buff *skb,
 
 static int _usb_tx_work(struct sk_buff *skb)
 {
-	struct sk_buff_head *txq;
 	struct io_device *iod = skbpriv(skb)->iod;
 	struct link_device *ld = skbpriv(skb)->ld;
 	struct usb_link_device *usb_ld = to_usb_link_device(ld);
@@ -461,20 +460,16 @@ static int _usb_tx_work(struct sk_buff *skb)
 	case IPC_FMT:
 		/* boot device uses same intf with fmt*/
 		pipe_data = &usb_ld->devdata[IF_USB_FMT_EP];
-		txq = &ld->sk_fmt_tx_q;
 		break;
 	case IPC_RAW:
 		pipe_data = &usb_ld->devdata[IF_USB_RAW_EP];
-		txq = &ld->sk_raw_tx_q;
 		break;
 	case IPC_RFS:
 		pipe_data = &usb_ld->devdata[IF_USB_RFS_EP];
-		txq = &ld->sk_fmt_tx_q;
 		break;
 	default:
 		/* wrong packet, drop it */
 		pipe_data =  NULL;
-		txq = NULL;
 		break;
 	}
 
@@ -513,6 +508,10 @@ static void usb_tx_work(struct work_struct *work)
 				mif_err("link not avail, retry reconnect.\n");
 				goto exit;
 			}
+			/* If kernel was dpm_suspending status, it pending the
+			 TX packet and retry after PM_POST_SUSPEND */
+			if (ret == -EBUSY)
+				goto exit;
 			goto retry_tx_work;
 		}
 
@@ -591,7 +590,7 @@ static int link_pm_runtime_get_active(struct link_pm_data *pm_data)
 		/* during dpm_suspending..
 		 * if AP get tx data, wake up. */
 		wake_lock(&pm_data->l2_wake);
-		return -EAGAIN;
+		return -EBUSY;
 	}
 
 	if (dev->power.runtime_status == RPM_ACTIVE) {
@@ -1179,7 +1178,6 @@ static int link_pm_notifier_event(struct notifier_block *this,
 {
 	struct link_pm_data *pm_data =
 			container_of(this, struct link_pm_data,	pm_notifier);
-	struct modem_ctl *mc = if_usb_get_modemctl(pm_data);
 
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
@@ -1188,11 +1186,6 @@ static int link_pm_notifier_event(struct notifier_block *this,
 	case PM_RESTORE_PREPARE:
 #endif
 		pm_data->dpm_suspending = true;
-		/* set PDA Active High if previous state was LPA */
-		if (!gpio_get_value(pm_data->gpio_link_active)) {
-			mif_info("PDA active High to LPA suspend spot\n");
-			gpio_set_value(mc->gpio_pda_active, 1);
-		}
 		mif_debug("dpm suspending set to true\n");
 		return NOTIFY_OK;
 	case PM_POST_SUSPEND:
@@ -1203,6 +1196,10 @@ static int link_pm_notifier_event(struct notifier_block *this,
 		pm_data->dpm_suspending = false;
 		mif_debug("dpm suspending set to false\n");
 		queue_delayed_work(pm_data->wq, &pm_data->link_pm_work,	0);
+		/* Retry TX if it was pended by dpm_suspending */
+		queue_delayed_work(pm_data->usb_ld->ld.tx_wq,
+			&pm_data->usb_ld->ld.tx_delayed_work,
+			msecs_to_jiffies(20));
 		return NOTIFY_OK;
 	}
 	return NOTIFY_DONE;
@@ -1563,6 +1560,43 @@ static struct usb_driver if_usb_driver = {
 	.supports_autosuspend = 1,
 };
 
+static int mif_usb2phy_notify(struct notifier_block *nfb,
+		unsigned long events, void *arg)
+{
+	struct usb_link_device *usb_ld =
+		container_of(nfb, struct usb_link_device, phy_nfb);
+	struct modem_ctl *mc = usb_ld->ld.mc;
+	struct link_pm_data *pm_data = usb_ld->link_pm_data;
+
+	if (!gpio_get_value(mc->gpio_cp_reset)
+			|| !gpio_get_value(mc->gpio_phone_active))
+		return NOTIFY_DONE;
+
+	switch (events) {
+	case STATE_HSIC_LPA_ENTER:
+		gpio_set_value(pm_data->gpio_link_active, 0);
+		gpio_set_value(mc->gpio_pda_active, 0);
+		mif_info("lpa enter(%ld): host active(%d), pda active(%d)\n",
+			events, gpio_get_value(pm_data->gpio_link_active),
+			gpio_get_value(mc->gpio_pda_active));
+		break;
+	case STATE_HSIC_LPA_WAKE:
+	case STATE_HSIC_LPA_PHY_INIT:
+		gpio_set_value(mc->gpio_pda_active, 1);
+		mif_info("phy init(%ld): pda active(%d)\n", events,
+			gpio_get_value(mc->gpio_pda_active));
+		break;
+	case STATE_HSIC_PHY_SHUTDOWN:
+		gpio_set_value(pm_data->gpio_link_active, 0);
+		mif_info("phy off(%ld): host active(%d)" , events,
+			gpio_get_value(pm_data->gpio_link_active));
+		break;
+	case STATE_HSIC_CHECK_HOSTWAKE:
+		return get_hostwake(pm_data) ? NOTIFY_BAD : NOTIFY_DONE;
+	}
+	return NOTIFY_DONE;
+}
+
 static int if_usb_init(struct link_device *ld)
 {
 	int ret;
@@ -1606,8 +1640,9 @@ static int if_usb_init(struct link_device *ld)
 		}
 	}
 
-	mif_info("if_usb_init() done : %d, usb_ld (0x%p)\n",
-								ret, usb_ld);
+	usb_ld->phy_nfb.notifier_call = mif_usb2phy_notify;
+	register_usb2phy_notifier(&usb_ld->phy_nfb);
+	mif_info("if_usb_init() done : %d, usb_ld (0x%p)\n", ret, usb_ld);
 	return ret;
 }
 

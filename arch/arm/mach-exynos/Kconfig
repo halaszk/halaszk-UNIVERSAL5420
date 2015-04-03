@@ -171,6 +171,11 @@ config EXYNOS4_DEV_FIMC_LITE
 	help
 	  Compile in platform device definitions for FIMC_LITE
 
+config CAMERA_EEPROM
+	bool "CAMERA EEPROM support"
+	help
+	  Support CAMERA EEPROM
+
 config EXYNOS4_DEV_FIMC_IS
 	bool
 	depends on (VIDEO_EXYNOS4_FIMC_IS)
@@ -1096,6 +1101,11 @@ config CHAGALL_LTE
 	help
 	  Support CHAGALL LTE Board
 
+config CHAGALL_TD
+	bool "CHAGALL TD Board"
+	help
+	  Support CHAGALL TD Board
+
 config KLIMT_3G
 	bool "KLIMT_3G 3G Board"
 	help
@@ -1106,7 +1116,37 @@ config KLIMT_WIFI
 	help
 	  Support KLIMT WIFI Board
 
+config KLIMT_LTE
+	bool "KLIMT LTE Board"
+	help
+	  Support KLIMT LTE Board
+
+config KLIMT_TD
+	bool "KLIMT TD Board"
+	help
+	  Support KLIMT TD Board
+
 endchoice
+
+config HAVE_3G
+	bool "HA VE 3G Board"
+	help
+	  Support HA VE 3G Board
+
+config HAVE_LTE
+	bool "HA VE LTE Board"
+	help
+	  Support HA VE LTE Board
+
+config HA3G_DS
+	bool "HA 3G DS Board"
+	help
+	  Support HA 3G DS Board
+
+config IPC_DS_DN
+	bool "HA 3G DS Board"
+	help
+	  Support HA 3G DS Board
 
 choice
 	prompt "Support Target Locale"
@@ -1125,6 +1165,16 @@ config TARGET_LOCALE_USA
 	bool "Locale USA support"
 	help
 	  Enable universal5420 LOCALE USA.
+
+config TARGET_LOCALE_BMC
+	bool "Locale BMC support"
+	help
+	  Enable universal5420 LOCALE BMC.
+
+config TARGET_LOCALE_DEMO
+	bool "Locale DEMO support"
+	help
+	  Enable universal5420 LOCALE DEMO.
 
 endchoice
 
@@ -1178,7 +1228,7 @@ config GPS_GSD4T
 config GPS_GSD5T
 	bool "CSR_GPS_CHIPSET_5T"
 	default n
-	
+
 config BT_BCM4339
 	bool "Enable BCM4339 driver"
 	default n
@@ -1362,6 +1412,12 @@ endchoice
 
 endif
 
+config SEC_MISC
+	bool "Samsung TN Misc Feature"
+	default n
+	help
+	  Samsung TN Misc extension Feature. Do additional work when Misc.
+
 comment "Debugging Feature"
 menuconfig SEC_DEBUG
 	bool "Samsung TN Ramdump Feature"
@@ -1466,7 +1522,7 @@ config SEC_DEBUG_LIST_PANIC
 config SEC_DEBUG_IOVMM
 	bool "panic when iovmm alloc fails"
 	default n
-	help 
+	help
 	  panic when iovmm allocation fails
 	  this will immediately stop the system.
 
@@ -1550,6 +1606,12 @@ config SEC_DEBUG_TIMA_LOG
 	help
 	  This option enables additional log buffer for tsp log.
 
+config SEC_DEBUG_SUBSYS
+	default n
+	bool "Enable summary dump support" if EMBEDDED
+	help
+	  Samsung Summary dump Feature for debugging use.
+
 comment "Samsung TN Power Management Options"
 menuconfig SEC_PM
 	bool "Samsung TN Power Management"
@@ -1571,48 +1633,3 @@ config SEC_THERMISTOR
 	default n
 	help
 	  AP thermistor driver.
-
-config SEC_MODEM
-	bool "IMC modem support"
-	default n
-
-if SEC_MODEM
-comment "IMC modem svnet feature"
-
-choice
-	prompt "SVNET2 version"
-	default SEC_MODEM_PRIMITIVE
-
-config SEC_MODEM_PRIMITIVE
-	bool "the first SVENT2"
-
-config SEC_MODEM_V2
-	bool "Modem IF ver. 2 for HSIC"
-
-config SEC_MODEM_V1
-	bool "Modem IF ver. 1 for C2C"
-
-config SEC_MODEM_IF
-	bool "Modem IF"
-endchoice
-
-choice
-	prompt "SEC MODEM CONFIG"
-	depends on SEC_MODEM
-	default SEC_MODEM_M0_XMM6360
-
-config SEC_MODEM_M0_XMM6360
-	bool "XMM6360 feature"
-	select UMTS_MODEM_XMM6360
-	select LINK_DEVICE_HSIC
-	select EHCI_IRQ_DISTRIBUTION
-
-config SEC_MODEM_XMM6262
-	bool "M0 with xmm6262"
-	select UMTS_MODEM_XMM6262
-	select LINK_DEVICE_HSIC
-	select EHCI_IRQ_DISTRIBUTION
-
-endchoice
-
-endif

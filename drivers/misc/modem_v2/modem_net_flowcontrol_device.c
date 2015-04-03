@@ -23,7 +23,7 @@
 #include <linux/netdevice.h>
 #include <linux/if_arp.h>
 #include <linux/module.h>
-#include <linux/platform_data/modem.h>
+#include <linux/platform_data/modem_v2.h>
 
 #include "modem_prj.h"
 
@@ -86,27 +86,20 @@ static const struct file_operations modem_net_flowcontrol_device_fops = {
 	.unlocked_ioctl = modem_net_flowcontrol_device_ioctl,
 };
 
+static struct miscdevice net_flowcontrol_dev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "modem_br",
+	.fops = &modem_net_flowcontrol_device_fops,
+};
+
 static int __init modem_net_flowcontrol_device_init(void)
 {
 	int ret = 0;
-	struct io_device *net_flowcontrol_dev;
 
-	net_flowcontrol_dev = kzalloc(sizeof(struct io_device), GFP_KERNEL);
-	if (!net_flowcontrol_dev) {
-		mif_err("net_flowcontrol_dev io device memory alloc fail\n");
-		return -ENOMEM;
-	}
-
-	net_flowcontrol_dev->miscdev.minor = MISC_DYNAMIC_MINOR;
-	net_flowcontrol_dev->miscdev.name = "modem_br";
-	net_flowcontrol_dev->miscdev.fops = &modem_net_flowcontrol_device_fops;
-
-	ret = misc_register(&net_flowcontrol_dev->miscdev);
-	if (ret) {
+	ret = misc_register(&net_flowcontrol_dev);
+	if (ret)
 		mif_err("failed to register misc br device : %s\n",
-			net_flowcontrol_dev->miscdev.name);
-		kfree(net_flowcontrol_dev);
-	}
+				net_flowcontrol_dev.name);
 
 	return ret;
 }

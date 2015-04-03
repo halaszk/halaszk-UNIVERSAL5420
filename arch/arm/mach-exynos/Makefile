@@ -121,6 +121,7 @@ obj-$(CONFIG_HA)			+= board-h-pmic.o
 obj-$(CONFIG_V1A)			+= board-v1-pmic.o
 obj-$(CONFIG_V2A)			+= board-v1-pmic.o
 obj-$(CONFIG_CHAGALL)			+= board-chagall-pmic.o
+obj-$(CONFIG_KLIMT)			+= board-klimt-pmic.o
 obj-$(CONFIG_N1A)			+= board-n1-pmic.o
 obj-$(CONFIG_N2A)			+= board-n1-pmic.o
 
@@ -128,6 +129,7 @@ obj-$(CONFIG_HA)			+= board-h-thermistor.o
 obj-$(CONFIG_V1A)			+= board-v1-thermistor.o
 obj-$(CONFIG_V2A)			+= board-v1-thermistor.o
 obj-$(CONFIG_CHAGALL)			+= board-v1-thermistor.o
+obj-$(CONFIG_KLIMT)			+= board-klimt-thermistor.o
 obj-$(CONFIG_N1A)			+= board-n1-thermistor.o
 obj-$(CONFIG_N2A)			+= board-n1-thermistor.o
 
@@ -135,6 +137,7 @@ obj-$(CONFIG_HA)			+= board-h-gpio.o
 obj-$(CONFIG_V1A)			+= board-v1-gpio.o
 obj-$(CONFIG_V2A)			+= board-v1-gpio.o
 obj-$(CONFIG_CHAGALL)			+= board-chagall-gpio.o
+obj-$(CONFIG_KLIMT)			+= board-klimt-gpio.o
 obj-$(CONFIG_N1A)			+= board-n1-gpio.o
 obj-$(CONFIG_N2A)			+= board-n1-gpio.o
 
@@ -148,14 +151,16 @@ obj-$(CONFIG_HA)			+= board-universal5420-display.o
 obj-$(CONFIG_V1A)			+= board-v1-display.o
 obj-$(CONFIG_V2A)			+= board-v1-display.o
 obj-$(CONFIG_CHAGALL)			+= board-chagall-display.o
+obj-$(CONFIG_KLIMT)			+= board-klimt-display.o
 obj-$(CONFIG_N1A)			+= board-v1-display.o
 obj-$(CONFIG_N2A)			+= board-v1-display.o
 
 obj-$(CONFIG_V1A)		+= board-vienna-input.o
 obj-$(CONFIG_V2A)		+= board-vienna-input.o
 obj-$(CONFIG_CHAGALL)		+= board-chagall-input.o
+obj-$(CONFIG_KLIMT)		+= board-klimt-input.o
 obj-$(CONFIG_N1A)	+= board-n1-input.o
-obj-$(CONFIG_N2A)	+= board-n1-input.o
+obj-$(CONFIG_N2A)	+= board-vienna-input.o
 obj-$(CONFIG_HA)	+= board-universal5420-input.o
 
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-clock.o
@@ -173,7 +178,8 @@ obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-vibrator.o
 
 obj-$(CONFIG_V1A)		+= board-vienna-battery.o
 obj-$(CONFIG_V2A)		+= board-vienna-battery.o
-obj-$(CONFIG_CHAGALL)		+= board-vienna-battery.o
+obj-$(CONFIG_CHAGALL)		+= board-lt03-battery.o
+obj-$(CONFIG_KLIMT)		+= board-lt03-battery.o
 obj-$(CONFIG_N1A)		+= board-lt03-battery.o
 obj-$(CONFIG_N2A)		+= board-lt03-battery.o
 obj-$(CONFIG_HA)		+= board-universal5420-battery.o
@@ -182,6 +188,10 @@ ifeq ($(CONFIG_LEDS_AN30259A),y)
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-led.o
 endif
 ifeq ($(CONFIG_MFD_MAX77803),y)
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-mfd.o
+obj-$(CONFIG_MACH_UNIVERSAL5420)	+= sec-switch.o
+endif
+ifeq ($(CONFIG_MFD_MAX77888),y)
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= board-universal5420-mfd.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= sec-switch.o
 endif
@@ -276,6 +286,8 @@ obj-$(CONFIG_BL_SWITCHER)		+= bL_control.o bL_setup.o
 obj-$(CONFIG_MACH_UNIVERSAL5420)	+= sec-reboot.o
 obj-$(CONFIG_SEC_DEBUG)			+= sec_debug.o sec_getlog.o sec_gaf.o
 obj-$(CONFIG_SEC_LOG)			+= sec_log.o
+# Samsung Misc Feature
+obj-$(CONFIG_SEC_MISC)		+= sec_misc.o
 
 obj-$(CONFIG_SEC_THERMISTOR)		+= sec_thermistor.o
 
@@ -291,5 +303,10 @@ obj-$(CONFIG_GPS_GSD4T)			+= sec_gps_gsd4t.o
 obj-$(CONFIG_GPS_GSD5T)			+= sec_gps_gsd5t.o
 endif
 
-obj-$(CONFIG_SEC_MODEM_M0_XMM6360)	+= board-m0-xmm6360-modems.o
+obj-$(CONFIG_SEC_MODEM_XMM6360)	+= board-xmm6360-modems.o
 obj-$(CONFIG_SEC_MODEM_XMM6262)	+= board-xmm626x-modems.o
+
+ifdef CONFIG_MSM_SUBSYSTEM_RESTART
+	obj-y += subsystem_notif.o
+	obj-y += subsystem_restart.o
+endif

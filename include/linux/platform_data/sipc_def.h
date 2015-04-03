@@ -16,7 +16,7 @@
 #ifndef __SIPC_DEF_H__
 #define __SIPC_DEF_H__
 
-/* definition of SIPC 4.x *****************************************************/
+/* definition of SIPC 4.x */
 struct fmt_hdr {
 	u16 len;
 	u8 control;
@@ -56,7 +56,7 @@ union sipc4_hdr {
 /* If iod->id is 0, do not need to store to `iodevs_tree_fmt' in SIPC4 */
 #define sipc4_is_not_reserved_channel(ch) ((ch) != 0)
 
-/* definition of SIPC 5.0 *****************************************************/
+/* definition of SIPC 5.0 */
 struct sipc5_normal_hdr {
 	u8 cfg;
 	u8 ch;
@@ -111,7 +111,7 @@ struct sipc5_link_hdr {
 #define sipc5_is_not_reserved_channel(ch) \
 	((ch) != 0 && (ch) != 5 && (ch) != 6 && (ch) != 27 && (ch) != 255)
 
-/* SIPC common definitions ****************************************************/
+/* SIPC common definitions */
 union sipc_all_hdr {
 	struct fmt_hdr fmt;
 	struct raw_hdr raw;
@@ -166,6 +166,7 @@ enum sipc_ch_id {
 	SIPC_CH_ID_CPLOG2,	/*ID:29*/
 	SIPC_CH_ID_LOOPBACK1,
 	SIPC_CH_ID_LOOPBACK2,
+	SIPC_CH_ID_CALIBCMD,    /*ID:32*/
 				/*32~234 was reserved*/
 	SIPC5_CH_ID_FMT_0 = 235,
 	SIPC5_CH_ID_FMT_1,
@@ -205,12 +206,12 @@ struct sipc_main_hdr {
 #define SIPC_MULTIFMT_ID_MAX	0x7F
 #define SIPC_MULTIFMT_MOREBIT	0x80
 
-#define SIPC_ALIGN_UNIT	sizeof(unsigned)
+#define SIPC_ALIGN_UNIT		sizeof(unsigned)
 #define SIPC_ALIGN_PAD_MAX	(SIPC_ALIGN_UNIT - 1)
 #define SIPC_ALIGN(x) ALIGN(x, SIPC_ALIGN_UNIT)
 #define SIPC_PADLEN(x) (ALIGN(x, SIPC_ALIGN_UNIT) - x)
 
-/* Compatibility with legacy driver codes *************************************/
+/* Compatibility with legacy driver codes */
 #define SIPC4_CHID_FMT		(0x0 << 0x5)
 #define SIPC4_CHID_RAW		(0x1 << 0x5)
 #define SIPC5_CHID_RFS		(0x2 << 0x5)

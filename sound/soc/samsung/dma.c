@@ -143,13 +143,16 @@ static void audio_buffdone(void *data)
 
 	snd_pcm_period_elapsed(substream);
 
-	spin_lock(&prtd->lock);
+	if(prtd == NULL)
+		return;
+
 	if (!samsung_dma_has_circular()) {
+		spin_lock(&prtd->lock);
 		prtd->dma_loaded--;
 		if (!samsung_dma_has_infiniteloop())
 			dma_enqueue(substream);
+		spin_unlock(&prtd->lock);
 	}
-	spin_unlock(&prtd->lock);
 }
 
 
@@ -255,7 +258,7 @@ static int dma_prepare(struct snd_pcm_substream *substream)
 		return 0;
 
 	/* flush the DMA channel */
-	//prtd->params->ops->flush(prtd->params->ch);
+	prtd->params->ops->flush(prtd->params->ch);
 
 	prtd->dma_loaded = 0;
 	prtd->dma_pos = prtd->dma_start;
@@ -289,7 +292,7 @@ static int dma_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 	        prtd->state &= ~ST_RUNNING;
-//		prtd->params->ops->stop(prtd->params->ch);
+		prtd->params->ops->stop(prtd->params->ch);
 		if (prtd->dram_used)
 			atomic_dec(&dram_usage_cnt);
 		break;

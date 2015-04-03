@@ -46,6 +46,9 @@
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
 #include <linux/jiffies.h>
+#include <linux/wakelock.h>
+#include <linux/pinctrl/consumer.h>
+#include <plat/gpio-cfg.h>
 
 /* Major number of device ID.
  * A device ID consists of two parts: a major number, identifying the class of
@@ -59,16 +62,25 @@
 
 #define DRDY_ACTIVE_STATUS      0
 #define BITS_PER_WORD           16
-#define DRDY_IRQ_FLAG           IRQF_TRIGGER_FALLING
+#define DRDY_IRQ_FLAG	(IRQF_TRIGGER_FALLING)
 
 /* Timeout value for polling DRDY signal assertion */
 #define DRDY_TIMEOUT_MS      40
+
+#ifdef CONFIG_SEC_FACTORY
+#undef ENABLE_SENSORS_FPRINT_SECURE
+#else
+#define ENABLE_SENSORS_FPRINT_SECURE
+#define FEATURE_SPI_WAKELOCK
+#endif
+
+#define PINCONTROL
 
 /*
  * Definitions of structures which are used by IOCTL commands
  */
 
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Pass to VFSSPI_IOCTL_SET_USER_DATA
  * and VFSSPI_IOCTL_GET_USER_DATA commands */
 struct vfsspi_iocUserData {
@@ -77,7 +89,7 @@ struct vfsspi_iocUserData {
 };
 #endif
 
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Pass to VFSSPI_IOCTL_RW_SPI_MESSAGE command */
 struct vfsspi_iocTransfer {
 	unsigned char *rxBuffer;	/* pointer to retrieved data */
@@ -108,7 +120,7 @@ extern void fingerprint_unregister(struct device *dev,
  * IOCTL commands definitions
  */
 
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Transmit data to the device
 and retrieve data from it simultaneously */
 #define VFSSPI_IOCTL_RW_SPI_MESSAGE	\
@@ -120,7 +132,7 @@ and retrieve data from it simultaneously */
 /* Set the baud rate of SPI master clock */
 #define VFSSPI_IOCTL_SET_CLK	\
 	_IOW(VFSSPI_IOCTL_MAGIC,  3, unsigned int)
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Get level state of DRDY GPIO */
 #define VFSSPI_IOCTL_CHECK_DRDY	\
 	_IO(VFSSPI_IOCTL_MAGIC,   4)
@@ -131,11 +143,11 @@ and retrieve data from it simultaneously */
 	_IOW(VFSSPI_IOCTL_MAGIC,  5, unsigned int)
 /* Store the user data into the SPI driver. Currently user data is a
  * device info data, which is obtained from announce packet. */
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 #define VFSSPI_IOCTL_SET_USER_DATA	\
 	_IOW(VFSSPI_IOCTL_MAGIC,  6, unsigned int)
 #endif
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Retrieve user data from the SPI driver*/
 #define VFSSPI_IOCTL_GET_USER_DATA	\
 	_IOWR(VFSSPI_IOCTL_MAGIC, 7, unsigned int)
@@ -146,7 +158,7 @@ and retrieve data from it simultaneously */
 /* Put device in Low power mode */
 #define VFSSPI_IOCTL_DEVICE_SUSPEND	\
 	_IO(VFSSPI_IOCTL_MAGIC,	9)
-#ifndef CONFIG_SENSORS_FPRINT_SECURE
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
 /* Indicate the fingerprint buffer size for read */
 #define VFSSPI_IOCTL_STREAM_READ_START	\
 	_IOW(VFSSPI_IOCTL_MAGIC, 10, unsigned int)
@@ -163,7 +175,7 @@ and retrieve data from it simultaneously */
 /* Turn off the power to the sensor */
 #define VFSSPI_IOCTL_POWER_OFF	\
 	_IO(VFSSPI_IOCTL_MAGIC,   14)
-#ifdef CONFIG_SENSORS_FPRINT_SECURE
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
 /* To disable spi core clock */
 #define VFSSPI_IOCTL_DISABLE_SPI_CLOCK	\
 	_IO(VFSSPI_IOCTL_MAGIC, 15)
@@ -176,5 +188,6 @@ and retrieve data from it simultaneously */
 #endif
 /* get sensor orienation from the SPI driver*/
 #define VFSSPI_IOCTL_GET_SENSOR_ORIENT	\
-	_IOWR(VFSSPI_IOCTL_MAGIC, 18, unsigned int)
+	_IOR(VFSSPI_IOCTL_MAGIC, 18, unsigned int)
 #endif /* VFS61XX_H_ */
+

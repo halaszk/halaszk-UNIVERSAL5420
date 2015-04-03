@@ -98,6 +98,7 @@ struct booster_dvfs {
 	bool initialized;
 	bool lock_status;
 	bool short_press;
+	bool touch_level5_phase2;
 	enum booster_level level;
 	int msec_chg_time;
 	int msec_off_time;

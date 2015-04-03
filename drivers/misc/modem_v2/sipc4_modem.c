@@ -1,4 +1,4 @@
-/* linux/drivers/modem/modem.c
+/* linux/drivers/misc/modem_v2/sipc4_modem.c
  *
  * Copyright (C) 2010 Google, Inc.
  * Copyright (C) 2010 Samsung Electronics.
@@ -31,9 +31,8 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/wakelock.h>
-#include <linux/string.h>
 
-#include <linux/platform_data/modem.h>
+#include <linux/platform_data/modem_v2.h>
 #include "modem_prj.h"
 #include "modem_variation.h"
 #include "modem_utils.h"
@@ -45,6 +44,7 @@
 static struct modem_shared *create_modem_shared_data(void)
 {
 	struct modem_shared *msd;
+	int size = MAX_MIF_BUFF_SIZE;
 
 	msd = kzalloc(sizeof(struct modem_shared), GFP_KERNEL);
 	if (!msd)
@@ -58,14 +58,17 @@ static struct modem_shared *create_modem_shared_data(void)
 	msd->iodevs_tree_fmt = RB_ROOT;
 
 	msd->storage.cnt = 0;
-	msd->storage.addr =
-		kzalloc(MAX_MIF_BUFF_SIZE + MAX_MIF_SEPA_SIZE, GFP_KERNEL);
+	msd->storage.addr = kzalloc(MAX_MIF_BUFF_SIZE +
+		(MAX_MIF_SEPA_SIZE * 2), GFP_KERNEL);
 	if (!msd->storage.addr) {
 		mif_err("IPC logger buff alloc failed!!\n");
+		kfree(msd);
 		return NULL;
 	}
-	memset(msd->storage.addr, 0, MAX_MIF_BUFF_SIZE);
-	memcpy(msd->storage.addr, MIF_SEPARATOR,  strlen(MIF_SEPARATOR));
+	memset(msd->storage.addr, 0, size + (MAX_MIF_SEPA_SIZE * 2));
+	memcpy(msd->storage.addr, MIF_SEPARATOR, strlen(MIF_SEPARATOR));
+	msd->storage.addr += MAX_MIF_SEPA_SIZE;
+	memcpy(msd->storage.addr, &size, MAX_MIF_SEPA_SIZE);
 	msd->storage.addr += MAX_MIF_SEPA_SIZE;
 	spin_lock_init(&msd->lock);
 
@@ -307,31 +310,54 @@ static void modem_shutdown(struct platform_device *pdev)
 
 static int modem_suspend(struct device *pdev)
 {
-#ifndef CONFIG_LINK_DEVICE_HSIC
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
+	struct link_device *ld = get_current_link(mc->iod);
 
-	if (mc->gpio_pda_active)
+	if (ld && ld->suspend_check_cpwake) {
+		int ret = ld->suspend_check_cpwake(ld);
+		if (ret < 0){
+			mif_info("suspnd fail CP host wakeup\n");
+			return ret;
+		}
+	}
+
+	if (mc->gpio_pda_active && !mc->pda_active_hwctl)
 		gpio_set_value(mc->gpio_pda_active, 0);
-#endif
 
 	return 0;
 }
 
 static int modem_resume(struct device *pdev)
 {
-#ifndef CONFIG_LINK_DEVICE_HSIC
 	struct modem_ctl *mc = dev_get_drvdata(pdev);
 
-	if (mc->gpio_pda_active)
+	if (mc->gpio_pda_active && !mc->pda_active_hwctl)
 		gpio_set_value(mc->gpio_pda_active, 1);
-#endif
 
 	return 0;
 }
 
+#ifdef CONFIG_FAST_BOOT
+static void modem_complete(struct device *pdev)
+{
+	struct modem_ctl *mc = dev_get_drvdata(pdev);
+
+	if (mc->modem_complete)
+		mc->modem_complete(mc);
+}
+#endif
+
 static const struct dev_pm_ops modem_pm_ops = {
+#ifdef CONFIG_LINK_DEVICE_HSIC
+	.suspend_noirq    = modem_suspend,
+	.resume_noirq     = modem_resume,
+#else
 	.suspend    = modem_suspend,
 	.resume     = modem_resume,
+#endif
+#ifdef CONFIG_FAST_BOOT
+	.complete  = modem_complete,
+#endif
 };
 
 static struct platform_driver modem_driver = {

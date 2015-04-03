@@ -82,6 +82,7 @@ struct wacom_g5_platform_data {
 #endif
 	int (*reset_platform_hw)(void);
 	void (*register_cb)(struct wacom_g5_callbacks *);
+	int (*get_irq_state)(void);
 };
 
 #endif /* _LINUX_WACOM_I2C_H */

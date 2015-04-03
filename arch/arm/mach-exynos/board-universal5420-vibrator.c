@@ -29,7 +29,7 @@ void __init exynos5_universal5420_vibrator_init(void)
 {
 #if defined(CONFIG_V1A)
 	vienna_motor_init();
-#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL)
+#elif defined(CONFIG_N1A) || defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 	int ret;
 #if defined(CONFIG_V2A)
 	gpio_request(GPIO_MOTOR_EN, "MOTOR_EN");

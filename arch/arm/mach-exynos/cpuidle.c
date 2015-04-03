@@ -86,6 +86,8 @@ static int set_enable_mask(const char *val, const struct kernel_param *kp)
 	int rv = param_set_uint(val, kp);
 	unsigned long flags;
 
+	printk("[%s] val=%s, enable_maks=%d\n", __func__, val, enable_mask);
+
 	if (rv)
 		return rv;
 

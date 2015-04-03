@@ -53,11 +53,13 @@ obj-$(CONFIG_MAX8997_MUIC)	+= max8997-muic.o
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
 obj-$(CONFIG_SENSORS_AK8975)	+= akm8975.o
 obj-$(CONFIG_MFD_MAX77803)	+= max77803-muic.o
+obj-$(CONFIG_MFD_MAX77888)	+= max77888-muic.o
 obj-$(CONFIG_SEC_MODEM_V2)	+= modem_v2/
 obj-$(CONFIG_SEC_MODEM_IF)	+= modem_if/
 ifeq ($(TIMA_ENABLED),1)
 obj-$(CONFIG_TIMA_LOG)		+= tima_debug_log.o
 endif
+obj-$(CONFIG_QC_MODEM)		+= mdm_if/
 
 # Secure OS Mobicore Interface
 obj-$(CONFIG_MOBICORE_DRIVER)  += tzic.o

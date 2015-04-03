@@ -55,7 +55,7 @@ static bool en_profile = false;
 #define BP_CONTORL_ENABLE	0x1
 #define BRBRSVCON_ENABLE	0x33
 
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 #define QOS_TIMEOUT_VAL0	0x0
 #define QOS_TIMEOUT_VAL1	0x80
 #else
@@ -104,6 +104,7 @@ struct busfreq_data_mif {
 	unsigned long mspll_freq;
 	unsigned long mspll_volt;
 
+	struct notifier_block exynos5_mif_reboot_notifier;
 	struct notifier_block tmu_notifier;
 	int busy;
 };
@@ -117,7 +118,7 @@ enum mif_bus_idx {
 	LV_5,
 	LV_6,
 	LV_7,
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	LV_8,
 #endif
 	LV_END,
@@ -139,7 +140,7 @@ struct mif_bus_opp_table mif_bus_opp_list[] = {
 	{LV_5, 266000,  875000, 0},
 	{LV_6, 200000,  875000, 0},
 	{LV_7, 160000,  875000, 0},
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	{LV_8, 133000,  875000, 0},
 #endif
 };
@@ -257,7 +258,7 @@ void exynos5_update_media_layers(enum devfreq_media_type media_type, unsigned in
 			enabled_fimc_lite ? "enabled" : "disabled",
 			num_mixer_layers, num_fimd1_layers, num_total_layers);
 
-#if !defined(CONFIG_S5P_DP) && !defined(CONFIG_SUPPORT_WQXGA)
+#if !defined(CONFIG_SUPPORT_WQXGA)
 	if (!enabled_fimc_lite && num_mixer_layers) {
 		media_qos_freq = mif_bus_opp_list[LV_4].clk;
 		goto out;
@@ -265,7 +266,7 @@ void exynos5_update_media_layers(enum devfreq_media_type media_type, unsigned in
 #endif
 
 	switch (num_total_layers) {
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	case NUM_LAYERS_5:
 		if (enabled_fimc_lite)
 			media_qos_freq = mif_bus_opp_list[LV_0].clk;
@@ -506,7 +507,7 @@ static void exynos5_mif_set_freq(struct busfreq_data_mif *data,
 		data->bp_enabled = true;
 	}
 
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	tmp_clk = mif_bus_opp_list[LV_6].clk;
 #else
 	tmp_clk = mif_bus_opp_list[LV_5].clk;
@@ -554,7 +555,7 @@ static void exynos5_mif_set_freq(struct busfreq_data_mif *data,
 
 	clk_disable(data->fout_spll);
 
-#if defined(CONFIG_S5P_DP) || defined(CONFIG_SUPPORT_WQXGA)
+#if defined(CONFIG_SUPPORT_WQXGA)
 	tmp_clk = mif_bus_opp_list[LV_6].clk;
 #else
 	tmp_clk = mif_bus_opp_list[LV_5].clk;
@@ -945,14 +946,24 @@ static struct exynos_devfreq_platdata default_qos_mif_pd = {
 static int exynos5_mif_reboot_notifier_call(struct notifier_block *this,
 				   unsigned long code, void *_cmd)
 {
+#if defined(CONFIG_CHAGALL)
+	struct busfreq_data_mif *data = container_of(this,
+		struct busfreq_data_mif, exynos5_mif_reboot_notifier);
+#endif
+
 	pm_qos_update_request(&exynos5_mif_qos, exynos5_mif_devfreq_profile.initial_freq);
+
+#if defined(CONFIG_CHAGALL)
+	dev_err(data->dev, "[CH] %s.\n",__func__);
+	if(regulator_set_voltage(data->vdd_mif, 1000000, 1000000 + MIF_VOLT_STEP))
+	{
+		BUG_ON(1);
+	}
+#endif
 
 	return NOTIFY_DONE;
 }
 
-static struct notifier_block exynos5_mif_reboot_notifier = {
-	.notifier_call = exynos5_mif_reboot_notifier_call,
-};
 
 #ifdef CONFIG_EXYNOS_THERMAL
 static int exynos5_bus_mif_tmu_notifier(struct notifier_block *notifier,
@@ -1245,7 +1256,10 @@ static __devinit int exynos5_busfreq_mif_probe(struct platform_device *pdev)
 	pm_qos_add_request(&exynos5_cpu_mif_qos, PM_QOS_BUS_THROUGHPUT, pdata->default_qos);
 #endif
 
-	register_reboot_notifier(&exynos5_mif_reboot_notifier);
+	data->exynos5_mif_reboot_notifier.notifier_call =
+				    exynos5_mif_reboot_notifier_call;
+
+	register_reboot_notifier(&data->exynos5_mif_reboot_notifier);
 
 #ifdef CONFIG_EXYNOS_THERMAL
 	exynos_tmu_add_notifier(&data->tmu_notifier);
@@ -1260,14 +1274,14 @@ err_clkm_phy:
 err_fout_bpll:
 	clk_put(data->mout_bpll);
 err_mout_bpll:
-	clk_put(data->mx_mspll_ccore);
-err_mx_mspll_ccore:
-	clk_put(data->mclk_cdrex);
-err_mout_mclk_cdrex:
 	clk_put(data->fout_spll);
 err_fout_spll:
 	clk_put(data->mout_spll);
 err_mout_spll:
+	clk_put(data->mx_mspll_ccore);
+err_mx_mspll_ccore:
+	clk_put(data->mclk_cdrex);
+err_mout_mclk_cdrex:
 	regulator_put(data->vdd_mif);
 err_regulator:
 	kfree(data);

@@ -14,5 +14,6 @@ obj-$(CONFIG_SENSORS_AK8963C)	+= ak8963c.o
 obj-$(CONFIG_SENSORS_AK09911C)	+= ak09911c.o
 # optical_sensor
 obj-$(CONFIG_SENSORS_CM3323)	+= cm3323.o
+obj-$(CONFIG_SENSORS_TMD3782)	+= tmd3782.o
 # grip_sensor
 obj-$(CONFIG_SENSORS_SX9500)	+= sx9500.o

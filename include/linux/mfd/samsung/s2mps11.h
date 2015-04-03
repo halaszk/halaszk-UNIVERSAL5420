@@ -186,4 +186,6 @@ enum s2mps11_regulators {
 #define S2MPS11_PMIC_EN_B5V2_SHIFT	2
 #define S2MPS11_PMIC_EN_B5V1_SHIFT	0
 
+#define S2MPS11_ST1_JIGONB_MASK		BIT(1)
+
 #endif /*  __LINUX_MFD_S2MPS11_H */

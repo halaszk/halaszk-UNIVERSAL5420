@@ -146,7 +146,7 @@ static struct platform_device *universal5420_devices[] __initdata = {
 	&ramconsole_device,
 	&persistent_trace_device,
 	&persistent_clock,
-#ifdef CONFIG_MALI_T6XX
+#if defined(CONFIG_MALI_T6XX) || defined(CONFIG_MALI_MIDGARD_WK04)
 	&exynos5_device_g3d,
 #endif
 	&s3c_device_adc,
@@ -238,6 +238,15 @@ static void __init exynos_reserve_mem(void)
 			}
 		},
 #endif
+#ifdef CONFIG_ION_EXYNOS_MEMSIZE_SECDMA
+		{
+			.name = "drm_secdma",
+			.size = CONFIG_ION_EXYNOS_MEMSIZE_SECDMA * SZ_1K,
+			{
+				.alignment = SZ_1M,
+			}
+		},
+#endif
 		{
 			.size = 0
 		},
@@ -253,12 +262,14 @@ static void __init exynos_reserve_mem(void)
 		"ion-exynos/mfc_input=drm_mfc_input;"
 		"ion-exynos/mfc_fw=drm_mfc_fw;"
 		"ion-exynos/sectbl=drm_sectbl;"
+		"ion-exynos/secdma=drm_secdma;"
 		"s5p-smem/mfc_sh=drm_mfc_sh;"
 		"s5p-smem/g2d_wfd=drm_g2d_wfd;"
 		"s5p-smem/video=drm_video;"
 		"s5p-smem/mfc_input=drm_mfc_input;"
 		"s5p-smem/mfc_fw=drm_mfc_fw;"
 		"s5p-smem/sectbl=drm_sectbl;"
+		"s5p-smem/secdma=drm_secdma;"
 #endif
 #ifdef CONFIG_BL_SWITCHER
 		"b.L_mem=bl_mem;"
@@ -337,7 +348,7 @@ static void __init universal5420_machine_init(void)
 	exynos5_universal5420_display_init();
 	exynos5_universal5420_media_init();
 	exynos5_universal5420_vibrator_init();
-#ifdef CONFIG_MFD_MAX77803
+#if defined(CONFIG_MFD_MAX77803) || defined(CONFIG_MFD_MAX77888)
 	exynos5_universal5420_mfd_init();
 #endif
 	brcm_wlan_init();
@@ -372,7 +383,7 @@ static void __init universal5420_machine_init(void)
 	exynos5_universal5420_gpio_init();
 }
 
-MACHINE_START(UNIVERSAL5420, "UNIVERSAL5420")
+MACHINE_START(UNIVERSAL5420, "Samsung EXYNOS5420")
 	.atag_offset	= 0x100,
 	.init_early	= universal5420_init_early,
 	.init_irq	= exynos5_init_irq,

@@ -1,4 +1,4 @@
-# Makefile of modem_if
+# Makefile of modem_v2
 
 EXTRA_CFLAGS += -Idrivers/misc/modem_v2
 
@@ -13,4 +13,9 @@ obj-$(CONFIG_GSM_MODEM_ESC6270) += modem_modemctl_device_esc6270.o
 obj-$(CONFIG_CDMA_MODEM_MDM6600) += modem_modemctl_device_mdm6600.o
 
 obj-$(CONFIG_LINK_DEVICE_PLD) += modem_link_device_pld.o modem_link_device_pld_ext_op.o
-obj-$(CONFIG_LINK_DEVICE_HSIC) += modem_link_device_hsic_ncm.o link_usb_cdc_ncm.o
+ifeq ($(CONFIG_LINK_DEVICE_HSIC), y)
+obj-$(CONFIG_UMTS_MODEM_XMM6262) += modem_link_device_hsic.o
+obj-$(CONFIG_UMTS_MODEM_XMM6360) += modem_link_device_hsic_ncm.o link_usb_cdc_ncm.o link_pm_hsic_xmm626x.o
+obj-$(CONFIG_UMTS_MODEM_BRCM2189x) += modem_link_device_hsic_ncm.o link_usb_cdc_ncm.o link_pm_hsic_brcm2189x.o
+obj-$(CONFIG_UMTS_MODEM_M74XX)	+= modem_link_device_hsic_ncm.o link_usb_cdc_ncm.o link_pm_hsic_m74xx.o
+endif

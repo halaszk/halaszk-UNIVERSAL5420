@@ -81,5 +81,6 @@ obj-$(CONFIG_TOUCHSCREEN_ATMEL_MXTS)    += mxts_n1.o
 else
 obj-$(CONFIG_TOUCHSCREEN_ATMEL_MXTS)    += mxts.o
 endif
+obj-$(CONFIG_TOUCHSCREEN_ATMEL_MXT1664T)    += mxt_t/
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)	+= synaptics_i2c_rmi.o rmi_dev.o rmi_fw_update.o rmi_f54.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C)	+= synaptics_dsx/
+obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX)	+= synaptics_dsx/
